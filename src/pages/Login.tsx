@@ -1,7 +1,18 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { login } from '../api/auth';
-import { apiErrorMessage } from '../api/request';
+import { lineLoginUrl, login } from '../api/auth';
+import { apiErrorMessage, setAccessToken, setRefreshToken } from '../api/request';
+
+// LINE 授權完成後，後端會把瀏覽器導回這一頁，token 放在 fragment。
+// 用 fragment 而不是 query 是後端刻意的：# 後面的內容不會送到伺服器，
+// 所以不會留在 nginx／後端的存取紀錄裡，也不會被當成 Referer 外洩。
+const LINE_ERROR_MESSAGES: Record<string, string> = {
+  cancelled: '已取消 LINE 登入',
+  verify_failed: 'LINE 授權驗證失敗，請重新登入一次',
+  user_failed: '建立帳號失敗，請稍後再試',
+  token_failed: '登入憑證簽發失敗，請稍後再試',
+  state_failed: '登入流程初始化失敗，請重新整理後再試',
+};
 
 export default function Login() {
   const navigate = useNavigate();
@@ -10,6 +21,29 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    const hash = window.location.hash.replace(/^#/, '');
+    if (!hash) return;
+    const params = new URLSearchParams(hash);
+
+    const failure = params.get('error');
+    const accessToken = params.get('access_token');
+    const refreshToken = params.get('refresh_token');
+    if (!failure && !accessToken) return;
+
+    // 無論成功失敗都先把 fragment 清掉：token 留在網址列會被寫進瀏覽器歷史，
+    // 使用者按上一頁還會重新觸發一次這段邏輯。
+    window.history.replaceState(null, '', window.location.pathname);
+
+    if (failure) {
+      setError(LINE_ERROR_MESSAGES[failure] ?? 'LINE 登入失敗，請改用帳號密碼');
+      return;
+    }
+    setAccessToken(accessToken);
+    setRefreshToken(refreshToken);
+    navigate('/market', { replace: true });
+  }, [navigate]);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -85,6 +119,25 @@ export default function Login() {
           >
             {submitting ? '登入中…' : '登入'}
           </button>
+
+          <div className="flex items-center gap-stack-sm">
+            <span className="h-px flex-1 bg-outline-variant" />
+            <span className="font-body-sm text-body-sm text-outline">或</span>
+            <span className="h-px flex-1 bg-outline-variant" />
+          </div>
+
+          {/*
+            用 <a> 而不是 onClick + navigate：這是離開本站到 LINE 的頂層導覽，
+            交給瀏覽器原生處理，state cookie 才會被正確種下（見 api/auth.ts 的說明）。
+            type="button" 的 <button> 包在 <form> 裡還得防止它觸發送出。
+          */}
+          <a
+            href={lineLoginUrl()}
+            className="w-full py-2.5 rounded bg-secondary text-on-secondary font-body-md text-body-md font-semibold hover:bg-secondary-container hover:text-on-secondary-container transition-colors flex items-center justify-center gap-2"
+          >
+            <span className="material-symbols-outlined text-[20px] leading-none">chat</span>
+            以 LINE 登入
+          </a>
         </form>
       </div>
     </div>
