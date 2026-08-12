@@ -15,11 +15,8 @@ import Valuation from './pages/Valuation';
 import Warnings from './pages/Warnings';
 
 function App() {
-  // basename 取 PUBLIC_URL：GitHub Pages 的專案站台掛在 /stock-market-analysis-fe/
-  // 子路徑下，不給 basename 的話所有路由都會少算這一段而對不到。
-  // 該值只在 CI 建置時由 workflow 注入，本機開發是空字串，等同沒設。
   return (
-    <BrowserRouter basename={process.env.PUBLIC_URL}>
+    <BrowserRouter>
       <SymbolProvider>
         <Routes>
           {/* 公開路由 */}
