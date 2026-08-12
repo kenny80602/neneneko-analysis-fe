@@ -68,19 +68,16 @@ export function formatShareToLot(value: number | null | undefined, digits = 0): 
 }
 
 /**
- * 漲跌對應的文字色。
+ * 漲跌對應的文字色。台股慣例漲紅跌綠。
  *
- * 採台股慣例「漲紅跌綠」：紅是 error、綠是 secondary。設計稿原本畫的是歐美的
- * 漲綠跌紅，兩者剛好相反——要換回去，把下面這一行的 error 與 secondary 對調即可，
- * 全站（含徽章 quoteBadge、K 線的 K 棒與成交量）都會跟著變。
- *
- * ⚠️ 這兩個顏色角色在別的語意下不會跟著翻：error 同時是「錯誤／警示」
- * （取價失敗、注意股、回檔或本益比達門檻），secondary 同時是「買入區間」。
- * 那些地方是直接寫 text-error／text-secondary，不走這裡。
+ * 用的是 quote-up / quote-down 這組漲跌專用色，而不是 error / secondary——
+ * 那兩個角色同時也是「錯誤／警示」與「買入區間」，共用的話調漲跌色會改到不相干的地方。
+ * 要換回設計稿的漲綠跌紅，把下面這一行的 up 與 down 對調；要調深淺則改
+ * tailwind.config.js 裡那兩個色票，全站（含徽章、K 線的 K 棒與成交量、漲跌家數卡）跟著變。
  */
 export function quoteColor(value: number | null | undefined): string {
   if (isBlank(value) || value === 0) return 'text-on-surface-variant';
-  return value > 0 ? 'text-error' : 'text-secondary';
+  return value > 0 ? 'text-quote-up' : 'text-quote-down';
 }
 
 /** 漲跌用的膠囊徽章樣式（文字色 + 對應的淡底色）。 */
@@ -89,8 +86,8 @@ export function quoteBadge(value: number | null | undefined): string {
     return 'text-on-surface-variant bg-surface-container';
   }
   return value > 0
-    ? 'text-error bg-error-container/20'
-    : 'text-secondary bg-secondary-container/20';
+    ? 'text-quote-up bg-error-container/20'
+    : 'text-quote-down bg-secondary-container/20';
 }
 
 /** RFC3339 / 帶時間的字串 → YYYY-MM-DD HH:MM。空字串維持破折號。 */

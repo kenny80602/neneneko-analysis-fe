@@ -207,14 +207,14 @@ export default function Market() {
                   label="上漲"
                   icon="trending_up"
                   value={formatNumber(stockAdvanceDecline.rise_count)}
-                  valueClassName="text-error"
+                  valueClassName="text-quote-up"
                   hint={`漲停 ${formatNumber(stockAdvanceDecline.limit_up_count)}`}
                 />
                 <StatCard
                   label="下跌"
                   icon="trending_down"
                   value={formatNumber(stockAdvanceDecline.decline_count)}
-                  valueClassName="text-secondary"
+                  valueClassName="text-quote-down"
                   hint={`跌停 ${formatNumber(stockAdvanceDecline.limit_down_count)}`}
                 />
                 <StatCard

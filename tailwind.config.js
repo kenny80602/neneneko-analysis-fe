@@ -8,6 +8,14 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        // 漲跌專用色（台股慣例漲紅跌綠）。刻意不直接沿用 error / secondary：
+        // 那兩個角色同時是「錯誤／警示」與「買入區間」，混用的話「想調漲跌色」
+        // 會一併改到取價失敗、注意股徽章與買區那些不相干的地方。
+        // 只有 utils/format.ts 的 quoteColor / quoteBadge、K 線的 K 棒與成交量、
+        // 市場概況的漲跌家數卡會用到這兩個。
+        "quote-up": "#ba1a1a",
+        "quote-down": "#005228",
+
         "on-background": "#191c1d",
         "surface-variant": "#e1e3e4",
         background: "#f8f9fa",

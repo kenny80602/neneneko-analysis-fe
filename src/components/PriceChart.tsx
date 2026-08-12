@@ -228,9 +228,12 @@ export default function PriceChart({ quotes }: PriceChartProps) {
 
         {view.map((candle, index) => {
           // K 棒顏色照台股看盤慣例比「收盤 vs 開盤」，跟表格那種比昨收的漲跌是兩回事。
-          // 紅綠的對應與 utils/format.ts 的 quoteColor 一致：漲紅跌綠。
+          // 紅綠用的是跟 quoteColor 同一組漲跌專用色（tailwind.config.js 的 quote-up／quote-down），
+          // 調色只要改那兩個色票，這裡與表格就會一起變。
           const rising = candle.close >= candle.open;
-          const color = rising ? 'fill-error stroke-error' : 'fill-secondary stroke-secondary';
+          const color = rising
+            ? 'fill-quote-up stroke-quote-up'
+            : 'fill-quote-down stroke-quote-down';
           const top = scale.y(Math.max(candle.open, candle.close));
           const bottom = scale.y(Math.min(candle.open, candle.close));
           const x = centerX(index);
