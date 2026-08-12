@@ -1,7 +1,6 @@
-import { FormEvent, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { logout } from '../api/auth';
-import { useSymbol } from '../context/SymbolContext';
+import SymbolPicker from './SymbolPicker';
 
 /**
  * 全站頁首：品牌（行動版）、標的搜尋、通知 / 設定與登出。
@@ -11,21 +10,6 @@ import { useSymbol } from '../context/SymbolContext';
  */
 export default function Topbar() {
   const navigate = useNavigate();
-  const { symbol, setSymbol } = useSymbol();
-  const [draft, setDraft] = useState(symbol);
-
-  // 從其他地方（側邊欄、表格點列）改了代號時，搜尋框要跟著更新。
-  useEffect(() => {
-    setDraft(symbol);
-  }, [symbol]);
-
-  const handleSearch = (event: FormEvent) => {
-    event.preventDefault();
-    const trimmed = draft.trim();
-    if (!trimmed) return;
-    setSymbol(trimmed);
-    navigate('/dashboard');
-  };
 
   const handleLogout = async () => {
     // logout 內部已保證清掉本地 token，後端失敗也照樣導回登入頁。
@@ -45,19 +29,14 @@ export default function Topbar() {
       </div>
 
       <div className="flex items-center gap-4 ml-auto">
-        <form onSubmit={handleSearch} className="relative hidden sm:block">
-          <span className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-outline text-[18px] pointer-events-none">
-            search
-          </span>
-          <input
-            type="text"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder="搜尋標的..."
-            inputMode="numeric"
-            className="pl-8 pr-3 py-1 bg-surface-container border border-outline-variant rounded font-body-sm text-body-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none text-on-surface w-48"
+        <div className="hidden sm:block">
+          {/* 選定後跳到個股總覽：從頁首搜尋的人要的就是那一頁。 */}
+          <SymbolPicker
+            placeholder="搜尋標的…"
+            inputClassName="w-48"
+            onSelect={() => navigate('/dashboard')}
           />
-        </form>
+        </div>
 
         {/* 通知與設定尚無對應後端，先停用而不是給一個按了沒反應的按鈕。 */}
         <button

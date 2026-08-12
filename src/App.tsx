@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import DashboardLayout from './components/DashboardLayout';
 import RequireAuth from './components/RequireAuth';
 import { SymbolProvider } from './context/SymbolContext';
+import Alert from './pages/Alert';
 import Announcements from './pages/Announcements';
 import DailyQuotes from './pages/DailyQuotes';
 import Dashboard from './pages/Dashboard';
@@ -29,6 +30,7 @@ function App() {
               <Route path="/market" element={<Market />} />
               <Route path="/portfolio" element={<Portfolio />} />
               <Route path="/quotes" element={<DailyQuotes />} />
+              <Route path="/alert" element={<Alert />} />
 
               {/* 個股：共用 SymbolContext 的代號 */}
               <Route path="/dashboard" element={<Dashboard />} />

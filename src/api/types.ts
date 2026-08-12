@@ -389,6 +389,37 @@ export interface TWSEInstitutionalSummaries {
   items: InstitutionalSummary[];
 }
 
+// 集中市場每日成交量前二十名證券（/stocks/twse/volume_ranks，回陣列）。
+// 上游只給當天，沒有日期參數；也沒有漲跌幅，要自己用 change ÷ 昨收算。
+export interface TWSEVolumeRank {
+  date: string;
+  rank: number;
+  symbol: string;
+  name: string;
+  // 成交股數。
+  trade_volume: number;
+  transaction_count: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  // 對前一個交易日的漲跌。上游把正負號跟數值拆兩欄給，後端已合併成帶號數字。
+  change: number;
+  last_best_bid_price: number;
+  last_best_ask_price: number;
+}
+
+// 上櫃盤中漲幅／跌幅排行（/stocks/tpex/price_advanced、/price_declined，回陣列）。
+// 跌幅榜的 change 與 change_percent 是負數。
+export interface TPExPriceMover {
+  date: string;
+  symbol: string;
+  name: string;
+  close_price: number;
+  change: number;
+  change_percent: number;
+}
+
 // 上櫃股票市場現況（/stocks/tpex/market_highlight，回單一物件）。
 export interface TPExMarketHighlight {
   date: string;

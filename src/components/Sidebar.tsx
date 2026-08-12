@@ -5,6 +5,7 @@ const marketNavItems = [
   { icon: 'monitoring', label: '市場概況', path: '/market' },
   { icon: 'star', label: '自選股', path: '/portfolio' },
   { icon: 'table_rows', label: '每日收盤', path: '/quotes' },
+  { icon: 'notifications_active', label: '多喵 Alert', path: '/alert' },
 ];
 
 const symbolNavItems = [

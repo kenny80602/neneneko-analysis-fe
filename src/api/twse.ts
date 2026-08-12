@@ -4,6 +4,7 @@ import {
   TWSEAdvanceDeclineSummary,
   TWSEInstitutionalSummaries,
   TWSEMarketTrading,
+  TWSEVolumeRank,
 } from './types';
 
 // TWSEHandler — /stocks/twse，集中市場（上市）即時打證交所 OpenAPI 的整包資料。
@@ -12,8 +13,7 @@ import {
 //
 // 尚未接進畫面的端點（需要時再補對應函式與型別）：
 //   /off_market_quotes、/margin_balances、/short_sale_quotas、/margin_suspensions、
-//   /trading_warnings、/trading_warning_notes、/valuations、/volume_ranks、
-//   /institutional_tradings
+//   /trading_warnings、/trading_warning_notes、/valuations、/institutional_tradings
 
 // 每日市場成交資訊（大盤成交量值與加權指數）。
 export const getTWSEMarketTradings = () =>
@@ -25,6 +25,13 @@ export const getTWSEMarketTradings = () =>
 export const getTWSEAdvanceDeclineSummaries = () =>
   request
     .get<ApiResponse<TWSEAdvanceDeclineSummary[]>>('/stocks/twse/advance_decline_summaries')
+    .then((res) => res.data.data ?? []);
+
+// 每日成交量前二十名證券。上游只回當天，沒有日期參數，假日回空清單。
+// 附了收盤價與漲跌點數但沒有漲跌幅，需要百分比得自己用 change ÷ 昨收算。
+export const getTWSEVolumeRanks = () =>
+  request
+    .get<ApiResponse<TWSEVolumeRank[]>>('/stocks/twse/volume_ranks')
     .then((res) => res.data.data ?? []);
 
 // 三大法人買賣金額統計表（BFI82U），大盤層級的買賣超金額，單位元。
