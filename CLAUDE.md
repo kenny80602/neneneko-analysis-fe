@@ -1,0 +1,358 @@
+# CLAUDE.md
+
+`stock-market-analysis-fe` 的開發規範。動手改任何檔案前先看完這份。
+
+## 專案定位
+
+台股資料分析平台「**精準資本**」的前端，對接同層目錄的 Go 後端
+[`stock-market-analysis`](../stock-market-analysis)。
+專案骨架、工具鏈與版本一律對齊 [`minecraft-server-fe`](../minecraft-server-fe)（同一套 CRA 模板），
+視覺則走自己的設計稿（見下方樣式規範）。
+
+需要確認後端行為時**直接去讀 Go 原始碼**，不要猜：
+
+- 路由與回應形狀：`internal/interface/web/**/*.go`（handler 上的 doc comment 寫得很清楚，包含 query 參數與邊界情況）
+- 統一回應格式：`internal/pkg/ginx/response.go`
+- 認證：`internal/pkg/ginx/jwt_handler/`、`internal/pkg/ginx/middlewares/auth_guard/`、CORS 在 `ioc/web.go`
+
+---
+
+## 語言規範
+
+**只接受繁體中文與英文，不要出現簡體中文。**
+
+適用範圍（全部）：
+
+- 程式碼註解、JSDoc
+- commit message、PR 標題與內容
+- 對話回覆
+- 文件、設定檔註解（json、yml、md）
+- 畫面上的所有文案
+
+技術術語維持英文原文，不要硬翻：`context`、`hook`、`state`、`props`、`token`、`interceptor`、`polling` 等。
+
+寫完檔案後自我檢查一次有沒有殘留簡體字，常見誤用：
+
+| 簡體 | 繁體 |
+|---|---|
+| 连线 / 连接 | 連線 / 連接 |
+| 设定 / 设置 | 設定 / 設置 |
+| 预设 | 預設 |
+| 参数 | 參數 |
+| 测试 | 測試 |
+| 网路 / 网络 | 網路 |
+| 请求 | 請求 |
+| 数据 / 资料 | 資料 |
+| 错误 | 錯誤 |
+| 检查 | 檢查 |
+| 时间 / 超时 | 時間 / 逾時 |
+| 帐密 / 账号 | 帳密 / 帳號 |
+| 日志 | 日誌 |
+| 组件 | 元件 |
+| 加载 | 載入 |
+| 缓存 | 快取 |
+| 状态 | 狀態 |
+
+---
+
+## 技術棧與版本
+
+| 項目 | 版本 | 說明 |
+|---|---|---|
+| React | 19 | |
+| React Router | 7 | |
+| TypeScript | 5（strict） | |
+| Tailwind CSS | 3 | 含 `@tailwindcss/forms` |
+| Axios | 1.x | |
+| 建置工具 | CRA（react-scripts 5） | 不是 Vite |
+
+**不要自作主張升級或抽換依賴**（例如改用 Vite、換掉 CRA、加狀態管理套件）。版本刻意與
+`minecraft-server-fe` 對齊，兩個專案要能互相參照。要動請先問。
+
+安裝依賴一律加 `--legacy-peer-deps`：`react-scripts@5` 的 peer 仍鎖 `typescript ^3||^4`，
+本專案用 TS 5，npm 7+ 會 ERESOLVE 失敗。
+
+```bash
+npm install --legacy-peer-deps
+```
+
+---
+
+## 目錄結構與各層職責
+
+```
+src/
+├── api/          # 只負責「打哪支 API、回什麼型別」，不做畫面邏輯、不吞錯誤
+├── components/   # 跨頁共用元件。只被單一頁面用到的就留在該頁檔案裡
+├── context/      # 跨頁共享狀態（目前只有選取的股票代號）
+├── hooks/        # 可複用的資料抓取 / 狀態邏輯
+├── utils/        # 純函式（格式化、換算），不得 import api 或元件
+└── pages/        # 一個路由一個檔案，負責組合以上各層
+```
+
+新增檔案前先想清楚放哪一層。**api 層不要出現 `alert`、不要 `catch` 後回預設值把錯誤吞掉**——
+錯誤要讓頁面看得到才有機會顯示給使用者。
+
+---
+
+## API 層寫法
+
+### 一支端點一個 arrow function，回傳已解包的 `data`
+
+```ts
+import request from './request';
+import { ApiResponse, HistoryParams, MarginHistory } from './types';
+
+// MarginHandler — /stocks/margin，個股融資融券（上市上櫃合併）。
+export const getMarginHistory = (symbol: string, params?: HistoryParams) =>
+  request
+    .get<ApiResponse<MarginHistory>>(`/stocks/margin/${symbol}`, { params })
+    .then((res) => res.data.data);
+```
+
+規則：
+
+1. 檔名對應後端 handler（`margin.ts` ↔ `MarginHandler`），檔案開頭用註解標明對應的後端範圍與這組 API 的性質。
+2. 泛型一律寫成 `ApiResponse<T>`，回傳 `res.data.data`。回陣列的端點補 `?? []`，讓呼叫端不必再判斷 undefined。
+3. 路徑**不加前綴**，直接 `/stocks/...`、`/portfolio/...`、`/users/...`。
+4. 有副作用的端點（`collect`、`notify`）在註解裡明講代價：會打上游、會寫資料庫、會花 LINE 額度。
+5. 只接畫面用得到的端點；同組但還沒接的，在檔案開頭以註解列清單（見 `twse.ts`），不要先寫一堆沒人呼叫的函式。
+
+### 錯誤處理
+
+後端錯誤一律以**非 200 的 HTTP 狀態**回傳，axios 會 throw，訊息在 body 的 `msg`。
+呼叫端 `catch` 後用 `apiErrorMessage(err)` 取可直接顯示的字串，不要自己拆 `err.response.data`。
+
+### 認證
+
+- 登入成功後，token 由**回應標頭** `x-jwt-token` / `x-refresh-token` 帶回，`request.ts` 的回應攔截器
+  會自動寫進 `localStorage`。API 函式拿不到也不需要 token。
+- 請求攔截器自動帶 `Authorization: Bearer <access token>`。
+- access token 30 分鐘、refresh 7 天；401 時攔截器會自動換發並重試一次，換發失敗才導回 `/login`。
+- **refresh token 是一次性的**（後端以 Redis 記 ssid），所以換發做了單一化（`refreshPromise`）。
+  改 `request.ts` 時別把這個拿掉，併發換發會讓使用者莫名被登出。
+- 除了 `/users/login`、`/users/signup`、`/users/refresh_token` 等少數路徑，**所有端點都需要登入**
+  （含 `/stocks/*`、`/portfolio/*`），別以為行情是公開的。
+
+---
+
+## 型別規範
+
+`src/api/types.ts` 的介面**逐欄對齊後端 VO 的 json tag**，欄位名維持 snake_case，不要轉成 camelCase。
+好處是出問題時可以拿 Go 的 struct 直接對照。
+
+抄型別時連同**後端註解裡的語意一起帶過來**（單位、null 的意思、哪個市場才有）。這些是踩過坑才寫下的，
+沒帶過來的話下一個人會重踩一次。
+
+### null 與 0 是兩回事
+
+這是本專案最容易出錯的地方。後端大量欄位刻意用指標（`*float64`）就是為了區分：
+
+- 本益比 `null` = 公司虧損算不出來，畫成 0 會被讀成「本益比 0 倍」
+- 使用率 `null` = 這個市場沒有公布這個數字，不是「使用率 0%」
+- 成本 `null` = 這檔沒填成本，填 0 會讓損益算出 -100%
+- 收盤價 0 且 `traded === false` = 當天沒成交，不是跌到零
+
+所以：
+
+- **絕對不要寫 `value ?? 0`**。
+- 顯示一律走 `utils/format.ts`，它們遇到 null / undefined / NaN 會回破折號（`—`）。
+- 頁面上要說清楚破折號的意思（各頁最上方那行 `text-[11px] text-slate-600` 說明文字就是幹這個的）。
+
+---
+
+## 資料抓取
+
+各頁**一律用 `useAsyncData`**，不要自己寫 useState + useEffect：
+
+```ts
+const [params, setParams] = useState<HistoryParams>({ limit: 60 });
+
+const { data, loading, error, reload } = useAsyncData(
+  () => getMarginHistory(symbol, params),
+  [symbol, params.from, params.to, params.limit], // 查詢條件放這裡，變了就重抓
+  { enabled: !!symbol }                            // 沒選股就不發請求
+);
+```
+
+- deps 放**原始值**（字串、數字），不要放物件——物件每次 render 都是新的，會無限重抓。
+- `enabled: false` 時不發請求並清空舊資料，用於「尚未選取股票」。
+- 需要輪詢給 `pollingMs`；輪詢造成的重抓不會把畫面打回載入狀態。
+- 它已處理「元件卸載後不 setState」與「舊請求後回來覆蓋新結果」，不要繞過它自己 fetch。
+
+**輪詢間隔別亂調短**。即時報價與大盤那幾支是直接打證交所 / 櫃買中心，上游有限流：
+即時報價 30 秒是下限，大盤那幾支乾脆不輪詢（按重新整理）。
+
+---
+
+## 版面與頁面結構
+
+版面由 `DashboardLayout` 組成：側邊欄（`Sidebar`）+ 頁首（`Topbar`）+ 內容區 + 頁尾（`AppFooter`）。
+**捲動、內距與 `max-w-[1200px]` 置中都在 layout 處理**，頁面不要再自己包 `overflow-y-auto` 或 `p-8`。
+
+每一頁長這樣，順序不要變：
+
+```tsx
+export default function Xxx() {
+  const { symbol } = useSymbol();          // 需要代號的頁才有
+  const [params, setParams] = useState<HistoryParams>({ limit: 60 });
+  const { data, loading, error, reload } = useAsyncData(...);
+
+  return (
+    <>
+      <PageHeader
+        title="頁面名稱"
+        subtitle={...}                      // 目前代號、資料日期、這頁在看什麼
+        right={<><RangeFilter .../><SymbolSearch /></>}
+      />
+
+      <div className="flex flex-col gap-stack-lg">
+        <p className="font-body-sm text-body-sm text-on-surface-variant">
+          這頁資料的單位、涵蓋範圍與陷阱說明
+        </p>
+
+        {!symbol && <PageState kind="idle" hint="..." />}
+        {loading && <PageState kind="loading" />}
+        {error && <PageState kind="error" message={error} onRetry={reload} />}
+        {!loading && !error && items.length === 0 && (
+          <PageState kind="empty" message="..." hint="這一頁的空資料代表什麼" />
+        )}
+
+        {items.length > 0 && (/* 表格或卡片 */)}
+      </div>
+    </>
+  );
+}
+```
+
+**空資料的 `hint` 每頁都要寫，而且要寫對**。這個專案的「沒有資料」有好幾種完全不同的意思：
+
+- 收盤 / 法人 / 融資券 / 估值：這檔不在自選股清單、區間內都是非交易日、或那幾天還沒收集
+- 融資融券：這檔沒有信用交易資格（新上市未滿六個月、全額交割股）
+- 估值：ETF 與剛上市的個股本來就沒有本益比
+- 注意股：**空的是好消息**，多數個股從來沒被列過注意
+- 重大訊息：多數公司一個月發不到一則
+
+只丟一句「沒有資料」會讓人以為系統壞了。
+
+---
+
+## 樣式規範
+
+設計系統是 Material 3 色彩角色 + 自訂字級的淺色主題，全部定義在 `tailwind.config.js`
+（來自設計稿，品牌名「精準資本」）。
+
+### 顏色
+
+一律用語意化 token，**不要在元件裡寫死色碼，也不要用 Tailwind 內建色階**
+（`bg-gray-800`、`text-red-500` 這種）：
+
+| 用途 | class |
+|---|---|
+| 頁面底色 / 文字 | `bg-background` / `text-on-background` |
+| 側邊欄（深色） | `bg-primary` `text-on-primary`，選中項 `bg-primary-container` |
+| 卡片 / 表格容器 | `bg-surface-container-lowest` + `border-outline-variant` |
+| 表頭 / 次要區塊 | `bg-surface-container-low` |
+| 輸入框 | `bg-surface-container` + `border-outline-variant` |
+| 主要文字 / 次要文字 / 更淡 | `text-on-surface` / `text-on-surface-variant` / `text-outline` |
+| 正向（漲、買入區間） | `secondary` |
+| 負向（跌、錯誤、警示） | `error` |
+
+漲跌顏色不要自己判斷正負，用 `utils/format.ts` 的 `quoteColor(value)`（文字色）或
+`quoteBadge(value)`（膠囊徽章），它們同時處理了 null 與 0。
+
+> ⚠️ 目前依設計稿是**漲綠跌紅**（`secondary` / `error`），台股慣例則是漲紅跌綠。
+> 要改成台股慣例只需把 `quoteColor` / `quoteBadge` 裡的 secondary 與 error 對調，全站跟著變。
+
+### 字級
+
+字體與字級是成對的 token，`font-*` 給字族與字重、`text-*` 給大小行高，**兩個要一起用**：
+
+| 用途 | class |
+|---|---|
+| 頁面主標 | `font-display text-display` |
+| 區塊標題 | `font-headline-md text-headline-md` |
+| 內文 | `font-body-md text-body-md`（小字 `body-sm`、大字 `body-lg`） |
+| 表頭標籤 | `font-label-caps text-label-caps uppercase` |
+| 數字（價格、量、比率） | `font-data-md text-data-md`（大字 `data-lg`），JetBrains Mono 等寬 |
+
+所有數字欄位一律用 `font-data-*`：等寬字才不會讓逐列比對時的小數點跳來跳去。
+
+### 間距
+
+用設計稿的間距 token 而不是任意數字：`gap-stack-sm`（8px）、`gap-stack-md`（16px）、
+`gap-stack-lg`（24px）。
+
+### 常用 class 組合
+
+保持一致，不要每頁自創：
+
+- 表格容器：`overflow-x-auto rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm`
+- 表頭：`bg-surface-container-low border-b border-outline-variant`
+- `th`：`p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap`（第一欄加 `pl-4`）
+- `tbody`：`divide-y divide-outline-variant/50`
+- 資料列：`hover:bg-surface-container-low/50 transition-colors`
+- 數字欄：`p-2 py-3 text-right font-data-md text-data-md`
+- 主要按鈕：`px-4 py-2 bg-primary rounded text-on-primary font-body-md text-body-md hover:bg-primary-container`
+- 次要按鈕：`px-4 py-2 bg-surface border border-outline-variant rounded text-primary font-body-md text-body-md hover:bg-surface-container-low`
+- 說明文字：`font-body-sm text-body-sm text-on-surface-variant`
+
+### 圓角的坑
+
+設計稿把 `borderRadius.full` 定成 `0.75rem`，所以 **`rounded-full` 不是正圓**。
+需要正圓（頭像、狀態點）請寫 `rounded-[9999px]`。
+
+### 圖示
+
+Material Symbols Outlined，用法 `<span className="material-symbols-outlined">icon_name</span>`。
+不要引入其他圖示庫。
+
+---
+
+## 註解語氣
+
+沿用後端那套：**註解寫「為什麼」，不寫「做了什麼」**。程式碼自己會說做了什麼。
+
+值得寫的：這個值為什麼可能是 null、為什麼選這個間隔、為什麼不用看起來更直覺的做法、
+上游的哪個怪癖逼我們這樣寫、這個空清單代表什麼。
+
+不值得寫的：`// 設定 loading 為 true`。
+
+---
+
+## 驗證
+
+改完一定要跑過，兩個都要綠：
+
+```bash
+npx tsc --noEmit     # 型別
+npm run build        # 完整編譯（CRA 的 lint 警告會一起顯示）
+```
+
+要實際看畫面：
+
+```bash
+cp .env.example .env          # 首次
+BROWSER=none npm start        # http://localhost:3000
+```
+
+後端要一起起（見 `stock-market-analysis` 的 README），否則只有登入頁能看。
+
+---
+
+## 尚未建立的東西
+
+以下還沒做，需要時參考 `minecraft-server-fe` 的對應檔案：
+
+- `Dockerfile` / `nginx.conf` / `docker-compose.yml` / `docker/40-config-js.sh`（執行期注入 `API_BASE`）
+- `.github/workflows/deploy.yml`（CI/CD）
+- 註冊頁與簡訊登入頁（後端 `/users/signup`、`/users/login_sms` 已就緒，`api/auth.ts` 只接了 signup）
+- 自選股的新增 / 編輯 / 刪除（後端目前只開讀取，增刪走 LINE 聊天室）。
+  自選股表格的刪除鈕已照設計稿排版但停用，等後端開 API 再接
+- 頁首的通知與設定按鈕（設計稿有，後端無對應功能，目前停用）
+- 設計稿的「高估」狀態徽章：後端沒有這個欄位，要先定義判斷規則（目前只有
+  買入區間 / 觀察中 / 取價失敗三種，全部直接來自後端）
+- 頁尾的隱私權政策 / 服務條款 / 監管聲明 / 聯絡客服四個連結（目前指向 `#`）
+- `/stocks/twse`、`/stocks/tpex` 的其餘端點（排行、盤後定價、停資停券…，清單見兩支 api 檔開頭）
+
+`src/config.ts` 與 `public/config.js` 已經備妥執行期注入的前端側，補上容器啟動腳本即可運作。

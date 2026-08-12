@@ -1,0 +1,15 @@
+{
+  "short_name": "精準資本",
+  "name": "精準資本 - 台股資料分析平台",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#f8f9fa",
+  "background_color": "#f8f9fa"
+}

@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
+
+/* 永遠保留捲軸槽寬度：避免頁面在有/無垂直捲軸間切換時，置中內容水平位移造成的畫面抖動。
+   overflow-y: scroll 是跨瀏覽器最穩定的解法（scrollbar-gutter 在 root + overflow:visible 時
+   不一定生效，且舊版 Safari 不支援，故兩者並用為保險）。 */
+html {
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+  background-color: #f8f9fa;
+}
+
+body {
+  margin: 0;
+  background-color: #f8f9fa;
+  color: #191c1d;
+  font-family: 'Inter', 'Noto Sans TC', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 數字一律等寬對齊：報價表逐列比對時，比例字寬會讓小數點跳來跳去。
+   JetBrains Mono 本身等寬，這個 class 是給沒套 font-data-* 的地方用的。 */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #f3f4f5;
+}
+::-webkit-scrollbar-thumb {
+  background: #c4c6cd;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #74777d;
+}
+
+/* 側邊欄是深色底，捲軸沿用淺色會很突兀。 */
+.scrollbar-on-primary::-webkit-scrollbar-track {
+  background: #041627;
+}
+.scrollbar-on-primary::-webkit-scrollbar-thumb {
+  background: #1a2b3c;
+}
+.scrollbar-on-primary::-webkit-scrollbar-thumb:hover {
+  background: #38485a;
+}
+
+/* 隱藏 number input 的上下箭頭：報價／張數等欄位用鍵盤輸入即可，
+   箭頭會讓使用者以為可以微調到有意義的級距。 */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+}
