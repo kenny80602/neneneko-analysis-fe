@@ -255,14 +255,21 @@ export default function Xxx() {
 | 表頭 / 次要區塊 | `bg-surface-container-low` |
 | 輸入框 | `bg-surface-container` + `border-outline-variant` |
 | 主要文字 / 次要文字 / 更淡 | `text-on-surface` / `text-on-surface-variant` / `text-outline` |
-| 正向（漲、買入區間） | `secondary` |
-| 負向（跌、錯誤、警示） | `error` |
+| 上漲、買超（台股慣例漲紅） | `error` |
+| 下跌、賣超 | `secondary` |
+| 買入區間、正向狀態 | `secondary` |
+| 錯誤、警示（取價失敗、注意股、達門檻） | `error` |
 
 漲跌顏色不要自己判斷正負，用 `utils/format.ts` 的 `quoteColor(value)`（文字色）或
 `quoteBadge(value)`（膠囊徽章），它們同時處理了 null 與 0。
 
-> ⚠️ 目前依設計稿是**漲綠跌紅**（`secondary` / `error`），台股慣例則是漲紅跌綠。
-> 要改成台股慣例只需把 `quoteColor` / `quoteBadge` 裡的 secondary 與 error 對調，全站跟著變。
+> ⚠️ 同一個顏色角色身兼兩種語意，改的時候要分清楚：`error` 既是「漲」也是「錯誤／警示」，
+> `secondary` 既是「跌」也是「買入區間」。**只有漲跌要跟著翻**——錯誤訊息、取價失敗、
+> 注意股徽章、買區綠都不隨漲跌顏色改變。
+>
+> 全站採**台股慣例漲紅跌綠**（設計稿原本畫的是歐美的漲綠跌紅）。要換回設計稿的畫法，
+> 把 `quoteColor` / `quoteBadge` 裡的 error 與 secondary 對調，另外還有兩處是直接寫死的：
+> `PriceChart` 的 K 棒與成交量、市場概況的「上漲 / 下跌」家數卡。
 
 ### 字級
 

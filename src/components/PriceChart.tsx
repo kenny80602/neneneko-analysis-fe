@@ -228,9 +228,9 @@ export default function PriceChart({ quotes }: PriceChartProps) {
 
         {view.map((candle, index) => {
           // K 棒顏色照台股看盤慣例比「收盤 vs 開盤」，跟表格那種比昨收的漲跌是兩回事。
-          // 紅綠的對應同樣走設計稿的漲綠跌紅（見 utils/format.ts 的 quoteColor）。
+          // 紅綠的對應與 utils/format.ts 的 quoteColor 一致：漲紅跌綠。
           const rising = candle.close >= candle.open;
-          const color = rising ? 'fill-secondary stroke-secondary' : 'fill-error stroke-error';
+          const color = rising ? 'fill-error stroke-error' : 'fill-secondary stroke-secondary';
           const top = scale.y(Math.max(candle.open, candle.close));
           const bottom = scale.y(Math.min(candle.open, candle.close));
           const x = centerX(index);
@@ -306,7 +306,7 @@ export default function PriceChart({ quotes }: PriceChartProps) {
       </svg>
 
       <p className="font-body-sm text-body-sm text-on-surface-variant">
-        K 棒紅綠比的是收盤與開盤（漲綠跌紅），均線以目前顯示的週期計算——週線的 MA5 是五週均線。
+        K 棒紅綠比的是收盤與開盤（漲紅跌綠），均線以目前顯示的週期計算——週線的 MA5 是五週均線。
         當日無成交的交易日不畫，收盤價未還原權值，跨除權息日的均線與漲幅會有落差。
       </p>
     </section>
