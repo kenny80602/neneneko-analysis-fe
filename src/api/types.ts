@@ -321,6 +321,8 @@ export interface Holding {
   market: QuoteMarket;
   cost: number | null;
   shares: number | null;
+  // 這筆部位放在哪個券商帳戶。同一檔可以有好幾筆，分別對應不同帳戶；空字串代表沒指定。
+  account: string;
   // 近四季 EPS（TTM）。
   trailing_eps: number | null;
   // 預估整年 EPS。
@@ -370,6 +372,39 @@ export interface PortfolioRow {
   annualized_pe: number | null;
   // 這一列取得行情失敗的原因，成功時是空字串。
   error: string;
+}
+
+// 加入自選股的結果（POST /portfolio/holdings）。
+export interface AddHoldingResult {
+  // 正規化後的代號，不一定等於送出去的那串。
+  symbol: string;
+  // 股票簡稱，取自行情來源而不是使用者輸入。
+  name: string;
+  // 這一檔本來就在清單裡，這次沒有新增。不是錯誤，但畫面要跟「新增成功」講不一樣的話。
+  already_exists: boolean;
+}
+
+// 移除自選股的結果（DELETE /portfolio/holdings/:symbol）。
+export interface RemoveHoldingResult {
+  symbol: string;
+  // 實際刪掉幾列。同一檔可能有多列（分批買、成本不同），所以不一定是 1；
+  // 0 代表清單裡本來就沒有這一檔，後端不當成錯誤。
+  removed: number;
+}
+
+// 更新部位的結果（PUT /portfolio/positions/:id）。
+export interface UpdatePositionResult {
+  id: string;
+  cost: number | null;
+  shares: number | null;
+  account: string;
+}
+
+// 刪除單一筆部位的結果（DELETE /portfolio/positions/:id）。
+export interface RemovePositionResult {
+  id: string;
+  // 刪掉幾列（0 或 1）。0 代表那一筆本來就不在了，不是錯誤。
+  removed: number;
 }
 
 // ===== 大盤（/stocks/twse、/stocks/tpex）=====

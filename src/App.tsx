@@ -6,6 +6,7 @@ import Alert from './pages/Alert';
 import Announcements from './pages/Announcements';
 import DailyQuotes from './pages/DailyQuotes';
 import Dashboard from './pages/Dashboard';
+import Holdings from './pages/Holdings';
 import Institutional from './pages/Institutional';
 import Login from './pages/Login';
 import Margin from './pages/Margin';
@@ -32,6 +33,7 @@ function App() {
               {/* 市場：不綁股票代號 */}
               <Route path="/market" element={<Market />} />
               <Route path="/portfolio" element={<Portfolio />} />
+              <Route path="/holdings" element={<Holdings />} />
               <Route path="/quotes" element={<DailyQuotes />} />
               <Route path="/alert" element={<Alert />} />
 

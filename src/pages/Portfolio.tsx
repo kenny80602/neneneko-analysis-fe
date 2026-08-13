@@ -1,8 +1,13 @@
-import { useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
 import { getDailyQuotesByDate } from '../api/dailyQuote';
-import { getPortfolioValuation, notifyPortfolio } from '../api/portfolio';
+import {
+  addHolding,
+  getPortfolioValuation,
+  notifyPortfolio,
+  removeHolding,
+} from '../api/portfolio';
 import { apiErrorMessage } from '../api/request';
 import { DailyQuote, PortfolioRow } from '../api/types';
 import { useSymbol } from '../context/SymbolContext';
@@ -22,13 +27,20 @@ const PAGE_SIZE = 20;
 type SortKey = 'symbol' | 'price' | 'change';
 type SortDirection = 'asc' | 'desc';
 
-// 表格一列 = 試算結果（現價、損益、買入區間）+ 最近收盤（漲跌、成交量）。
+// 表格一列 = 一檔（不是一筆部位）+ 最近收盤（漲跌、成交量）。
+//
+// 這一頁是「觀察清單」，一檔就該只有一列。但 /portfolio/valuation 是逐列回的——
+// 持股表裡同一檔可以有好幾列（不同券商帳戶），所以那支會回好幾筆同代號的資料，
+// 直接拿來 render 會出現重複的列與重複的 React key。逐筆的檢視在「我的持股」。
+//
 // 漲跌與成交量走 GET /stocks/daily 一次要回整天的資料再依代號比對，
 // 不是逐檔打即時報價——自選股有幾十檔，逐檔打會直接撞上游的限流。
 interface Row extends PortfolioRow {
   changePercent: number | null;
   volume: number | null;
   quoteNote: string;
+  /** 這一檔在持股表裡佔幾筆部位。大於 1 代表分散在多個帳戶。 */
+  lots: number;
 }
 
 function toChangePercent(quote: DailyQuote | undefined): number | null {
@@ -49,19 +61,60 @@ export default function Portfolio() {
   const [page, setPage] = useState(0);
   const [notifying, setNotifying] = useState(false);
   const [notice, setNotice] = useState('');
+  const [newSymbol, setNewSymbol] = useState('');
+  const [adding, setAdding] = useState(false);
+  // 正在刪除的代號。用代號而不是布林值，才能只把那一列的按鈕轉成處理中。
+  const [removingSymbol, setRemovingSymbol] = useState('');
+  // 已經刪掉、但試算還沒重跑完的代號。
+  //
+  // 這一頁的列來自 /portfolio/valuation，那支要逐檔取行情，重跑一次要好幾秒。
+  // 不先把刪掉的列藏起來的話，使用者會盯著一列「已經刪掉卻還在」的資料好幾秒，
+  // 看起來像刪除失敗。
+  const [removedSymbols, setRemovedSymbols] = useState<string[]>([]);
+
+  // 新的試算結果一回來就不必再自己藏了，交還給後端的資料當唯一事實來源。
+  useEffect(() => {
+    setRemovedSymbols([]);
+  }, [valuation.data]);
 
   const rows = useMemo<Row[]>(() => {
     const quoteBySymbol = new Map((daily.data?.quotes ?? []).map((q) => [q.symbol, q]));
-    return (valuation.data ?? []).map((row) => {
-      const quote = quoteBySymbol.get(row.symbol);
-      return {
-        ...row,
+
+    // 先依代號併成一檔。行情欄位（現價、來源、回檔、買區）同一檔的每一筆都一樣，
+    // 取第一筆即可；成本相關的欄位則不一定，見下面 profitPercent 的處理。
+    const bySymbol = new Map<string, PortfolioRow[]>();
+    for (const row of valuation.data ?? []) {
+      if (removedSymbols.includes(row.symbol)) continue;
+      const list = bySymbol.get(row.symbol);
+      if (list) list.push(row);
+      else bySymbol.set(row.symbol, [row]);
+    }
+
+    const merged: Row[] = [];
+    bySymbol.forEach((list, symbol) => {
+      const first = list[0];
+      const quote = quoteBySymbol.get(symbol);
+      // 同一檔分散在多個帳戶、成本各不相同時，「這一檔的損益」沒有單一答案——
+      // 要加權就得有股數，而這一頁沒有。與其挑一筆當代表（那是錯的），
+      // 不如顯示破折號，逐筆的損益請看「我的持股」。
+      const sameCost = list.every((row) => row.cost === first.cost);
+      merged.push({
+        ...first,
+        lots: list.length,
+        profit_percent: sameCost ? first.profit_percent : null,
         changePercent: toChangePercent(quote),
         volume: quote?.traded ? quote.volume : null,
-        quoteNote: !quote ? '無收盤資料' : quote.ex_dividend ? '除權息' : !quote.traded ? '無成交' : '',
-      };
+        quoteNote: !quote
+          ? '無收盤資料'
+          : quote.ex_dividend
+          ? '除權息'
+          : !quote.traded
+          ? '無成交'
+          : '',
+      });
     });
-  }, [valuation.data, daily.data]);
+    return merged;
+  }, [valuation.data, daily.data, removedSymbols]);
 
   const visibleRows = useMemo(() => {
     const filtered = onlyBuyZone ? rows.filter((row) => row.in_buy_zone) : rows;
@@ -110,6 +163,59 @@ export default function Portfolio() {
   const reloadAll = () => {
     valuation.reload();
     daily.reload();
+  };
+
+  const handleAdd = async (event: FormEvent) => {
+    event.preventDefault();
+    const symbol = newSymbol.trim();
+    if (!symbol) return;
+    setAdding(true);
+    setNotice('');
+    try {
+      const result = await addHolding(symbol);
+      setNewSymbol('');
+      // 「本來就在清單裡」後端不當成錯誤，這裡要講不一樣的話，
+      // 否則使用者會以為剛剛那一次真的加進去了。
+      // ApiResponse.data 型別上可有可無（成功時後端一定會給），少了就照實說而不是假裝成功。
+      setNotice(
+        !result
+          ? '已送出，但後端沒有回傳結果，請重新整理確認'
+          : result.already_exists
+          ? `${result.symbol} ${result.name} 本來就在清單裡`
+          : `已加入 ${result.symbol} ${result.name}`
+      );
+      // 新增後要重跑試算才看得到這一檔的現價，清單本身不含行情。
+      valuation.reload();
+    } catch (err) {
+      setNotice(apiErrorMessage(err, '加入失敗，請確認代號'));
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleRemove = async (symbol: string, name: string, lots: number) => {
+    // 這一支刪的是「這一檔的全部列」，多帳戶時會一次清掉所有部位，要先講清楚。
+    // 只想刪其中一個帳戶的請到「我的持股」逐筆刪。
+    const warning =
+      lots > 1 ? `這一檔有 ${lots} 筆部位（不同帳戶），會全部一起移除。` : '';
+    if (!window.confirm(`確定要把 ${symbol} ${name} 從自選股移除？${warning}`)) return;
+    setRemovingSymbol(symbol);
+    setNotice('');
+    try {
+      const result = await removeHolding(symbol);
+      // removed 為 0 代表清單裡本來就沒有這一檔（別的地方剛刪過），不是失敗。
+      setNotice(
+        result && result.removed > 0
+          ? `已移除 ${symbol}（${result.removed} 列）`
+          : `${symbol} 已不在清單裡`
+      );
+      setRemovedSymbols((prev) => [...prev, symbol]);
+      valuation.reload();
+    } catch (err) {
+      setNotice(apiErrorMessage(err, '移除失敗'));
+    } finally {
+      setRemovingSymbol('');
+    }
   };
 
   const sortIcon = (key: SortKey) =>
@@ -161,6 +267,33 @@ export default function Portfolio() {
         }
       />
 
+      <form
+        onSubmit={handleAdd}
+        className="flex flex-wrap items-center gap-stack-sm bg-surface-container-lowest border border-outline-variant rounded-xl p-4 shadow-sm"
+      >
+        <label className="font-label-caps text-label-caps text-on-surface-variant uppercase">
+          新增自選股
+        </label>
+        <input
+          value={newSymbol}
+          onChange={(event) => setNewSymbol(event.target.value)}
+          placeholder="股票代號，例如 2330"
+          className="w-52 px-3 py-2 bg-surface-container border border-outline-variant rounded font-data-md text-data-md text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+        />
+        <button
+          type="submit"
+          disabled={!newSymbol.trim() || adding}
+          className="flex items-center justify-center gap-2 px-4 py-2 bg-primary rounded text-on-primary font-body-md text-body-md hover:bg-primary-container transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <span className="material-symbols-outlined text-[18px]">add</span>
+          {adding ? '加入中…' : '加入'}
+        </button>
+        {/* 這裡加進來的跟聊天室「/加 2330」一樣只有代號與名稱，成本欄會是空的。 */}
+        <span className="font-body-sm text-body-sm text-on-surface-variant">
+          代號會先向報價來源驗證；加進來的沒有成本，損益要等成本補上才算得出來。
+        </span>
+      </form>
+
       {valuation.loading && <PageState kind="loading" />}
       {valuation.error && (
         <PageState kind="error" message={valuation.error} onRetry={valuation.reload} />
@@ -169,7 +302,7 @@ export default function Portfolio() {
         <PageState
           kind="empty"
           message="自選股清單是空的"
-          hint="自選股的增刪目前走 LINE 聊天室，輸入「加 2330」即可加入。"
+          hint="用上面的欄位加一檔進來，或在 LINE 聊天室輸入「/加 2330」——兩邊是同一份清單。"
         />
       )}
 
@@ -254,6 +387,12 @@ export default function Portfolio() {
                         <span className="font-body-sm text-body-sm text-on-surface-variant truncate w-24 sm:w-auto">
                           {row.name}
                         </span>
+                        {/* 一檔只佔一列，分散在多帳戶時在這裡提示，逐筆明細看「我的持股」。 */}
+                        {row.lots > 1 && (
+                          <span className="font-body-sm text-body-sm text-outline">
+                            {row.lots} 筆部位
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="p-2 py-3 text-right">
@@ -318,14 +457,21 @@ export default function Portfolio() {
                       )}
                     </td>
                     <td className="p-2 pr-4 py-3 text-right">
-                      {/* 後端目前沒有刪除自選股的 API（增刪走 LINE），先停用而不是給一個按了會壞的按鈕。 */}
+                      {/* 整列的 onClick 會把這一檔設為目前選取的股票，
+                          不擋住事件的話按刪除會連帶切換代號。 */}
                       <button
                         type="button"
-                        disabled
-                        title="移除自選股請於 LINE 聊天室操作，後端尚無刪除 API"
-                        className="text-outline-variant cursor-not-allowed p-1 rounded"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleRemove(row.symbol, row.name, row.lots);
+                        }}
+                        disabled={removingSymbol === row.symbol}
+                        title={`從自選股移除 ${row.symbol}`}
+                        className="text-outline hover:text-error transition-colors p-1 rounded disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <span className="material-symbols-outlined text-[20px]">delete</span>
+                        <span className="material-symbols-outlined text-[20px]">
+                          {removingSymbol === row.symbol ? 'hourglass_empty' : 'delete'}
+                        </span>
                       </button>
                     </td>
                   </tr>
