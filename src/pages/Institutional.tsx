@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
+import TrendChart from '../components/TrendChart';
 import RangeFilter from '../components/RangeFilter';
 import SymbolSearch from '../components/SymbolSearch';
 import { getInstitutionalHistory } from '../api/institutional';
@@ -50,6 +51,27 @@ export default function Institutional() {
             message="沒有法人資料"
             hint="這檔可能不在自選股清單、區間內都是非交易日，或那幾天還沒收集。"
           />
+        )}
+
+        {items.length > 0 && (
+          <section className="flex flex-col gap-stack-md rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm p-4">
+            <h2 className="font-headline-md text-headline-md text-primary">三大法人買賣超走勢</h2>
+            {/* 上游單位是股，畫圖與表格一律換算成張，兩邊才對得起來。 */}
+            <TrendChart
+              mode="bar"
+              unit="張"
+              series={[
+                {
+                  label: '三大法人合計買賣超',
+                  points: [...items].reverse().map((row) => ({
+                    date: row.date,
+                    value: row.total_net / 1000,
+                  })),
+                },
+              ]}
+              footnote="紅柱是法人買超、綠柱是賣超（台股慣例漲紅跌綠）。合計是後端算好的，不含外資自營商（已計入自營商），所以三家分項相加不等於這根柱子。"
+            />
+          </section>
         )}
 
         {items.length > 0 && (

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
+import TrendChart from '../components/TrendChart';
 import RangeFilter from '../components/RangeFilter';
 import SymbolSearch from '../components/SymbolSearch';
 import { getValuationHistory } from '../api/valuation';
@@ -56,6 +57,39 @@ export default function Valuation() {
             message="沒有估值資料"
             hint="ETF 與剛上市的個股沒有本益比可算，本來就不在上游那兩份表裡；也可能是那幾天還沒收集。"
           />
+        )}
+
+        {items.length > 0 && (
+          <section className="flex flex-col gap-stack-md rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm p-4">
+            <h2 className="font-headline-md text-headline-md text-primary">估值走勢</h2>
+            {/* 後端給的是日期由新到舊，畫圖要由舊到新。 */}
+            <TrendChart
+              mode="line"
+              series={[
+                {
+                  label: '本益比（倍）',
+                  className: 'stroke-primary',
+                  points: [...items].reverse().map((v) => ({ date: v.date, value: v.pe_ratio })),
+                },
+                {
+                  label: '股價淨值比（倍）',
+                  className: 'stroke-on-primary-container',
+                  dash: '8 5',
+                  points: [...items].reverse().map((v) => ({ date: v.date, value: v.pb_ratio })),
+                },
+                {
+                  label: '殖利率（%）',
+                  className: 'stroke-outline',
+                  dash: '2 5',
+                  points: [...items].reverse().map((v) => ({
+                    date: v.date,
+                    value: v.dividend_yield,
+                  })),
+                },
+              ]}
+              footnote="三條線的單位不同（前兩條是倍數、殖利率是 %），共用一條軸只能看各自的走勢，不能互相比高低。線斷開代表那一天沒有這個值——公司虧損算不出本益比、沒配息就沒有殖利率，那是「沒有」不是 0。"
+            />
+          </section>
         )}
 
         {items.length > 0 && (

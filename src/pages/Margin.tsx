@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
+import TrendChart from '../components/TrendChart';
 import RangeFilter from '../components/RangeFilter';
 import SymbolSearch from '../components/SymbolSearch';
 import { getMarginHistory } from '../api/margin';
@@ -50,6 +51,57 @@ export default function Margin() {
             message="沒有融資融券資料"
             hint="沒有信用交易資格的個股（新上市未滿六個月、全額交割股等）本來就不在這份表裡；也可能是那幾天還沒收集。"
           />
+        )}
+
+        {balances.length > 0 && (
+          <section className="flex flex-col gap-stack-md rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm p-4">
+            <h2 className="font-headline-md text-headline-md text-primary">餘額走勢</h2>
+            {/* 後端給的是日期由新到舊，畫圖要由舊到新，所以整個反過來。 */}
+            <TrendChart
+              mode="line"
+              unit="張"
+              series={[
+                {
+                  label: '融資餘額',
+                  className: 'stroke-quote-up',
+                  points: [...balances].reverse().map((b) => ({
+                    date: b.date,
+                    value: b.margin_balance,
+                  })),
+                },
+                {
+                  label: '融券餘額',
+                  className: 'stroke-quote-down',
+                  dash: '8 5',
+                  points: [...balances].reverse().map((b) => ({
+                    date: b.date,
+                    value: b.short_balance,
+                  })),
+                },
+              ]}
+              footnote="融資餘額往上代表散戶用槓桿加碼，融券往上代表看空的部位變多。兩條線的量級常常差很多（融券通常小得多），同軸相比只看得出各自的走勢，不要拿高低直接互比。"
+            />
+          </section>
+        )}
+
+        {balances.length > 0 && (
+          <section className="flex flex-col gap-stack-md rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm p-4">
+            <h2 className="font-headline-md text-headline-md text-primary">每日增減</h2>
+            <TrendChart
+              mode="bar"
+              unit="張"
+              series={[
+                {
+                  label: '融資增減',
+                  points: [...balances].reverse().map((b) => ({
+                    date: b.date,
+                    value: b.margin_change,
+                  })),
+                },
+              ]}
+              footnote="融資增減＝當日融資餘額 − 前一日。紅柱是散戶加碼、綠柱是減碼（台股慣例漲紅跌綠）。股價漲但融資大減，通常代表籌碼從散戶手上換到法人手上。"
+            />
+          </section>
         )}
 
         {balances.length > 0 && (

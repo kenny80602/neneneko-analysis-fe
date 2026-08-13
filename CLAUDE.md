@@ -348,6 +348,13 @@ BROWSER=none npm start        # http://localhost:3000
 
 ---
 
+## 已知的執行期限制
+
+- **融資融券與估值指標畫不出走勢圖**。上游取數 `GetMarginBalances(ctx)` / `GetValuations(ctx)`
+  不吃日期，只收得到當天，也沒有回補指令，所以那兩頁的圖只有一個點（畫面會直接說明）。
+  要補歷史得先在 TWSE/TPEx service 介面加上吃日期的變體，再寫兩支 backfill 收集器。
+  收盤行情與個股三大法人則有回補：`cmd/notify -backfill-quotes=N`（月）、`-backfill-tradings=N`（天）。
+
 ## 尚未建立的東西
 
 以下還沒做，需要時參考 `minecraft-server-fe` 的對應檔案：
