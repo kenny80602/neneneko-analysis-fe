@@ -354,7 +354,8 @@ BROWSER=none npm start        # http://localhost:3000
 
 - `Dockerfile` / `nginx.conf` / `docker-compose.yml` / `docker/40-config-js.sh`（執行期注入 `API_BASE`）
 - `.github/workflows/deploy.yml`（CI/CD）
-- 註冊頁與簡訊登入頁（後端 `/users/signup`、`/users/login_sms` 已就緒，`api/auth.ts` 只接了 signup）
+- 註冊頁（後端 `/users/signup` 已就緒，`api/auth.ts` 也接了，只差畫面）。
+  簡訊登入已完成，在登入頁用分頁切換
 - 自選股的新增 / 編輯 / 刪除（後端目前只開讀取，增刪走 LINE 聊天室）。
   自選股表格的刪除鈕已照設計稿排版但停用，等後端開 API 再接
 - 頁首的通知與設定按鈕（設計稿有，後端無對應功能，目前停用）

@@ -21,6 +21,28 @@ export const signup = (email: string, password: string, confirmPassword: string)
     })
     .then((res) => res.data);
 
+// 簡訊登入的重送間隔（秒）。後端 set_code.lua 只在驗證碼 ttl < 540 時才換新的
+// （有效期 600 秒），所以送出後 60 秒內再送一定會被判定為過於頻繁而回 429。
+// 畫面上的倒數就是照這個數字走，讓使用者知道還要等多久而不是按了沒反應。
+export const SMS_CODE_RESEND_SECONDS = 60;
+
+// 簡訊驗證碼有效期（分鐘），同樣來自 set_code.lua 的 expire 600。
+export const SMS_CODE_VALID_MINUTES = 10;
+
+// 送出簡訊驗證碼。同一組門號 60 秒內重送會回 429。
+// ⚠️ 會真的發簡訊並產生費用，畫面上務必用倒數擋住連點。
+export const sendLoginSMSCode = (phone: string) =>
+  request
+    .post<ApiResponse<null>>('/users/login_sms/code/send', { phone })
+    .then((res) => res.data);
+
+// 簡訊登入。這個門號沒註冊過時後端會直接建帳號（FindOrCreate），不需要先註冊。
+// 驗證碼最多讓使用者輸錯三次，超過就要重新發送。
+export const loginSMS = (phone: string, code: string) =>
+  request
+    .post<ApiResponse<null>>('/users/login_sms', { phone, code })
+    .then((res) => res.data);
+
 // LINE Login 的進入點。這支不是用 axios 呼叫，而是把瀏覽器整個導過去——
 // 後端會先種下 state cookie 再 302 到 LINE 的授權頁。
 //
