@@ -407,6 +407,48 @@ export interface RemovePositionResult {
   removed: number;
 }
 
+// ===== LINE 推播（/line）=====
+
+// 推播對象的種類。群組 C 開頭／聊天室 R 開頭／個人 U 開頭。
+export type LineTargetType = 'group' | 'room' | 'user';
+
+// 一個推播對象（後端 LineTargetVo）。
+//
+// LINE 的事件不帶群組名稱，所以清單上只有 ID——認不認得出是哪個群靠 note 這個人工標記。
+export interface LineTarget {
+  // 填進後端的 LINE_TARGET_ID 就會推播到這個對象。
+  target_id: string;
+  target_type: LineTargetType;
+  // 最後一次見到這個對象時是什麼事件。
+  last_event_type: string;
+  // 累計出現次數，用來分辨還在用的群跟早就退掉的群。
+  event_count: number;
+  // 人工標記，沒標時是空字串。
+  note: string;
+  // 皆為 RFC3339；後端零值時給空字串。
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+// 本月推播額度（後端 LineQuotaVo）。
+//
+// 三個布林旗標的組合要一起看，不能只讀 remaining：
+// unlimited 為 true 時 value / remaining 都沒有意義（後端就是填 0），
+// 這時顯示剩餘則數會變成「還剩 0 則」，跟事實正好相反。
+export interface LineQuota {
+  // 這個帳號有沒有月上限。免費方案是 true。
+  limited: boolean;
+  // 本月上限則數。limited 為 false 時是 0。
+  value: number;
+  // 本月已使用的計費訊息則數。
+  // 只算主動推播（push／multicast／broadcast／narrowcast）；聊天室指令的回覆不計費。
+  used: number;
+  // 還能發幾則。limited 為 false 時是 0，那時要看 unlimited 而不是這一欄。
+  remaining: number;
+  // 無上限方案。為 true 時 value／remaining 都沒有意義。
+  unlimited: boolean;
+}
+
 // ===== 大盤（/stocks/twse、/stocks/tpex）=====
 //
 // 這兩組是「即時打交易所」的整包資料，不落地且受上游限流影響。

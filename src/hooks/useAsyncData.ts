@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { apiErrorMessage } from '../api/request';
+import { apiErrorCode, apiErrorMessage } from '../api/request';
 
 interface UseAsyncDataOptions {
   /**
@@ -17,6 +17,11 @@ interface UseAsyncDataResult<T> {
   loading: boolean;
   /** 可直接顯示的錯誤訊息，成功時為空字串。 */
   error: string;
+  /**
+   * 後端的錯誤碼（internal/pkg/errcode），成功或非後端錯誤時是 0。
+   * 給「要不要提供重試」這類分流用，一般顯示訊息用 error 就好。
+   */
+  errorCode: number;
   /** 手動重抓（例如按下重新整理、送出查詢條件後）。 */
   reload: () => void;
 }
@@ -39,6 +44,7 @@ export function useAsyncData<T>(
   const [data, setData] = useState<T | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [errorCode, setErrorCode] = useState(0);
 
   // 每次請求配一個序號，只有最新那次的結果可以寫進 state：
   // 快速切換代號時，先發的請求可能後回來，不擋的話畫面會顯示上一檔的資料。
@@ -65,9 +71,11 @@ export function useAsyncData<T>(
       if (!mountedRef.current || requestId !== requestIdRef.current) return;
       setData(result);
       setError('');
+      setErrorCode(0);
     } catch (err) {
       if (!mountedRef.current || requestId !== requestIdRef.current) return;
       setError(apiErrorMessage(err, '載入失敗，請稍後再試'));
+      setErrorCode(apiErrorCode(err));
     } finally {
       if (mountedRef.current && requestId === requestIdRef.current) setLoading(false);
     }
@@ -79,6 +87,7 @@ export function useAsyncData<T>(
       requestIdRef.current++;
       setData(undefined);
       setError('');
+      setErrorCode(0);
       setLoading(false);
       return;
     }
@@ -98,5 +107,5 @@ export function useAsyncData<T>(
     run(true);
   }, [run]);
 
-  return { data, loading, error, reload };
+  return { data, loading, error, errorCode, reload };
 }

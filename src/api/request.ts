@@ -77,6 +77,18 @@ export function apiErrorMessage(err: unknown, fallback = '操作失敗，請稍�
   return res.data?.msg || fallback;
 }
 
+/**
+ * 後端回的錯誤碼（對應 internal/pkg/errcode）。連不上或對方沒給 code 時回 0。
+ *
+ * 用途是分辨「重試有用」與「重試永遠沒用」：例如 LINE 沒設定 channel token
+ * 屬於部署設定問題，畫面上不該顯示成紅色錯誤再配一顆重試鈕。
+ * 只在需要分流的地方用，一般顯示錯誤還是走 apiErrorMessage。
+ */
+export function apiErrorCode(err: unknown): number {
+  const res = (err as AxiosError<ApiResponse<unknown>>)?.response;
+  return res?.data?.code ?? 0;
+}
+
 // 單一進行中的換發，避免多個 401 同時觸發多次 refresh。
 // refresh token 是一次性的（後端以 Redis 記 ssid），併發換發會讓後面的直接失效。
 let refreshPromise: Promise<unknown> | null = null;

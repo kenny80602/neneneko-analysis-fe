@@ -2,11 +2,18 @@ import { useState } from 'react';
 import LineMessagePreview from '../components/LineMessagePreview';
 import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
+import { ERR_LINE_NOT_CONFIGURED, getLineQuota, getLineTargets } from '../api/line';
 import { notifyPortfolio, getPortfolioValuation } from '../api/portfolio';
 import { apiErrorMessage } from '../api/request';
-import { PortfolioRow } from '../api/types';
+import { LineTargetType, PortfolioRow } from '../api/types';
 import { useAsyncData } from '../hooks/useAsyncData';
-import { DASH, formatNumber, formatPrice, formatSignedPercent } from '../utils/format';
+import {
+  DASH,
+  formatDateTime,
+  formatNumber,
+  formatPrice,
+  formatSignedPercent,
+} from '../utils/format';
 
 // 訊息上哪些數字要標紅的門檻。這兩個值是後端的（ioc/portfolio.go 的
 // defaultPullbackAlertPercent／defaultPeAlertThreshold），而且是可設定的，
@@ -29,12 +36,30 @@ function subLabel(text: string) {
   return <span className="block font-body-sm text-body-sm text-outline normal-case">{text}</span>;
 }
 
+/** 推播對象種類的顯示文字。ID 的開頭字母也對應同一件事（C／R／U）。 */
+function targetTypeLabel(type: LineTargetType | string): string {
+  switch (type) {
+    case 'group':
+      return '群組';
+    case 'room':
+      return '聊天室';
+    case 'user':
+      return '個人';
+    default:
+      return type || DASH;
+  }
+}
+
 export default function Alert() {
   const valuation = useAsyncData(() => getPortfolioValuation(), []);
+  // 額度與對象都是唯讀且不計費，跟試算並行抓即可，不必等試算回來。
+  const quota = useAsyncData(() => getLineQuota(), []);
+  const targets = useAsyncData(() => getLineTargets(), []);
   const [notifying, setNotifying] = useState(false);
   const [notice, setNotice] = useState('');
 
   const rows = valuation.data ?? [];
+  const targetRows = targets.data ?? [];
 
   const handleNotify = async () => {
     // 推播會真的送出 LINE 訊息並吃掉計費額度（按送達人數計），所以要二次確認。
@@ -46,6 +71,8 @@ export default function Alert() {
     try {
       const pushed = await notifyPortfolio('FLEX');
       setNotice(`已推播 ${pushed.length} 檔`);
+      // 剛吃掉的額度要立刻反映，否則畫面上的剩餘則數會停在推播前的數字。
+      quota.reload();
     } catch (err) {
       setNotice(apiErrorMessage(err, '推播失敗'));
     } finally {
@@ -113,6 +140,81 @@ export default function Alert() {
           破折號代表那個值算不出來（沒填成本、公司虧損、EPS 抓不到），不是 0——
           成本填 0 會讓損益變成 -100%。
         </p>
+
+        {/*
+          額度放在按鈕上方而不是頁尾：推播是不可逆且計費的動作，
+          「還剩幾則」要在按下去之前就看得到。
+        */}
+        <section className="rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm p-4 flex flex-col gap-stack-sm">
+          <div className="flex items-center gap-2 text-on-surface-variant">
+            <span className="material-symbols-outlined text-[18px]">data_usage</span>
+            <span className="font-label-caps text-label-caps uppercase">本月 LINE 推播額度</span>
+          </div>
+
+          {quota.loading && (
+            <p className="font-body-sm text-body-sm text-on-surface-variant">額度查詢中…</p>
+          )}
+          {/*
+            「這個環境沒接 LINE」與「查詢失敗」要分開講。前者是部署設定，
+            重試永遠不會成功，配一顆重試鈕只會讓人一直按；後者才值得重試。
+          */}
+          {quota.errorCode === ERR_LINE_NOT_CONFIGURED && (
+            <p className="font-body-sm text-body-sm text-on-surface-variant">
+              這個環境沒有設定 LINE Messaging（缺 channel access token），所以查不到額度，
+              推播也不會真的送出。本機開發用 <code>.env.test.json</code> 時是正常現象；
+              要看真實額度請改用有設定 LINE 的環境。
+            </p>
+          )}
+          {quota.error && quota.errorCode !== ERR_LINE_NOT_CONFIGURED && (
+            <p className="font-body-sm text-body-sm text-error">
+              額度查詢失敗：{quota.error}
+              <button
+                type="button"
+                onClick={quota.reload}
+                className="ml-2 underline hover:text-on-surface"
+              >
+                重試
+              </button>
+            </p>
+          )}
+          {!quota.loading && !quota.error && quota.data && (
+            <>
+              {quota.data.unlimited ? (
+                <p className="font-data-lg text-data-lg text-on-surface">無上限方案</p>
+              ) : (
+                <>
+                  <p
+                    className={`font-data-lg text-data-lg ${
+                      quota.data.remaining === 0 ? 'text-error' : 'text-on-surface'
+                    }`}
+                  >
+                    剩餘 {formatNumber(quota.data.remaining)} 則
+                    <span className="ml-2 font-body-md text-body-md text-on-surface-variant">
+                      已用 {formatNumber(quota.data.used)} / {formatNumber(quota.data.value)}
+                    </span>
+                  </p>
+                  <div className="h-1.5 w-full rounded-[9999px] bg-surface-container overflow-hidden">
+                    <div
+                      className={quota.data.remaining === 0 ? 'h-full bg-error' : 'h-full bg-primary'}
+                      style={{
+                        // value 為 0 時除法會變成 Infinity／NaN，寬度算不出來就當作滿格。
+                        width: `${
+                          quota.data.value > 0
+                            ? Math.min(100, (quota.data.used / quota.data.value) * 100)
+                            : 100
+                        }%`,
+                      }}
+                    />
+                  </div>
+                </>
+              )}
+              <p className="font-body-sm text-body-sm text-on-surface-variant">
+                只計主動推播，聊天室指令的回覆不計費。一次推播按送達人數計——推到 5 人群組就扣 5
+                則，所以剩餘則數不等於還能按幾次。額度每月 1 號重置。
+              </p>
+            </>
+          )}
+        </section>
 
         {valuation.loading && <PageState kind="loading" />}
         {valuation.error && (
@@ -287,6 +389,98 @@ export default function Alert() {
             />
           </section>
         )}
+
+        <section className="flex flex-col gap-stack-md">
+          <h2 className="font-headline-md text-headline-md text-primary">LINE 推播對象</h2>
+          {/*
+            這是「bot 見過誰」而不是「這次會推給誰」：實際收訊的對象是後端的
+            LINE_TARGET_ID 環境變數，只有一個，而且 API 沒有把它吐出來，
+            所以前端無法標示清單裡哪一列是現行設定。標題與說明都要寫清楚，
+            不然會被讀成「以下對象都會收到」。
+          */}
+          <p className="font-body-sm text-body-sm text-on-surface-variant">
+            bot 收過事件的所有對象，最近有動靜的排前面。實際推播只會送到後端設定的那一個
+            （環境變數 LINE_TARGET_ID），這份清單是用來查對象 ID 的，不代表以下每一個都會收到。
+            群組 ID 在 LINE 後台查不到，唯一取得方式就是把 bot 邀進群組後讓它收到一則事件。
+          </p>
+
+          {targets.loading && <PageState kind="loading" />}
+          {targets.error && (
+            <PageState kind="error" message={targets.error} onRetry={targets.reload} />
+          )}
+          {!targets.loading && !targets.error && targetRows.length === 0 && (
+            <PageState
+              kind="empty"
+              message="還沒有任何推播對象"
+              hint="代表 bot 從來沒收過事件：還沒被邀進任何群組，或被邀進去後沒有人在群裡說過話。"
+            />
+          )}
+
+          {targetRows.length > 0 && (
+            <div className="overflow-x-auto rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm">
+              <table className="w-full border-collapse">
+                <thead className="bg-surface-container-low border-b border-outline-variant">
+                  <tr>
+                    <th className="p-2 pl-4 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-left">
+                      對象 ID
+                    </th>
+                    <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-left">
+                      種類
+                    </th>
+                    <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-left">
+                      備註
+                    </th>
+                    <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-left">
+                      最後事件
+                    </th>
+                    <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-right">
+                      累計次數
+                    </th>
+                    <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-right">
+                      首次見到
+                    </th>
+                    <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-right">
+                      最後見到
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-outline-variant/50">
+                  {targetRows.map((target) => (
+                    <tr
+                      key={target.target_id}
+                      className="hover:bg-surface-container-low/50 transition-colors"
+                    >
+                      <td className="p-2 pl-4 py-3 font-data-md text-data-md text-on-surface whitespace-nowrap">
+                        {target.target_id}
+                      </td>
+                      <td className="p-2 py-3 font-body-md text-body-md text-on-surface-variant whitespace-nowrap">
+                        {targetTypeLabel(target.target_type)}
+                      </td>
+                      {/* 沒標註的群只有一串 ID，認不出是哪個群，這裡明講而不是留白。 */}
+                      <td className="p-2 py-3 font-body-md text-body-md text-on-surface-variant">
+                        {target.note || (
+                          <span className="text-outline">未標註</span>
+                        )}
+                      </td>
+                      <td className="p-2 py-3 font-body-md text-body-md text-on-surface-variant whitespace-nowrap">
+                        {target.last_event_type || DASH}
+                      </td>
+                      <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface-variant">
+                        {formatNumber(target.event_count)}
+                      </td>
+                      <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface-variant whitespace-nowrap">
+                        {formatDateTime(target.first_seen_at)}
+                      </td>
+                      <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface-variant whitespace-nowrap">
+                        {formatDateTime(target.last_seen_at)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
       </div>
     </>
   );
