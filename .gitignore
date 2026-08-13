@@ -18,6 +18,11 @@
 # code reviewer workflow artifacts
 /.workflow
 
+# 推內網 registry 的 build workflow。裡面有內網位址與 registry 帳號，
+# 這個 repo 是公開的，進版控等於把內網拓樸送出去。
+# 需要它的機器自己保留一份即可；改成部署 repo 之後再考慮收進來。
+/.github/workflows/deploy.yml
+
 # misc
 .DS_Store
 .env
