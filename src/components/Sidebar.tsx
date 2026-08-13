@@ -6,6 +6,7 @@ const marketNavItems = [
   { icon: 'star', label: '自選股', path: '/portfolio' },
   { icon: 'account_balance_wallet', label: '我的持股', path: '/holdings' },
   { icon: 'table_rows', label: '每日收盤', path: '/quotes' },
+  { icon: 'school', label: '模擬買賣', path: '/paper' },
   { icon: 'notifications_active', label: '多喵 Alert', path: '/alert' },
 ];
 

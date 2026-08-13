@@ -11,6 +11,7 @@ import Institutional from './pages/Institutional';
 import Login from './pages/Login';
 import Margin from './pages/Margin';
 import Market from './pages/Market';
+import PaperTrading from './pages/PaperTrading';
 import Portfolio from './pages/Portfolio';
 import Revenue from './pages/Revenue';
 import Valuation from './pages/Valuation';
@@ -35,6 +36,7 @@ function App() {
               <Route path="/portfolio" element={<Portfolio />} />
               <Route path="/holdings" element={<Holdings />} />
               <Route path="/quotes" element={<DailyQuotes />} />
+              <Route path="/paper" element={<PaperTrading />} />
               <Route path="/alert" element={<Alert />} />
 
               {/* 個股：共用 SymbolContext 的代號 */}
