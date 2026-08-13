@@ -1,0 +1,87 @@
+# 建置並部署到 GitHub Pages。
+#
+# 與同目錄的 deploy.yml 併存但用途完全不同：那支是 build image 推內網 registry
+# （跑在 self-hosted runner），這支是把靜態檔送上 Pages（跑在 GitHub 的 ubuntu runner）。
+# 檔名刻意不叫 deploy.yml 就是為了不蓋掉那支。
+#
+# 首次使用要先開啟 Pages：
+#   GitHub → Settings → Pages → Source 選「GitHub Actions」
+#
+# 後端位址不寫死在程式碼裡，改由 repository variable 注入：
+#   GitHub → Settings → Secrets and variables → Actions → Variables → New repository variable
+#   Name:  REACT_APP_API_BASE
+#   Value: https://<你的後端網址>
+# 改完要重跑一次這個 workflow，新的值才會進到 bundle
+# （CRA 的環境變數是 build 期烤進去的，不是執行期讀的）。
+#
+# ⚠️ 這個值會明文出現在 bundle 裡，任何人開 DevTools 都看得到，所以放 Variables 不要放 Secrets。
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # 只改 variable 沒有 push 時，用這個手動觸發重新部署
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同時只跑一個部署；排隊中的舊的直接取消，但不中斷進行中的那個
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      # react-scripts@5 的 peer 仍鎖 typescript ^3||^4，本專案用 TS 5，
+      # 不加 --legacy-peer-deps 會 ERESOLVE 失敗
+      - name: 安裝依賴
+        run: npm ci --legacy-peer-deps
+
+      - name: 型別檢查
+        run: npx tsc --noEmit
+
+      - name: 建置
+        env:
+          # 沒設 variable 時留空，讓 src/config.ts 退回它自己的預設值，
+          # 而不是把空字串當成合法的 API 位址
+          REACT_APP_API_BASE: ${{ vars.REACT_APP_API_BASE }}
+          # 子路徑只在 CI 設，不寫進 package.json 的 homepage——
+          # homepage 連 dev server 也會套用，本機就得改開
+          # localhost:3000/stock-market-analysis-fe/，沒必要為了部署弄壞本機開發
+          PUBLIC_URL: /${{ github.event.repository.name }}
+          # CRA 會把 lint 警告當錯誤擋掉 CI，這裡放行
+          CI: false
+        run: npm run build
+
+      # GitHub Pages 沒有 SPA 的 rewrite，直接開 /dashboard 這種深層網址會吃 404。
+      # 把 index.html 複製成 404.html，讓 Pages 回這一份，React Router 就能自己接手路由
+      - name: 產生 SPA fallback
+        run: cp build/index.html build/404.html
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
