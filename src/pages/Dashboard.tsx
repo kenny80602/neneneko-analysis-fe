@@ -8,7 +8,7 @@ import { getDailyQuoteHistory } from '../api/dailyQuote';
 import { getInstitutionalHistory } from '../api/institutional';
 import { getPortfolioValuation } from '../api/portfolio';
 import { getRealtimeQuote } from '../api/realtimeQuote';
-import { getRevenueHistory } from '../api/revenue';
+import { getIndustryPeers, getRevenueHistory } from '../api/revenue';
 import { getWarningHistory } from '../api/warning';
 import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
@@ -35,6 +35,8 @@ const CHART_LIMIT = 500;
 // 注意股回看的筆數。多數個股一筆都沒有，這個上限只是防呆。
 const WARNING_LIMIT = 100;
 const ANNOUNCEMENT_LIMIT = 5;
+// 同產業個股最多列幾名。半導體業有兩百多家，全列出來沒人會捲到底。
+const PEER_LIMIT = 20;
 // 「近 5 日漲幅」用的間隔（5 個交易日 ≈ 一週）。
 const RECENT_SPAN = 5;
 
@@ -49,7 +51,7 @@ function formatPe(value: number | null | undefined): string {
 }
 
 export default function Dashboard() {
-  const { symbol } = useSymbol();
+  const { symbol, setSymbol } = useSymbol();
   const enabled = !!symbol;
 
   const quote = useAsyncData(() => getRealtimeQuote(symbol), [symbol], {
@@ -83,6 +85,8 @@ export default function Dashboard() {
   // 試算是整份自選股一起回、不吃代號，所以 deps 留空只抓一次，換代號不必重打。
   // 但它會逐檔去取即時行情，沒選股就沒人要看，別讓它白打一輪上游。
   const valuation = useAsyncData(() => getPortfolioValuation(), [], { enabled });
+  // 同產業比較。資料來自全市場的月營收，跟自選股無關，任何一檔都查得到。
+  const peers = useAsyncData(() => getIndustryPeers(symbol), [symbol], { enabled });
   const row = useMemo(
     () => valuation.data?.find((item) => item.symbol === symbol),
     [valuation.data, symbol]
@@ -146,21 +150,27 @@ export default function Dashboard() {
 
         {symbol && quote.loading && !quote.data && <PageState kind="loading" />}
 
-        {symbol && quote.error && (
-          <PageState kind="error" message={quote.error} onRetry={quote.reload} />
-        )}
-
-        {symbol && quote.data && (
+        {/*
+          即時報價失敗不整頁擋掉：這一頁只有最上面那張卡吃即時報價，
+          K 線、三大法人、月營收、注意股與重大訊息全部來自已落地的資料，
+          跟證交所 MIS 的死活無關。MIS 本來就常態性不穩（收盤後、限流），
+          為了它把八成拿得到的內容一起藏起來，換來的是一頁「看起來壞掉」的畫面。
+          報價的錯誤改在它自己那張卡裡就地交代。
+        */}
+        {symbol && (
           <>
             <section className="grid grid-cols-1 lg:grid-cols-3 gap-stack-lg">
               <div className="lg:col-span-2 flex flex-col gap-stack-lg">
                 <div className={`${cardClass} p-6 flex flex-wrap justify-between gap-stack-lg`}>
                   <div>
                     <h2 className="font-display text-display text-primary">
-                      {symbol} {quote.data.name}
+                      {/* 報價掛掉時名稱改用月營收那支帶回來的，兩邊都沒有就只顯示代號。 */}
+                      {symbol} {quote.data?.name ?? profile.data?.name ?? ''}
                     </h2>
                     <div className="flex flex-wrap items-center gap-2 mt-2">
-                      <span className={chipClass}>{marketLabel(quote.data.market)}</span>
+                      <span className={chipClass}>
+                        {marketLabel(quote.data?.market ?? profile.data?.market)}
+                      </span>
                       {profile.data?.industry && (
                         <span className={chipClass}>{profile.data.industry}</span>
                       )}
@@ -182,21 +192,40 @@ export default function Dashboard() {
                       <span className="font-label-caps text-label-caps uppercase text-on-surface-variant">
                         現價
                       </span>
-                      <span className={`font-data-lg text-display ${quoteColor(quote.data.change)}`}>
-                        {quote.data.price == null ? '暫無報價' : formatPrice(quote.data.price)}
+                      <span className={`font-data-lg text-display ${quoteColor(quote.data?.change)}`}>
+                        {/*
+                          三種狀態要分清楚：報價服務掛了（取價失敗）、
+                          服務有回但這檔沒價（暫無報價）、有價。
+                        */}
+                        {quote.error
+                          ? '取價失敗'
+                          : quote.data?.price == null
+                          ? '暫無報價'
+                          : formatPrice(quote.data.price)}
                       </span>
-                      <span className="font-body-sm text-body-sm text-outline">
-                        {priceSourceLabel(quote.data.price_source)} ·{' '}
-                        {formatDateTime(quote.data.price_as_of)}
-                      </span>
+                      {quote.error ? (
+                        <button
+                          type="button"
+                          onClick={quote.reload}
+                          className="font-body-sm text-body-sm text-error text-left hover:underline"
+                          title={quote.error}
+                        >
+                          即時報價暫時取不到，點此重試（其餘區塊為已落地的資料，不受影響）
+                        </button>
+                      ) : (
+                        <span className="font-body-sm text-body-sm text-outline">
+                          {priceSourceLabel(quote.data?.price_source)} ·{' '}
+                          {formatDateTime(quote.data?.price_as_of)}
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex flex-col gap-1 pl-6 border-l border-outline-variant">
                       <div className="flex items-center justify-between gap-4">
                         <span className="font-body-sm text-body-sm text-on-surface-variant">漲跌</span>
-                        <span className={`font-data-md text-data-md ${quoteColor(quote.data.change)}`}>
-                          {formatSigned(quote.data.change)}（
-                          {formatSignedPercent(quote.data.change_percent)}）
+                        <span className={`font-data-md text-data-md ${quoteColor(quote.data?.change)}`}>
+                          {formatSigned(quote.data?.change)}（
+                          {formatSignedPercent(quote.data?.change_percent)}）
                         </span>
                       </div>
                       <div className="flex items-center justify-between gap-4">
@@ -302,17 +331,31 @@ export default function Dashboard() {
                     {
                       label: '累積成交量',
                       // 即時報價的成交量上游沒標單位，不換算成張，原樣顯示。
-                      value: quote.data.traded ? formatNumber(quote.data.volume) : '尚無成交',
+                      // 報價整支掛掉時是「不知道」而不是「尚無成交」，兩者差很多。
+                      value: !quote.data
+                        ? DASH
+                        : quote.data.traded
+                        ? formatNumber(quote.data.volume)
+                        : '尚無成交',
                     },
                     {
                       label: '今日區間',
                       value:
-                        quote.data.low == null || quote.data.high == null
+                        quote.data?.low == null || quote.data?.high == null
                           ? DASH
                           : `${formatPrice(quote.data.low)} – ${formatPrice(quote.data.high)}`,
                     },
-                    { label: '昨收', value: formatPrice(quote.data.previous_close) },
+                    { label: '昨收', value: formatPrice(quote.data?.previous_close) },
                     { label: '半年最高', value: formatPrice(row?.recent_high) },
+                    {
+                      // 產業排名依「最新月份的單月營收」，那是唯一涵蓋全市場的數字。
+                      // 排名 0 代表這一檔那個月沒公告營收，不是「第 0 名」。
+                      label: '產業排名',
+                      value:
+                        peers.data && peers.data.rank > 0
+                          ? `#${peers.data.rank} / ${peers.data.total} ${peers.data.industry}`
+                          : DASH,
+                    },
                     {
                       // 只有上市有累計次數，上櫃固定是 null——那是「沒公布」不是「沒被列過」。
                       label: '注意股累計',
@@ -413,6 +456,144 @@ export default function Dashboard() {
               <PageState kind="error" message={history.error} onRetry={history.reload} />
             )}
             {!history.loading && !history.error && <PriceChart quotes={history.data?.quotes ?? []} />}
+
+            <section className={`${cardClass} p-6 flex flex-col gap-stack-md`}>
+              <h3 className="font-headline-md text-headline-md text-primary flex items-center gap-2">
+                <span className="material-symbols-outlined text-[20px]">group</span>
+                同產業個股
+                {peers.data?.industry && (
+                  <span className={chipClass}>{peers.data.industry}</span>
+                )}
+              </h3>
+
+              {/*
+                講清楚這是「官方產業別」而不是「主題族群」，否則使用者會問
+                為什麼同樣做散熱的高力、奇鋐、雙鴻沒有排在一起——它們分屬三個產業。
+              */}
+              <p className="font-body-sm text-body-sm text-on-surface-variant">
+                依證交所的官方產業分類，用最新月份的單月營收排名。
+                <span className="text-on-surface">這不是「散熱」「AI」那種主題族群</span>
+                ——主題族群是人工整理的選股清單，免費資料源沒有，同樣做散熱的公司常常分屬不同產業。
+                排名用營收而不是股價或本益比，是因為月營收是唯一涵蓋全市場的數字；
+                收盤價與估值只收自選股那幾檔，拿來排名會變成「自選股內排名」。
+                金額單位為新台幣千元。
+              </p>
+
+              {peers.loading && (
+                <p className="font-body-sm text-body-sm text-on-surface-variant">載入中…</p>
+              )}
+              {peers.error && (
+                <p className="font-body-sm text-body-sm text-error">{peers.error}</p>
+              )}
+              {!peers.loading && !peers.error && (peers.data?.peers.length ?? 0) === 0 && (
+                <p className="font-body-sm text-body-sm text-on-surface-variant">
+                  查不到這一檔的產業別。ETF、剛上市還沒公告月營收的公司，
+                  以及不在公開資訊觀測站月營收表裡的標的都會是這個狀態。
+                </p>
+              )}
+
+              {peers.data && peers.data.peers.length > 0 && (
+                <>
+                  <p className="font-body-sm text-body-sm text-on-surface-variant">
+                    {peers.data.month} 月營收 · 共 {peers.data.total} 家
+                    {peers.data.rank > 0 && (
+                      <>
+                        {' '}
+                        · 這一檔排第{' '}
+                        <span className="font-data-md text-data-md text-primary font-bold">
+                          {peers.data.rank}
+                        </span>
+                      </>
+                    )}
+                  </p>
+                  <div className="overflow-x-auto rounded-xl border border-outline-variant">
+                    <table className="w-full border-collapse">
+                      <thead className="bg-surface-container-low border-b border-outline-variant">
+                        <tr>
+                          <th className="p-2 pl-4 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-right">
+                            名次
+                          </th>
+                          <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-left">
+                            股號 / 名稱
+                          </th>
+                          <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-right">
+                            單月營收
+                          </th>
+                          <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-right">
+                            月增率
+                          </th>
+                          <th className="p-2 pr-4 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-right">
+                            年增率
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-outline-variant/50">
+                        {/* 只列前 20 名再加上這一檔：兩百家全列出來沒人會捲到底。 */}
+                        {peers.data.peers
+                          .filter((peer) => peer.rank <= PEER_LIMIT || peer.symbol === symbol)
+                          .map((peer) => {
+                            const isSelf = peer.symbol === symbol;
+                            return (
+                              <tr
+                                key={peer.symbol}
+                                onClick={() => setSymbol(peer.symbol)}
+                                title="點擊切換到這一檔"
+                                className={`transition-colors cursor-pointer ${
+                                  isSelf
+                                    ? 'bg-primary-container/10'
+                                    : 'hover:bg-surface-container-low/50'
+                                }`}
+                              >
+                                <td className="p-2 pl-4 py-3 text-right font-data-md text-data-md text-on-surface-variant">
+                                  {peer.rank}
+                                </td>
+                                <td className="p-2 py-3 whitespace-nowrap">
+                                  <span
+                                    className={`font-data-md text-data-md ${
+                                      isSelf ? 'text-primary font-bold' : 'text-primary'
+                                    }`}
+                                  >
+                                    {peer.symbol}
+                                  </span>{' '}
+                                  <span className="font-body-md text-body-md text-on-surface-variant">
+                                    {peer.name}
+                                  </span>
+                                  <span className="text-outline font-body-sm text-body-sm">
+                                    {' '}
+                                    · {marketLabel(peer.market)}
+                                  </span>
+                                </td>
+                                <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface">
+                                  {formatNumber(peer.revenue)}
+                                </td>
+                                <td
+                                  className={`p-2 py-3 text-right font-data-md text-data-md ${quoteColor(
+                                    peer.mom
+                                  )}`}
+                                >
+                                  {formatSignedPercent(peer.mom)}
+                                </td>
+                                <td
+                                  className={`p-2 pr-4 py-3 text-right font-data-md text-data-md ${quoteColor(
+                                    peer.yoy
+                                  )}`}
+                                >
+                                  {formatSignedPercent(peer.yoy)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {peers.data.total > PEER_LIMIT && (
+                    <p className="font-body-sm text-body-sm text-on-surface-variant">
+                      只列前 {PEER_LIMIT} 名（外加目前這一檔），共 {peers.data.total} 家。
+                    </p>
+                  )}
+                </>
+              )}
+            </section>
 
             <section className={`${cardClass} p-6 flex flex-col gap-stack-md`}>
               <h3 className="font-headline-md text-headline-md text-primary flex items-center gap-2">

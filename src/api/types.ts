@@ -233,6 +233,39 @@ export interface RevenueHistory {
   items: MonthlyRevenue[];
 }
 
+// 同產業的一家公司（/stocks/revenue/peers/:symbol）。
+//
+// 只有月營收相關欄位：收盤價與本益比那幾張表只收自選股，同產業動輒兩百家，
+// 多數拿不到價格，後端不給一個大部分是 null 的欄位。
+export interface IndustryPeer {
+  // 產業內的月營收名次，1 起算。
+  rank: number;
+  symbol: string;
+  name: string;
+  market: Market;
+  // 單月營收，單位新台幣千元。
+  revenue: number;
+  // 單位 %。
+  mom: number;
+  yoy: number;
+}
+
+export interface IndustryPeers {
+  // 官方產業別。
+  //
+  // ⚠️ 這是證交所的產業分類，不是「散熱」「AI」那種主題族群——主題族群是人工整理的
+  // 選股清單，免費資料源沒有。同樣做散熱的三家可能分屬電機機械、
+  // 電腦及週邊設備業、其他電子業，這一支不會把它們放在一起。
+  industry: string;
+  // 這份排名的資料月份，YYYY-MM。查無資料時是空字串。
+  month: string;
+  // 這一檔在產業內的月營收名次。那個月沒公告時是 0。
+  rank: number;
+  // 這個產業有幾家公司公告了這個月的營收。
+  total: number;
+  peers: IndustryPeer[];
+}
+
 // ===== 重大訊息（/stocks/announcement）=====
 
 export interface MaterialAnnouncement {
