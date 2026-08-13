@@ -352,8 +352,6 @@ BROWSER=none npm start        # http://localhost:3000
 
 以下還沒做，需要時參考 `minecraft-server-fe` 的對應檔案：
 
-- `Dockerfile` / `nginx.conf` / `docker-compose.yml` / `docker/40-config-js.sh`（執行期注入 `API_BASE`）
-- `.github/workflows/deploy.yml`（CI/CD）
 - 註冊頁（後端 `/users/signup` 已就緒，`api/auth.ts` 也接了，只差畫面）。
   簡訊登入已完成，在登入頁用分頁切換
 - 自選股的新增 / 編輯 / 刪除（後端目前只開讀取，增刪走 LINE 聊天室）。

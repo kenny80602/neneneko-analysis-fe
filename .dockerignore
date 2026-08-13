@@ -1,0 +1,15 @@
+node_modules
+build
+coverage
+.git
+.github
+.idea
+.workflow
+.claude
+.env
+.env.local
+.env.*.local
+docs
+*.md
+npm-debug.log*
+.DS_Store
