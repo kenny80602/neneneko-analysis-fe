@@ -440,4 +440,15 @@ BROWSER=none npm start        # http://localhost:3000
   後端那份在 `ioc/portfolio.go` 且可設定。後端若開了讀設定的端點就改成打 API，
   否則兩邊調整時要記得一起改
 
-`src/config.ts` 與 `public/config.js` 已經備妥執行期注入的前端側，補上容器啟動腳本即可運作。
+## API 位址的兩條注入路徑
+
+`src/config.ts` 的優先序是 `window.__APP_CONFIG__.apiBase` > `REACT_APP_API_BASE` > 本機預設，
+對應兩種部署方式，改位址前先確認自己走哪一條：
+
+| 部署方式 | 走哪一層 | 怎麼改 |
+|---|---|---|
+| 容器（`Dockerfile`） | 執行期 `/config.js` | `docker run -e API_BASE=...`，同一顆 image 換環境變數就換後端 |
+| GitHub Pages（`.github/workflows/gh-pages.yml`） | 建置期 bundle | repo Variable `REACT_APP_API_BASE`，改完要重跑 workflow |
+
+Pages 只有靜態檔沒有啟動腳本，沒地方產生 `/config.js`，所以只能吃建置期那層——
+這也表示位址會明文烤進 bundle，放 repo Variables 就好，放 Secrets 只是自我安慰。
