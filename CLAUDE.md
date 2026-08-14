@@ -328,6 +328,19 @@ Material Symbols Outlined，用法 `<span className="material-symbols-outlined">
 
 ---
 
+## Commit 規範
+
+**不要加 `Co-Authored-By:` trailer，也不要加「Generated with ...」這類工具署名。**
+PR 內容同理。
+
+2026-08-14 已經把 `main` 上全部 19 個 commit 的 `Co-Authored-By: Claude` 改寫掉並 force push，
+舊物件也清乾淨了。再加回去等於白做一次歷史改寫。
+
+訊息本身沿用現有格式（`git log` 看得到）：標題一行講「做了什麼」，空行後條列**為什麼這樣做**，
+最後一行標品質狀態。語言吃上面的「語言規範」——繁中或英文，不要簡體。
+
+---
+
 ## 驗證
 
 改完一定要跑過，兩個都要綠：
