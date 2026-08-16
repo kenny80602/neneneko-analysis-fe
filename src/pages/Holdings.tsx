@@ -73,8 +73,8 @@ interface PositionRow {
 
   /** 一股損益＝現價 − 成本。決定要認賠幾股時看這個，不必自己除。 */
   perShare: number | null;
-  /** 現在全部賣掉會被扣的手續費與證交稅，加上當初的買進手續費。 */
-  fees: { buy: number; sell: number; tax: number } | null;
+  /** 現在全部賣掉會被扣的賣出手續費與證交稅。買進手續費已經含在成本裡，不重複算。 */
+  fees: { sell: number; tax: number } | null;
   /** 扣掉上面那些之後真正落袋的損益。 */
   netProfit: number | null;
   netProfitPercent: number | null;
@@ -96,14 +96,11 @@ function toPositionRows(
       // 0 元手續費會讓淨損益看起來剛好等於毛損益，那是假的。
       const breakdown =
         brokerFees != null && marketValue != null && costValue != null
-          ? (() => {
-              const s = sellCost(marketValue, brokerFees);
-              return { buy: buyFee(costValue, brokerFees), sell: s.fee, tax: s.tax };
-            })()
+          ? sellCost(marketValue, brokerFees)
           : null;
       const netProfit =
         breakdown != null && marketValue != null && costValue != null
-          ? marketValue - costValue - breakdown.buy - breakdown.sell - breakdown.tax
+          ? marketValue - costValue - breakdown.sell - breakdown.tax
           : null;
 
       return {
@@ -149,18 +146,18 @@ const NO_ACCOUNT = '未指定帳戶';
  * 費率一律由後端給（見 getBrokerFees），這裡只做「無條件捨去到整數元、
  * 套用最低收費」這段算術——那是券商實務，不是可調的政策。
  *
- * 買進手續費不在這裡：它已經付掉了，算在 buyFee()。
+ * 買進手續費不在這裡，也不另外估：成本欄位存的是**含買進手續費的持有成本**，
+ * 跟券商 App 的「持有成本」同一個定義。再扣一次會重複計算。
+ *
+ * 這也是為什麼賣出手續費用全額而不打折——實測元大的損益就是這樣算的：
+ * 買進手續費是已經發生的事實（記在成本裡），賣出手續費是還沒發生的估計，
+ * 它保守地用牌價估。折數要調就調後端的 BROKER_FEE_DISCOUNT。
  */
-function sellCost(amount: number, fees: LedgerFees): { fee: number; tax: number } {
+function sellCost(amount: number, fees: LedgerFees): { sell: number; tax: number } {
   return {
-    fee: Math.max(Math.floor(amount * fees.rate * fees.discount), fees.minimum),
+    sell: Math.max(Math.floor(amount * fees.rate * fees.discount), fees.minimum),
     tax: Math.floor(amount * fees.tax_rate),
   };
-}
-
-/** 買進時付掉的手續費。用現在的費率回推，跟當初實際付的可能有落差。 */
-function buyFee(amount: number, fees: LedgerFees): number {
-  return Math.max(Math.floor(amount * fees.rate * fees.discount), fees.minimum);
 }
 
 /**
@@ -1178,18 +1175,14 @@ export default function Holdings() {
                                                   title={
                                                     row.fees == null
                                                       ? undefined
-                                                      : `買進手續費 ${formatNumber(
-                                                          row.fees.buy
-                                                        )}＋賣出手續費 ${formatNumber(
+                                                      : `賣出手續費 ${formatNumber(
                                                           row.fees.sell
                                                         )}＋證交稅 ${formatNumber(row.fees.tax)}`
                                                   }
                                                 >
                                                   {row.fees == null
                                                     ? DASH
-                                                    : `-${formatNumber(
-                                                        row.fees.buy + row.fees.sell + row.fees.tax
-                                                      )}`}
+                                                    : `-${formatNumber(row.fees.sell + row.fees.tax)}`}
                                                 </td>
                                                 <td
                                                   className={`${numberCell} font-bold ${quoteColor(
@@ -1286,8 +1279,12 @@ export default function Holdings() {
                                         <span className="text-on-surface font-semibold">一股損益</span>
                                         ＝現價 − 成本，要決定認賠幾股時直接乘股數就好。
                                         <span className="text-on-surface font-semibold">淨損益</span>
-                                        ＝市值 − 成本 − 買進手續費 − 賣出手續費 − 證交稅，
-                                        也就是現在全部賣掉真正落袋的金額；滑到「賣出費用」上看得到三項拆解。
+                                        ＝市值 − 持有成本 − 賣出手續費 − 證交稅，也就是現在全部賣掉真正落袋的金額，
+                                        算法與券商 App 一致；滑到「賣出費用」上看得到兩項拆解。
+                                        <span className="text-on-surface font-semibold">
+                                          成本欄請填含買進手續費的持有成本
+                                        </span>
+                                        ——買進手續費已經付掉了，含在成本裡，這裡不再扣第二次。
                                         {brokerFees.data && (
                                           <>
                                             {' '}
@@ -1296,11 +1293,8 @@ export default function Holdings() {
                                               `（${(brokerFees.data.discount * 10).toFixed(2)} 折）`}
                                             、最低 {formatNumber(brokerFees.data.minimum)} 元、
                                             證交稅 {(brokerFees.data.tax_rate * 100).toFixed(1)}%。
-                                            <span className="text-on-surface font-semibold">
-                                              跟券商 App 對不上就是折數不同
-                                            </span>
-                                            ，在後端 .env.json 的 BROKER_FEE_DISCOUNT 調整。
-                                            買進手續費是用現在的費率回推的，跟當初實際付的可能有落差。
+                                            賣出手續費刻意用牌價不打折——那是還沒發生的估計，
+                                            實測元大也是這樣算的。要調在後端 .env.json 的 BROKER_FEE_DISCOUNT。
                                           </>
                                         )}
                                         {brokerFees.error && (
