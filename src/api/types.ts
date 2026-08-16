@@ -721,6 +721,13 @@ export interface LedgerMatchedSell {
   tax: number;
   net_proceeds: number;
   realized: number;
+  // 這一筆賣掉的部位當初花了多少（每股成本已含買進手續費）。它是 realized 的分母。
+  cost: number;
+  // 報酬率（%）＝ realized ÷ cost × 100。
+  //
+  // null 是「算不出來」而不是 0%：庫存整批不夠賣時一股都沒沖到，成本是 0。
+  // 顯示要走破折號——0% 會被讀成「不賺不賠」，那是完全不同的意思。
+  return_rate: number | null;
 
   // 由規則自動補上的股數。0 代表完全照使用者指定。
   auto_filled: number;

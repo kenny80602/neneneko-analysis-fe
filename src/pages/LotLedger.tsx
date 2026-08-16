@@ -30,6 +30,7 @@ import {
   formatNumber,
   formatPrice,
   formatSigned,
+  formatSignedPercent,
   quoteColor,
   today,
 } from '../utils/format';
@@ -240,7 +241,8 @@ export default function LotLedger() {
       setSellShares('');
       return (
         `已記錄賣出 ${formatNumber(matched.shares)} 股 @ ${formatPrice(matched.price)}，` +
-        `實現 ${formatSigned(matched.realized, 0)} 元` +
+        `成交總額 ${formatNumber(matched.amount)} 元，` +
+        `實現 ${formatSigned(matched.realized, 0)} 元（${formatSignedPercent(matched.return_rate)}）` +
         (matched.auto_filled > 0
           ? `（其中 ${formatNumber(matched.auto_filled)} 股由${MATCH_RULE_LABELS[fallback]}自動補）`
           : '')
@@ -932,7 +934,15 @@ export default function LotLedger() {
                         >
                           {formatSigned(preview.strategy.realized, 0)}
                         </span>{' '}
-                        元，同一張單券商 FIFO 會記成{' '}
+                        元（
+                        <span
+                          className={`font-data-md text-data-md ${quoteColor(
+                            preview.strategy.return_rate
+                          )}`}
+                        >
+                          {formatSignedPercent(preview.strategy.return_rate)}
+                        </span>
+                        ），同一張單券商 FIFO 會記成{' '}
                         <span
                           className={`font-data-md text-data-md ${quoteColor(
                             preview.broker.realized
@@ -940,7 +950,14 @@ export default function LotLedger() {
                         >
                           {formatSigned(preview.broker.realized, 0)}
                         </span>{' '}
-                        元
+                        元（{formatSignedPercent(preview.broker.return_rate)}）
+                      </p>
+                      {/* 報酬率的分母是這一筆沖掉的成本，不是價金——同樣賺 227 元，
+                          沖 800 那筆是 +5.7%，沖 1020 那筆會是負的。講清楚才不會被誤讀。 */}
+                      <p className="font-body-sm text-body-sm text-on-surface-variant">
+                        報酬率＝已實現 ÷ 這一筆沖掉的成本（
+                        {formatNumber(preview.strategy.cost)} 元，含當初的買進手續費），
+                        不是除以價金。沖掉哪幾批不同，報酬率就不同，這正是兩本帳要對照的地方。
                       </p>
                       <p className="font-body-sm text-body-sm text-on-surface-variant">
                         沖銷明細：
@@ -980,9 +997,11 @@ export default function LotLedger() {
                             <th className={`${headCell} pl-4 text-left`}>成交日</th>
                             <th className={`${headCell} text-right`}>股數</th>
                             <th className={`${headCell} text-right`}>成交價</th>
+                            <th className={`${headCell} text-right`}>成交總額</th>
                             <th className={`${headCell} text-right`}>手續費</th>
                             <th className={`${headCell} text-right`}>證交稅</th>
                             <th className={`${headCell} text-right text-primary`}>策略已實現</th>
+                            <th className={`${headCell} text-right text-primary`}>報酬率</th>
                             <th className={`${headCell} text-right`}>券商已實現</th>
                             <th className={`${headCell} text-right`}>差額</th>
                             <th className={`${headCell} pr-4 text-right`}>明細</th>
@@ -1015,6 +1034,9 @@ export default function LotLedger() {
                       「券商已實現」是同一張單在 FIFO 下會認列的金額，用來跟券商 App
                       當天結算後的畫面對帳——兩個數字都對得上，才代表這本帳沒記錯。
                       展開明細可以看到兩邊各沖掉了哪幾筆。
+                      「報酬率」的分母是<span className="text-on-surface">這一筆沖掉的成本</span>
+                      （含當初的買進手續費）而不是成交總額，所以它會隨著你指定沖哪幾批而改變；
+                      成交總額是價金，還沒扣手續費與證交稅。
                     </p>
                   </section>
                 )}
@@ -1062,10 +1084,22 @@ function SellRow({
         </td>
         <td className={`${numberCell} text-on-surface-variant`}>{formatNumber(matched.shares)}</td>
         <td className={`${numberCell} text-on-surface`}>{formatPrice(matched.price)}</td>
+        {/* 成交總額是價金（股數 × 成交價），還沒扣手續費與證交稅——
+            實際入帳的是它減掉右邊那兩欄，展開明細看得到淨收入。 */}
+        <td className={`${numberCell} text-on-surface`} title={`淨收入 ${formatNumber(matched.net_proceeds)} 元`}>
+          {formatNumber(matched.amount)}
+        </td>
         <td className={`${numberCell} text-on-surface-variant`}>{formatNumber(matched.fee)}</td>
         <td className={`${numberCell} text-on-surface-variant`}>{formatNumber(matched.tax)}</td>
         <td className={`${numberCell} font-bold ${quoteColor(matched.realized)}`}>
           {formatSigned(matched.realized, 0)}
+        </td>
+        {/* 報酬率的分母是這一筆沖掉的成本，不是成交總額。後端算好的，不在這裡除。 */}
+        <td
+          className={`${numberCell} font-bold ${quoteColor(matched.return_rate)}`}
+          title={`成本 ${formatNumber(matched.cost)} 元`}
+        >
+          {formatSignedPercent(matched.return_rate)}
         </td>
         <td className={`${numberCell} ${quoteColor(brokerMatched?.realized ?? null)}`}>
           {brokerMatched == null ? DASH : formatSigned(brokerMatched.realized, 0)}
@@ -1098,7 +1132,7 @@ function SellRow({
 
       {open && (
         <tr className="bg-surface-container-low/40">
-          <td colSpan={9} className="p-4">
+          <td colSpan={11} className="p-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-stack-md">
               <AllocationList
                 title="我的策略帳"
