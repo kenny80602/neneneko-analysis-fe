@@ -167,7 +167,7 @@ function sellFeesFor(book: FeeBook, account: string): LedgerFees {
   return {
     rate: book.rate,
     discount: rule.sell_discount,
-    minimum: rule.minimum,
+    minimum: rule.sell_minimum,
     tax_rate: book.tax_rate,
   };
 }
@@ -1414,7 +1414,7 @@ export default function Holdings() {
                                                 ：手續費 {(f.rate * 100).toFixed(4)}%
                                                 {f.discount !== 1 &&
                                                   `（${(f.discount * 10).toFixed(2)} 折）`}
-                                                、最低 {formatNumber(f.minimum)} 元、 證交稅{' '}
+                                                、賣出最低 {formatNumber(f.minimum)} 元、 證交稅{' '}
                                                 {(f.tax_rate * 100).toFixed(1)}%。
                                                 各帳戶的折數在「設定」那一頁改。
                                               </>

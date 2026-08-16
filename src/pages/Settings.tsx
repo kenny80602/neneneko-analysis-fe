@@ -23,14 +23,16 @@ import { formatNumber, formatPrice } from '../utils/format';
 interface Draft {
   buy: string;
   sell: string;
-  minimum: string;
+  buyMin: string;
+  sellMin: string;
 }
 
 function toDraft(fee: AccountFee): Draft {
   return {
     buy: String(fee.buy_discount),
     sell: String(fee.sell_discount),
-    minimum: String(fee.minimum),
+    buyMin: String(fee.buy_minimum),
+    sellMin: String(fee.sell_minimum),
   };
 }
 
@@ -38,11 +40,19 @@ function toDraft(fee: AccountFee): Draft {
 function parseDraft(account: string, draft: Draft): AccountFee | null {
   const buy = Number(draft.buy);
   const sell = Number(draft.sell);
-  const minimum = Number(draft.minimum);
+  const buyMin = Number(draft.buyMin);
+  const sellMin = Number(draft.sellMin);
   if (!Number.isFinite(buy) || buy <= 0 || buy > 1) return null;
   if (!Number.isFinite(sell) || sell <= 0 || sell > 1) return null;
-  if (!Number.isFinite(minimum) || minimum < 0) return null;
-  return { account, buy_discount: buy, sell_discount: sell, minimum };
+  if (!Number.isFinite(buyMin) || buyMin < 0) return null;
+  if (!Number.isFinite(sellMin) || sellMin < 0) return null;
+  return {
+    account,
+    buy_discount: buy,
+    sell_discount: sell,
+    buy_minimum: buyMin,
+    sell_minimum: sellMin,
+  };
 }
 
 export default function Settings() {
@@ -158,6 +168,14 @@ export default function Settings() {
         </td>
         <td className={numberCell}>
           <input
+            value={draft.buyMin}
+            onChange={(event) => setDraft(account, { buyMin: event.target.value })}
+            inputMode="numeric"
+            className={fieldClass}
+          />
+        </td>
+        <td className={numberCell}>
+          <input
             value={draft.sell}
             onChange={(event) => setDraft(account, { sell: event.target.value })}
             inputMode="decimal"
@@ -169,8 +187,8 @@ export default function Settings() {
         </td>
         <td className={numberCell}>
           <input
-            value={draft.minimum}
-            onChange={(event) => setDraft(account, { minimum: event.target.value })}
+            value={draft.sellMin}
+            onChange={(event) => setDraft(account, { sellMin: event.target.value })}
             inputMode="numeric"
             className={fieldClass}
           />
@@ -231,6 +249,9 @@ export default function Settings() {
           券商 App 顯示參考損益時是用牌價保守估的（實測元大就是這樣）。
           想讓畫面上的淨損益跟 App 逐元對得起來，賣出那格就填 1；
           想看「照實際折數賣掉會拿回多少」，就填跟買進一樣的值。
+          <span className="text-on-surface font-semibold">最低收費同樣買賣分開</span>
+          ——實測元大零股買進最低 1 元，但 App 估賣出時是用整股的 20 元。
+          27 筆逐筆比對，只有這樣才會一元不差。
         </p>
 
         {loading && <PageState kind="loading" />}
@@ -253,8 +274,9 @@ export default function Settings() {
                   <tr>
                     <th className={`${headCell} pl-4 text-left`}>帳戶</th>
                     <th className={`${headCell} text-right`}>買進折數</th>
+                    <th className={`${headCell} text-right`}>買進最低</th>
                     <th className={`${headCell} text-right`}>賣出折數</th>
-                    <th className={`${headCell} text-right`}>最低收費</th>
+                    <th className={`${headCell} text-right`}>賣出最低</th>
                     <th className={`${headCell} pr-4 text-right`}>操作</th>
                   </tr>
                 </thead>
@@ -278,9 +300,10 @@ export default function Settings() {
             <p className="font-body-sm text-body-sm text-on-surface-variant">
               目前生效：手續費率 {(current.rate * 100).toFixed(4)}%、證交稅{' '}
               {(current.tax_rate * 100).toFixed(1)}%（賣出才收）、預設折數買{' '}
-              {formatPrice(current.default.buy_discount)} 賣{' '}
-              {formatPrice(current.default.sell_discount)}、最低收費{' '}
-              {formatNumber(current.default.minimum)} 元。
+              {formatPrice(current.default.buy_discount)}（最低{' '}
+              {formatNumber(current.default.buy_minimum)} 元）、賣{' '}
+              {formatPrice(current.default.sell_discount)}（最低{' '}
+              {formatNumber(current.default.sell_minimum)} 元）。
               有單獨設定的帳戶共 {current.accounts.length} 個。
               改完之後「我的持股」的淨損益會立刻改用新費率算，已經記錄的買進手續費不受影響——
               那些存的是當時實際付的錢。
