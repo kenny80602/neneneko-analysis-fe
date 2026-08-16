@@ -15,6 +15,7 @@ import Market from './pages/Market';
 import PaperTrading from './pages/PaperTrading';
 import Portfolio from './pages/Portfolio';
 import Revenue from './pages/Revenue';
+import Settings from './pages/Settings';
 import Valuation from './pages/Valuation';
 import Warnings from './pages/Warnings';
 
@@ -41,6 +42,7 @@ function App() {
               <Route path="/paper" element={<PaperTrading />} />
               <Route path="/ledger" element={<LotLedger />} />
               <Route path="/alert" element={<Alert />} />
+              <Route path="/settings" element={<Settings />} />
 
               {/* 個股：共用 SymbolContext 的代號 */}
               <Route path="/dashboard" element={<Dashboard />} />

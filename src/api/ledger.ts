@@ -1,8 +1,9 @@
 import request from './request';
 import {
+  AccountFee,
   ApiResponse,
+  FeeBook,
   Ledger,
-  LedgerFees,
   LedgerImportResult,
   LedgerLot,
   LedgerMatchedSell,
@@ -42,7 +43,20 @@ export interface SellPayload {
 // 費率其實不只沖銷帳在用（「我的持股」也吃它），端點掛在 /ledger 下面
 // 只是因為設定放在那個 service。
 export const getBrokerFees = () =>
-  request.get<ApiResponse<LedgerFees>>('/ledger/fees').then((res) => res.data.data as LedgerFees);
+  request.get<ApiResponse<FeeBook>>('/ledger/fees').then((res) => res.data.data as FeeBook);
+
+// 設定某一個券商帳戶的折數。account 送空字串就是改全站預設。
+// 回傳整本更新後的設定，呼叫端直接換掉本地狀態即可。
+export const setAccountFees = (fee: AccountFee) =>
+  request.put<ApiResponse<FeeBook>>('/ledger/fees', fee).then((res) => res.data.data as FeeBook);
+
+// 刪掉某一個帳戶的設定，之後它回頭吃全站預設。
+// 預設那一列不給刪（後端回 400）——刪掉會讓所有沒單獨設定的帳戶一起變，
+// 使用者不會預期按一個「還原」影響到全部。要改預設就用 setAccountFees 覆蓋它。
+export const removeAccountFees = (account: string) =>
+  request
+    .delete<ApiResponse<FeeBook>>('/ledger/fees', { data: { account } })
+    .then((res) => res.data.data as FeeBook);
 
 // 有沖銷帳的代號清單。只看買進，空陣列代表還沒開始記帳。
 export const getLedgerSymbols = () =>

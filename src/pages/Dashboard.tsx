@@ -9,6 +9,7 @@ import { getInstitutionalHistory } from '../api/institutional';
 import { getPortfolioValuation } from '../api/portfolio';
 import { getRealtimeQuote } from '../api/realtimeQuote';
 import { getIndustryPeers, getRevenueHistory } from '../api/revenue';
+import { IndustryPeer, IndustryPeers } from '../api/types';
 import { getWarningHistory } from '../api/warning';
 import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
@@ -35,8 +36,14 @@ const CHART_LIMIT = 500;
 // 注意股回看的筆數。多數個股一筆都沒有，這個上限只是防呆。
 const WARNING_LIMIT = 100;
 const ANNOUNCEMENT_LIMIT = 5;
-// 同產業個股最多列幾名。半導體業有兩百多家，全列出來沒人會捲到底。
-const PEER_LIMIT = 20;
+// 同產業個股要列哪幾家。半導體業有兩百多家，全列出來沒人會捲到底，
+// 但只列前幾名對中段班的檔沒有意義——新應材在半導體業排 92/206，
+// 跟台積電、聯發科擺在一起比不出東西。
+//
+// 所以主要列「名次相近」的那一段（規模接近的才有可比性），
+// 前幾大另外用一小段帶過，看得到產業龍頭在什麼量級就好。
+const PEER_LEADERS = 3;
+const PEER_RADIUS = 7;
 // 「近 5 日漲幅」用的間隔（5 個交易日 ≈ 一週）。
 const RECENT_SPAN = 5;
 
@@ -48,6 +55,54 @@ const chipClass =
 function formatPe(value: number | null | undefined): string {
   const text = formatNumber(value, 2);
   return text === DASH ? text : `${text} 倍`;
+}
+
+/** 同產業表格的一列：分段標題或一家公司。 */
+type PeerRow =
+  | { kind: 'group'; key: string; label: string }
+  | { kind: 'peer'; key: string; peer: IndustryPeer };
+
+const toPeerRow = (peer: IndustryPeer): PeerRow => ({
+  kind: 'peer',
+  key: peer.symbol,
+  peer,
+});
+
+/**
+ * 挑出同產業表格要顯示的列：產業前幾大 + 目前這一檔前後各幾名。
+ *
+ * 後端回的是整個產業（依營收由大到小、名次已經算好），這裡只決定顯示哪一段。
+ * 為什麼不直接列前 N 名：那對龍頭以外的檔沒有可比性，見 PEER_RADIUS 的註解。
+ */
+function buildPeerRows(data: IndustryPeers | undefined): PeerRow[] {
+  const all = data?.peers ?? [];
+  if (all.length === 0) return [];
+
+  const own = data?.rank ?? 0;
+  // 那個月沒公告營收就查不到自己的名次，沒有中心點可以取鄰居，退回列前段班。
+  if (own <= 0) {
+    return all.filter((peer) => peer.rank <= PEER_LEADERS + PEER_RADIUS * 2).map(toPeerRow);
+  }
+
+  const from = Math.max(1, own - PEER_RADIUS);
+  const to = own + PEER_RADIUS;
+
+  // 這一檔本來就在前段時，鄰居那一段已經接上（或蓋過）前幾大，
+  // 拆成兩段只會多一條分隔線和重複的列，直接連續列出來。
+  if (from <= PEER_LEADERS + 1) {
+    return all.filter((peer) => peer.rank <= to).map(toPeerRow);
+  }
+
+  return [
+    { kind: 'group', key: 'leaders', label: `產業前 ${PEER_LEADERS} 大` },
+    ...all.filter((peer) => peer.rank <= PEER_LEADERS).map(toPeerRow),
+    {
+      kind: 'group',
+      key: 'neighbors',
+      label: `名次相近：第 ${from}–${Math.min(to, data?.total ?? to)} 名`,
+    },
+    ...all.filter((peer) => peer.rank >= from && peer.rank <= to).map(toPeerRow),
+  ];
 }
 
 export default function Dashboard() {
@@ -87,6 +142,8 @@ export default function Dashboard() {
   const valuation = useAsyncData(() => getPortfolioValuation(), [], { enabled });
   // 同產業比較。資料來自全市場的月營收，跟自選股無關，任何一檔都查得到。
   const peers = useAsyncData(() => getIndustryPeers(symbol), [symbol], { enabled });
+  const peerRows = useMemo(() => buildPeerRows(peers.data), [peers.data]);
+
   const row = useMemo(
     () => valuation.data?.find((item) => item.symbol === symbol),
     [valuation.data, symbol]
@@ -472,6 +529,7 @@ export default function Dashboard() {
               */}
               <p className="font-body-sm text-body-sm text-on-surface-variant">
                 依證交所的官方產業分類，用最新月份的單月營收排名。
+                產業別直接沿用公開資訊觀測站，跟部分看盤軟體的自訂分類不一定一樣。
                 <span className="text-on-surface">這不是「散熱」「AI」那種主題族群</span>
                 ——主題族群是人工整理的選股清單，免費資料源沒有，同樣做散熱的公司常常分屬不同產業。
                 排名用營收而不是股價或本益比，是因為月營收是唯一涵蓋全市場的數字；
@@ -528,67 +586,79 @@ export default function Dashboard() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-outline-variant/50">
-                        {/* 只列前 20 名再加上這一檔：兩百家全列出來沒人會捲到底。 */}
-                        {peers.data.peers
-                          .filter((peer) => peer.rank <= PEER_LIMIT || peer.symbol === symbol)
-                          .map((peer) => {
-                            const isSelf = peer.symbol === symbol;
+                        {peerRows.map((row) => {
+                          if (row.kind === 'group') {
                             return (
-                              <tr
-                                key={peer.symbol}
-                                onClick={() => setSymbol(peer.symbol)}
-                                title="點擊切換到這一檔"
-                                className={`transition-colors cursor-pointer ${
-                                  isSelf
-                                    ? 'bg-primary-container/10'
-                                    : 'hover:bg-surface-container-low/50'
-                                }`}
-                              >
-                                <td className="p-2 pl-4 py-3 text-right font-data-md text-data-md text-on-surface-variant">
-                                  {peer.rank}
-                                </td>
-                                <td className="p-2 py-3 whitespace-nowrap">
-                                  <span
-                                    className={`font-data-md text-data-md ${
-                                      isSelf ? 'text-primary font-bold' : 'text-primary'
-                                    }`}
-                                  >
-                                    {peer.symbol}
-                                  </span>{' '}
-                                  <span className="font-body-md text-body-md text-on-surface-variant">
-                                    {peer.name}
-                                  </span>
-                                  <span className="text-outline font-body-sm text-body-sm">
-                                    {' '}
-                                    · {marketLabel(peer.market)}
-                                  </span>
-                                </td>
-                                <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface">
-                                  {formatNumber(peer.revenue)}
-                                </td>
+                              <tr key={row.key} className="bg-surface-container-low">
                                 <td
-                                  className={`p-2 py-3 text-right font-data-md text-data-md ${quoteColor(
-                                    peer.mom
-                                  )}`}
+                                  colSpan={5}
+                                  className="p-2 pl-4 py-2 font-label-caps text-label-caps text-on-surface-variant uppercase"
                                 >
-                                  {formatSignedPercent(peer.mom)}
-                                </td>
-                                <td
-                                  className={`p-2 pr-4 py-3 text-right font-data-md text-data-md ${quoteColor(
-                                    peer.yoy
-                                  )}`}
-                                >
-                                  {formatSignedPercent(peer.yoy)}
+                                  {row.label}
                                 </td>
                               </tr>
                             );
-                          })}
+                          }
+                          const peer = row.peer;
+                          const isSelf = peer.symbol === symbol;
+                          return (
+                            <tr
+                              key={peer.symbol}
+                              onClick={() => setSymbol(peer.symbol)}
+                              title="點擊切換到這一檔"
+                              className={`transition-colors cursor-pointer ${
+                                isSelf ? 'bg-primary-container/10' : 'hover:bg-surface-container-low/50'
+                              }`}
+                            >
+                              <td className="p-2 pl-4 py-3 text-right font-data-md text-data-md text-on-surface-variant">
+                                {peer.rank}
+                              </td>
+                              <td className="p-2 py-3 whitespace-nowrap">
+                                <span
+                                  className={`font-data-md text-data-md ${
+                                    isSelf ? 'text-primary font-bold' : 'text-primary'
+                                  }`}
+                                >
+                                  {peer.symbol}
+                                </span>{' '}
+                                <span className="font-body-md text-body-md text-on-surface-variant">
+                                  {peer.name}
+                                </span>
+                                <span className="text-outline font-body-sm text-body-sm">
+                                  {' '}
+                                  · {marketLabel(peer.market)}
+                                </span>
+                              </td>
+                              <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface">
+                                {formatNumber(peer.revenue)}
+                              </td>
+                              <td
+                                className={`p-2 py-3 text-right font-data-md text-data-md ${quoteColor(
+                                  peer.mom
+                                )}`}
+                              >
+                                {formatSignedPercent(peer.mom)}
+                              </td>
+                              <td
+                                className={`p-2 pr-4 py-3 text-right font-data-md text-data-md ${quoteColor(
+                                  peer.yoy
+                                )}`}
+                              >
+                                {formatSignedPercent(peer.yoy)}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
-                  {peers.data.total > PEER_LIMIT && (
+                  {/* 比的是真的列出來幾家，不是 peerRows 的長度——那裡面還有分段標題。 */}
+                  {peers.data.total > peerRows.filter((row) => row.kind === 'peer').length && (
                     <p className="font-body-sm text-body-sm text-on-surface-variant">
-                      只列前 {PEER_LIMIT} 名（外加目前這一檔），共 {peers.data.total} 家。
+                      共 {peers.data.total} 家，這裡只列產業前 {PEER_LEADERS} 大與這一檔前後各{' '}
+                      {PEER_RADIUS} 名。
+                      <span className="text-on-surface">名次相近的才有可比性</span>
+                      ——同產業裡龍頭與中段班的規模常常差好幾個量級，擺在一起比不出東西。
                     </p>
                   )}
                 </>

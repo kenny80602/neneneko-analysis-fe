@@ -60,7 +60,7 @@ export default function Topbar() {
           </span>
         </button>
 
-        {/* 通知與設定尚無對應後端，先停用而不是給一個按了沒反應的按鈕。 */}
+        {/* 通知尚無對應後端，先停用而不是給一個按了沒反應的按鈕。 */}
         <button
           type="button"
           disabled
@@ -69,14 +69,13 @@ export default function Topbar() {
         >
           <span className="material-symbols-outlined text-[20px]">notifications</span>
         </button>
-        <button
-          type="button"
-          disabled
-          title="尚未實作"
-          className="text-outline-variant cursor-not-allowed"
+        <Link
+          to="/settings"
+          title="設定"
+          className="text-on-surface-variant hover:text-primary transition-colors"
         >
           <span className="material-symbols-outlined text-[20px]">settings</span>
-        </button>
+        </Link>
 
         <div className="flex items-center gap-2 pl-2 border-l border-outline-variant">
           {/* 後端目前沒有使用者頭像，用代表字圓形頭像取代設計稿的圖片佔位。 */}

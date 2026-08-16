@@ -16,7 +16,7 @@ import {
   updateLedgerLot,
 } from '../api/ledger';
 import { apiErrorMessage } from '../api/request';
-import { Holding, LedgerFees, LedgerLot, PortfolioRow } from '../api/types';
+import { FeeBook, Holding, LedgerFees, LedgerLot, PortfolioRow } from '../api/types';
 import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
 import {
@@ -88,7 +88,7 @@ interface PositionRow {
 function toPositionRows(
   holdings: Holding[],
   priceBySymbol: Map<string, PortfolioRow>,
-  brokerFees: LedgerFees | null
+  feeBook: FeeBook | null
 ): PositionRow[] {
   return holdings
     .map((h) => {
@@ -99,9 +99,11 @@ function toPositionRows(
 
       // 費率還沒載回來、或算不出金額時一律 null，不要先用 0 頂著——
       // 0 元手續費會讓淨損益看起來剛好等於毛損益，那是假的。
+      // 費率依這一筆的帳戶解析：不同券商談到的折數不一樣，
+      // 全部拿同一組去算，另一家的淨損益就是錯的。
       const breakdown =
-        brokerFees != null && marketValue != null && costValue != null
-          ? sellCost(marketValue, brokerFees)
+        feeBook != null && marketValue != null && costValue != null
+          ? sellCost(marketValue, sellFeesFor(feeBook, h.account))
           : null;
       const netProfit =
         breakdown != null && marketValue != null && costValue != null
@@ -158,6 +160,18 @@ const NO_ACCOUNT = '未指定帳戶';
  * 買進手續費是已經發生的事實（記在成本裡），賣出手續費是還沒發生的估計，
  * 它保守地用牌價估。折數要調就調後端的 BROKER_FEE_DISCOUNT。
  */
+function sellFeesFor(book: FeeBook, account: string): LedgerFees {
+  const rule = book.accounts.find((a) => a.account === account) ?? book.default;
+  // 賣出估計用 sell_discount：買進手續費已經記在成本裡（實際付的），
+  // 這裡估的是還沒發生的賣出，兩者的折數可以不同。
+  return {
+    rate: book.rate,
+    discount: rule.sell_discount,
+    minimum: rule.minimum,
+    tax_rate: book.tax_rate,
+  };
+}
+
 function sellCost(amount: number, fees: LedgerFees): { sell: number; tax: number } {
   return {
     sell: Math.max(Math.floor(amount * fees.rate * fees.discount), fees.minimum),
@@ -1381,18 +1395,31 @@ export default function Holdings() {
                                           成本欄請填含買進手續費的持有成本
                                         </span>
                                         ——買進手續費已經付掉了，含在成本裡，這裡不再扣第二次。
-                                        {brokerFees.data && (
-                                          <>
-                                            {' '}
-                                            費率用手續費 {(brokerFees.data.rate * 100).toFixed(4)}%
-                                            {brokerFees.data.discount !== 1 &&
-                                              `（${(brokerFees.data.discount * 10).toFixed(2)} 折）`}
-                                            、最低 {formatNumber(brokerFees.data.minimum)} 元、
-                                            證交稅 {(brokerFees.data.tax_rate * 100).toFixed(1)}%。
-                                            賣出手續費刻意用牌價不打折——那是還沒發生的估計，
-                                            實測元大也是這樣算的。要調在後端 .env.json 的 BROKER_FEE_DISCOUNT。
-                                          </>
-                                        )}
+                                        {brokerFees.data &&
+                                          (() => {
+                                            const f = sellFeesFor(
+                                              brokerFees.data,
+                                              item.account === NO_ACCOUNT ? '' : item.account
+                                            );
+                                            const named = brokerFees.data.accounts.some(
+                                              (a) => a.account === item.account
+                                            );
+                                            return (
+                                              <>
+                                                {' '}
+                                                這一組用的是
+                                                <span className="text-on-surface font-semibold">
+                                                  {named ? `「${item.account}」的費率` : '全站預設費率'}
+                                                </span>
+                                                ：手續費 {(f.rate * 100).toFixed(4)}%
+                                                {f.discount !== 1 &&
+                                                  `（${(f.discount * 10).toFixed(2)} 折）`}
+                                                、最低 {formatNumber(f.minimum)} 元、 證交稅{' '}
+                                                {(f.tax_rate * 100).toFixed(1)}%。
+                                                各帳戶的折數在「設定」那一頁改。
+                                              </>
+                                            );
+                                          })()}
                                         {brokerFees.error && (
                                           <span className="text-error"> 費率載入失敗，淨損益顯示破折號。</span>
                                         )}

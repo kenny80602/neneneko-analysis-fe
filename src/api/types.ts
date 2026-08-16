@@ -724,6 +724,31 @@ export interface LedgerReconcile {
   has_diff: boolean;
 }
 
+// 一個券商帳戶的手續費設定。
+export interface AccountFee {
+  // 帳戶名稱。空字串是「全站預設」那一列，沒有單獨設定的帳戶都吃它。
+  account: string;
+  // 買進手續費折數。0.35 代表 3.5 折（不是 3.5%）——牌價 0.1425% 的 0.35 倍。
+  buy_discount: number;
+  // 賣出手續費折數。
+  //
+  // 跟買進分開不是多此一舉：券商 App 的參考損益，買進手續費用實際收的折數
+  // （已經發生的事實），賣出卻用牌價保守估（還沒發生）。想跟 App 對得起來就得分開設。
+  sell_discount: number;
+  // 手續費最低收費（元）。0 是合法的。
+  minimum: number;
+}
+
+// 全部帳戶的費率設定。
+export interface FeeBook {
+  // 手續費率與證交稅率。台股公開規則，不因帳戶而異，所以不可設定。
+  rate: number;
+  tax_rate: number;
+  default: AccountFee;
+  // 有單獨設定的帳戶。空陣列代表全部都吃預設。
+  accounts: AccountFee[];
+}
+
 // 這次計算用的費率。由後端定義，前端只顯示不自己算——
 // 紅字門檻那組已經因為前後端各存一份而要記得同時改，不要再多一組。
 export interface LedgerFees {
