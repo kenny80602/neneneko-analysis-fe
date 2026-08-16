@@ -13,8 +13,10 @@ import {
   removeLedgerLot,
   removeLedgerSell,
 } from '../api/ledger';
+import { getHoldings } from '../api/portfolio';
 import { apiErrorMessage } from '../api/request';
 import {
+  Holding,
   LedgerMatchedSell,
   LedgerPick,
   LedgerReconcileRow,
@@ -65,6 +67,7 @@ export default function LotLedger() {
   const [selected, setSelected] = useState('');
   const [notice, setNotice] = useState('');
   const [showLotForm, setShowLotForm] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -89,6 +92,12 @@ export default function LotLedger() {
 
   const symbolList = useAsyncData(() => getLedgerSymbols(), []);
   const symbols = useMemo(() => symbolList.data ?? [], [symbolList.data]);
+
+  // 自選股清單，只給「從自選股匯入」那張面板用。
+  //
+  // 匯入的來源不能是 /ledger/symbols——那是「已經有沖銷帳的代號」，
+  // 而匯入正是為了空帳準備的，拿它當來源等於「要先有資料才能匯入」。
+  const watchlist = useAsyncData(() => getHoldings(false), []);
 
   // 沒選就用第一檔。用衍生值而不是 useEffect 補寫回 state，
   // 免得「刪光庫存 → effect 又把舊代號寫回去」這種來回。
@@ -271,16 +280,41 @@ export default function LotLedger() {
     });
   };
 
-  const handleImport = () => {
-    const code = (symbol || lotSymbol.trim()).trim();
-    if (!code) {
-      setNotice('請先選一檔，或在新增庫存那邊填代號');
-      return;
+  /**
+   * 自選股裡可以匯入的檔，依代號併起來。
+   *
+   * 同一檔在持股表可能有好幾列（分批買、不同帳戶），匯入是整檔一起搬，
+   * 所以這裡也整檔顯示，並列出它包含哪幾筆，讓使用者按下去之前就知道會進來什麼。
+   * 沒填股數或成本的列匯不進來（從 LINE 加進來的就是那樣），不是錯誤，標示出來即可。
+   */
+  const importable = useMemo(() => {
+    const bySymbol = new Map<
+      string,
+      { symbol: string; name: string; positions: Holding[]; skipped: number }
+    >();
+    for (const h of watchlist.data ?? []) {
+      const entry = bySymbol.get(h.symbol) ?? {
+        symbol: h.symbol,
+        name: h.name,
+        positions: [],
+        skipped: 0,
+      };
+      if (h.shares != null && h.shares > 0 && h.cost != null && h.cost > 0) {
+        entry.positions.push(h);
+      } else {
+        entry.skipped += 1;
+      }
+      bySymbol.set(h.symbol, entry);
     }
+    return Array.from(bySymbol.values()).sort((a, b) => a.symbol.localeCompare(b.symbol));
+  }, [watchlist.data]);
+
+  const handleImport = (code: string, count: number) => {
     if (
       !window.confirm(
-        `把自選股裡 ${code} 的持股部位匯入沖銷帳？\n\n` +
+        `把自選股裡 ${code} 的 ${count} 筆部位匯入沖銷帳？\n\n` +
           '匯入是單向且一次性的：之後兩邊各走各的，這裡的賣出不會改動「我的持股」。\n' +
+          '持股表沒有成交日，會用建立時間頂替，而沖銷順序完全靠成交日——匯入後要逐筆確認。\n' +
           '重複匯入會重複長出批次。'
       )
     ) {
@@ -289,13 +323,14 @@ export default function LotLedger() {
     void submit(async () => {
       const result = await importLedgerFromHoldings(code);
       setSelected(code);
+      setShowImport(false);
       if (result.lots.length === 0) {
-        return `${code} 在自選股裡沒有可匯入的部位——只有同時填了股數與成本的列才匯得進來`;
+        return `${code} 沒有可匯入的部位——只有同時填了股數與成本的列才匯得進來`;
       }
       return (
-        `已匯入 ${result.lots.length} 筆` +
+        `已匯入 ${code} ${result.lots.length} 筆` +
         (result.dates_unknown > 0
-          ? `，其中 ${result.dates_unknown} 筆沒有成交日（用建立時間頂替），沖銷順序靠成交日，請回去逐筆確認`
+          ? `，其中 ${result.dates_unknown} 筆是拿建立時間當成交日的，請逐筆確認日期`
           : '')
       );
     });
@@ -364,9 +399,8 @@ export default function LotLedger() {
             </button>
             <button
               type="button"
-              onClick={handleImport}
-              disabled={busy}
-              className="flex items-center justify-center gap-2 px-4 py-2 bg-surface border border-outline-variant rounded text-primary font-body-md text-body-md hover:bg-surface-container-low transition-colors disabled:opacity-40"
+              onClick={() => setShowImport((prev) => !prev)}
+              className="flex items-center justify-center gap-2 px-4 py-2 bg-surface border border-outline-variant rounded text-primary font-body-md text-body-md hover:bg-surface-container-low transition-colors"
             >
               <span className="material-symbols-outlined text-[18px]">download</span>
               從自選股匯入
@@ -409,6 +443,96 @@ export default function LotLedger() {
           <p className="font-body-sm text-body-sm text-primary bg-surface-container-low border border-outline-variant rounded-xl px-4 py-2">
             {notice}
           </p>
+        )}
+
+        {showImport && (
+          <section className="flex flex-col gap-stack-md rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm p-4">
+            <h2 className="font-headline-md text-headline-md text-primary">從自選股匯入</h2>
+            <p className="font-body-sm text-body-sm text-on-surface-variant">
+              把「我的持股」某一檔的部位搬過來當沖銷帳的起點。
+              <span className="text-on-surface font-semibold">單向且一次性</span>
+              ：搬完之後兩邊各走各的，這裡記的賣出不會回頭改動「我的持股」。
+              持股表沒有成交日與手續費 ——
+              <span className="text-on-surface font-semibold">
+                成交日會用那一列的建立時間頂替，而沖銷順序完全靠成交日
+              </span>
+              ，匯入後務必逐筆改成真正的成交日；手續費一律當 0，用現在的費率回推只會得到
+              一個看起來很精確、實際上跟對帳單無關的數字。重複匯入會重複長出批次。
+            </p>
+
+            {watchlist.loading && <PageState kind="loading" />}
+            {watchlist.error && (
+              <PageState kind="error" message={watchlist.error} onRetry={watchlist.reload} />
+            )}
+            {!watchlist.loading && !watchlist.error && importable.length === 0 && (
+              <PageState
+                kind="empty"
+                message="自選股是空的"
+                hint="先到「自選股」或「我的持股」建立部位，這裡才有東西可以搬。"
+              />
+            )}
+
+            {importable.length > 0 && (
+              <div className="overflow-x-auto rounded-xl border border-outline-variant">
+                <table className="w-full border-collapse">
+                  <thead className="bg-surface-container-low border-b border-outline-variant">
+                    <tr>
+                      <th className={`${headCell} pl-4 text-left`}>股號 / 名稱</th>
+                      <th className={`${headCell} text-left`}>會匯入的部位</th>
+                      <th className={`${headCell} pr-4 text-right`}>動作</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-outline-variant/50">
+                    {importable.map((item) => (
+                      <tr key={item.symbol} className="hover:bg-surface-container-low/50 transition-colors">
+                        <td className="p-2 pl-4 py-3 whitespace-nowrap">
+                          <span className="font-data-md text-data-md text-primary font-bold">
+                            {item.symbol}
+                          </span>
+                          <span className="block font-body-sm text-body-sm text-on-surface-variant">
+                            {item.name}
+                          </span>
+                        </td>
+                        <td className="p-2 py-3 font-body-sm text-body-sm text-on-surface-variant">
+                          {item.positions.length === 0 ? (
+                            <span className="text-outline">沒有填了股數與成本的部位</span>
+                          ) : (
+                            item.positions.map((p) => (
+                              <span key={p.id} className="block">
+                                {p.account || '未指定帳戶'} ·{' '}
+                                <span className="font-data-md text-data-md text-on-surface">
+                                  {formatNumber(p.shares)}
+                                </span>{' '}
+                                股 @{' '}
+                                <span className="font-data-md text-data-md text-on-surface">
+                                  {formatPrice(p.cost)}
+                                </span>
+                              </span>
+                            ))
+                          )}
+                          {item.skipped > 0 && (
+                            <span className="block text-outline">
+                              另有 {item.skipped} 筆缺股數或成本，匯不進來
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-2 pr-4 py-3 text-right whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => handleImport(item.symbol, item.positions.length)}
+                            disabled={busy || item.positions.length === 0}
+                            className={ghostButton}
+                          >
+                            匯入 {item.positions.length} 筆
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
         )}
 
         {showLotForm && (

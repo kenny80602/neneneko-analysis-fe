@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { Fragment, FormEvent, useMemo, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
 import StatCard from '../components/StatCard';
@@ -9,8 +9,9 @@ import {
   removePosition,
   updateHoldingPosition,
 } from '../api/portfolio';
+import { getLedgerReport } from '../api/ledger';
 import { apiErrorMessage } from '../api/request';
-import { Holding, PortfolioRow } from '../api/types';
+import { Holding, LedgerLot, PortfolioRow } from '../api/types';
 import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
 import {
@@ -95,6 +96,69 @@ function toPositionRows(
     .sort((a, b) => (b.marketValue ?? -1) - (a.marketValue ?? -1));
 }
 
+/** 沒填帳戶時的顯示名稱。空字串與 null 都算同一組——兩者都是「沒指定」。 */
+const NO_ACCOUNT = '未指定帳戶';
+
+/** 一個帳戶的小計。欄位語意與全站合計一致，只是範圍縮到單一帳戶。 */
+interface AccountGroup {
+  account: string;
+  rows: PositionRow[];
+  /** 股數、成本、現價都齊的筆數。四個數字都只算這一群，範圍才內部一致。 */
+  counted: number;
+  marketValue: number;
+  costValue: number;
+  profit: number;
+  profitPercent: number | null;
+  /** 這個帳戶的市值佔全部帳戶的比重。 */
+  weight: number | null;
+}
+
+/**
+ * 依帳戶分組。
+ *
+ * 為什麼要分：同一個人的部位散在不同券商，看總數看不出「哪一個帳戶在賺」。
+ * 分完之後每一組的市值、成本、損益、報酬率都是那個帳戶自己的，可以直接當報表看。
+ *
+ * 組內順序沿用市值由大到小；組的順序也照市值排，但「未指定帳戶」一律墊底——
+ * 那不是一個真的帳戶，是還沒填的資料，排在中間會讓人以為它是一組部位。
+ */
+function groupByAccount(rows: PositionRow[], weightBase: number): AccountGroup[] {
+  const byAccount = new Map<string, PositionRow[]>();
+  for (const row of rows) {
+    const key = row.account.trim() || NO_ACCOUNT;
+    const list = byAccount.get(key) ?? [];
+    list.push(row);
+    byAccount.set(key, list);
+  }
+
+  const groups = Array.from(byAccount, ([account, list]) => {
+    // 跟全站合計同一個規則：只累加三個值都齊的那幾筆。
+    // 市值算 A 群、成本算 B 群的話，相減得到的損益不對應任何真實部位。
+    const complete = list.filter((r) => r.marketValue != null && r.costValue != null);
+    const marketValue = complete.reduce((sum, r) => sum + (r.marketValue as number), 0);
+    const costValue = complete.reduce((sum, r) => sum + (r.costValue as number), 0);
+    // 比重的分母跟全站合計一致，用「有市值」的那群（比可完整計算的寬）：
+    // 只差成本的部位仍然佔著倉，不該從分布裡消失。
+    const groupMarketValue = list.reduce((sum, r) => sum + (r.marketValue ?? 0), 0);
+    return {
+      account,
+      rows: list,
+      counted: complete.length,
+      marketValue,
+      costValue,
+      profit: marketValue - costValue,
+      profitPercent: costValue > 0 ? ((marketValue - costValue) / costValue) * 100 : null,
+      weight: weightBase > 0 ? (groupMarketValue / weightBase) * 100 : null,
+    };
+  });
+
+  return groups.sort((a, b) => {
+    if (a.account === NO_ACCOUNT) return 1;
+    if (b.account === NO_ACCOUNT) return -1;
+    return b.marketValue - a.marketValue;
+  });
+}
+
 /** 空字串轉 null（代表不知道），有填就轉數字；填了非正數回 undefined 表示不合法。 */
 function parsePositive(text: string): number | null | undefined {
   const trimmed = text.trim();
@@ -163,6 +227,53 @@ export default function Holdings() {
       weightBase: rows.reduce((sum, row) => sum + (row.marketValue ?? 0), 0),
     };
   }, [rows]);
+
+  const groups = useMemo(() => groupByAccount(rows, totals.weightBase), [rows, totals.weightBase]);
+
+  /**
+   * 展開某一列時去撈那一檔的沖銷帳買進明細。
+   *
+   * 持股表一列只有「目前股數與平均成本」，沒有逐筆買進紀錄——那些在沖銷帳
+   * （ledger_lots）裡，是另一張刻意獨立的表。這裡只讀不寫，兩邊的數字各記各的：
+   * 沖銷帳的剩餘不會等於這一列的股數，除非兩邊都有好好維護。
+   *
+   * 一檔一個 key 快取，收合再展開不重打；換頁重進才會重抓。
+   */
+  const [expandedId, setExpandedId] = useState('');
+  const [lotsBySymbolCache, setLotsBySymbolCache] = useState<
+    Record<string, { loading: boolean; error: string; lots: LedgerLot[] }>
+  >({});
+
+  const toggleExpand = (row: PositionRow) => {
+    if (expandedId === row.id) {
+      setExpandedId('');
+      return;
+    }
+    setExpandedId(row.id);
+    if (lotsBySymbolCache[row.symbol]) return;
+    setLotsBySymbolCache((prev) => ({
+      ...prev,
+      [row.symbol]: { loading: true, error: '', lots: [] },
+    }));
+    getLedgerReport(row.symbol)
+      .then((report) => {
+        setLotsBySymbolCache((prev) => ({
+          ...prev,
+          [row.symbol]: {
+            loading: false,
+            error: '',
+            // 用策略帳的部位：那是使用者眼中的真相，券商 FIFO 帳沖掉的批次不一定是同一筆。
+            lots: report.strategy.positions.map((p) => p.lot),
+          },
+        }));
+      })
+      .catch((err) => {
+        setLotsBySymbolCache((prev) => ({
+          ...prev,
+          [row.symbol]: { loading: false, error: apiErrorMessage(err), lots: [] },
+        }));
+      });
+  };
 
   const loading = holdings.loading || valuation.loading;
   const error = holdings.error || valuation.error;
@@ -439,6 +550,118 @@ export default function Holdings() {
               </p>
             )}
 
+            {/* ── 各帳戶總覽 ── */}
+            {groups.length > 1 && (
+              <section className="flex flex-col gap-stack-md">
+                <h2 className="font-headline-md text-headline-md text-primary">各帳戶總覽</h2>
+                <div className="overflow-x-auto rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm">
+                  <table className="w-full border-collapse">
+                    <thead className="bg-surface-container-low border-b border-outline-variant">
+                      <tr>
+                        <th className={`${headCell} pl-4 text-left`}>帳戶</th>
+                        <th className={`${headCell} text-right`}>部位數</th>
+                        <th className={`${headCell} text-right`}>總市值</th>
+                        <th className={`${headCell} text-right`}>總成本</th>
+                        <th className={`${headCell} text-right`}>未實現損益</th>
+                        <th className={`${headCell} text-right`}>報酬率</th>
+                        <th className={`${headCell} pr-4 text-right`}>佔比</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-outline-variant/50">
+                      {groups.map((group) => (
+                        <tr
+                          key={group.account}
+                          className="hover:bg-surface-container-low/50 transition-colors"
+                        >
+                          <td className="p-2 pl-4 py-3 font-body-md text-body-md whitespace-nowrap">
+                            {group.account === NO_ACCOUNT ? (
+                              <span className="text-outline">{NO_ACCOUNT}</span>
+                            ) : (
+                              <span className="text-on-surface font-semibold">{group.account}</span>
+                            )}
+                          </td>
+                          <td className={`${numberCell} text-on-surface-variant`}>
+                            {group.counted < group.rows.length
+                              ? `${group.counted} / ${group.rows.length}`
+                              : formatNumber(group.rows.length)}
+                          </td>
+                          <td className={`${numberCell} text-on-surface font-bold`}>
+                            {group.counted > 0 ? formatAmount(group.marketValue) : DASH}
+                          </td>
+                          <td className={`${numberCell} text-on-surface-variant`}>
+                            {group.counted > 0 ? formatAmount(group.costValue) : DASH}
+                          </td>
+                          <td
+                            className={`${numberCell} ${quoteColor(
+                              group.counted > 0 ? group.profit : null
+                            )}`}
+                          >
+                            {group.counted > 0 ? formatSigned(group.profit, 0) : DASH}
+                          </td>
+                          <td
+                            className={`${numberCell} ${quoteColor(
+                              group.counted > 0 ? group.profitPercent : null
+                            )}`}
+                          >
+                            {formatSignedPercent(group.counted > 0 ? group.profitPercent : null)}
+                          </td>
+                          <td className={`${numberCell} pr-4 text-on-surface-variant`}>
+                            {formatPercent(group.weight)}
+                          </td>
+                        </tr>
+                      ))}
+                      {/* 合計列擺在最後，數字跟上面那排指標卡是同一份。 */}
+                      <tr className="bg-surface-container-low font-semibold">
+                        <td className="p-2 pl-4 py-3 font-body-md text-body-md text-on-surface">
+                          合計
+                        </td>
+                        <td className={`${numberCell} text-on-surface-variant`}>
+                          {totals.counted < rows.length
+                            ? `${totals.counted} / ${rows.length}`
+                            : formatNumber(rows.length)}
+                        </td>
+                        <td className={`${numberCell} text-on-surface`}>
+                          {totals.counted > 0 ? formatAmount(totals.marketValue) : DASH}
+                        </td>
+                        <td className={`${numberCell} text-on-surface-variant`}>
+                          {totals.counted > 0 ? formatAmount(totals.costValue) : DASH}
+                        </td>
+                        <td
+                          className={`${numberCell} ${quoteColor(
+                            totals.counted > 0 ? totals.profit : null
+                          )}`}
+                        >
+                          {totals.counted > 0 ? formatSigned(totals.profit, 0) : DASH}
+                        </td>
+                        <td
+                          className={`${numberCell} ${quoteColor(
+                            totals.counted > 0 ? totals.profitPercent : null
+                          )}`}
+                        >
+                          {formatSignedPercent(totals.counted > 0 ? totals.profitPercent : null)}
+                        </td>
+                        <td className={`${numberCell} pr-4 text-on-surface-variant`}>
+                          {formatPercent(totals.weightBase > 0 ? 100 : null)}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p className="font-body-sm text-body-sm text-on-surface-variant">
+                  每一組的四個數字只累加「股數、成本、現價都齊」的部位，跟合計同一個規則——
+                  市值算一群、成本算另一群的話，相減得到的損益不對應任何真實部位。
+                  「部位數」寫成 A / B 時，代表這個帳戶有 B 筆部位但只有 A 筆納得進計算。
+                  {groups.some((g) => g.account === NO_ACCOUNT) && (
+                    <>
+                      {' '}
+                      「{NO_ACCOUNT}」不是一個真的帳戶，是那幾筆還沒填 account 欄位；
+                      在下表按編輯補上券商名稱就會歸到對的組。
+                    </>
+                  )}
+                </p>
+              </section>
+            )}
+
             <div className="overflow-x-auto rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm">
               <table className="w-full border-collapse">
                 <thead className="bg-surface-container-low border-b border-outline-variant">
@@ -456,15 +679,68 @@ export default function Holdings() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant/50">
-                  {rows.map((row) => {
-                    const weight =
-                      row.marketValue != null && totals.weightBase > 0
-                        ? (row.marketValue / totals.weightBase) * 100
-                        : null;
-                    const editing = editingId === row.id;
-                    return (
+                  {groups.map((group) => (
+                    <Fragment key={group.account}>
+                      {/*
+                        帳戶分隔列。小計直接寫在這一列上，不必回頭對照上面那張總覽——
+                        往下捲到一半時最想知道的就是「我現在看的是哪個帳戶、它賺多少」。
+                      */}
+                      <tr className="bg-surface-container-low/70 border-y border-outline-variant">
+                        <td colSpan={2} className="px-4 py-2 whitespace-nowrap">
+                          <span className="material-symbols-outlined text-[16px] align-middle mr-1 text-on-surface-variant">
+                            account_balance_wallet
+                          </span>
+                          {group.account === NO_ACCOUNT ? (
+                            <span className="font-body-md text-body-md text-outline">
+                              {NO_ACCOUNT}
+                            </span>
+                          ) : (
+                            <span className="font-body-md text-body-md text-on-surface font-semibold">
+                              {group.account}
+                            </span>
+                          )}
+                          <span className="ml-2 font-body-sm text-body-sm text-on-surface-variant">
+                            {group.rows.length} 筆
+                          </span>
+                        </td>
+                        <td colSpan={3} className="px-2 py-2 text-right">
+                          <span className="font-body-sm text-body-sm text-on-surface-variant">
+                            市值小計
+                          </span>
+                        </td>
+                        <td className={`${numberCell} text-on-surface font-bold`}>
+                          {group.counted > 0 ? formatAmount(group.marketValue) : DASH}
+                        </td>
+                        <td
+                          className={`${numberCell} font-bold ${quoteColor(
+                            group.counted > 0 ? group.profit : null
+                          )}`}
+                        >
+                          {group.counted > 0 ? formatSigned(group.profit, 0) : DASH}
+                        </td>
+                        <td
+                          className={`${numberCell} font-bold ${quoteColor(
+                            group.counted > 0 ? group.profitPercent : null
+                          )}`}
+                        >
+                          {formatSignedPercent(group.counted > 0 ? group.profitPercent : null)}
+                        </td>
+                        <td className={`${numberCell} text-on-surface-variant`}>
+                          {formatPercent(group.weight)}
+                        </td>
+                        <td className="px-4 py-2" />
+                      </tr>
+                      {group.rows.map((row) => {
+                        const weight =
+                          row.marketValue != null && totals.weightBase > 0
+                            ? (row.marketValue / totals.weightBase) * 100
+                            : null;
+                        const editing = editingId === row.id;
+                        const expanded = expandedId === row.id;
+                        const lots = lotsBySymbolCache[row.symbol];
+                        return (
+                          <Fragment key={row.id}>
                       <tr
-                        key={row.id}
                         onClick={() => setSymbol(row.symbol)}
                         title="點擊設為目前選取的股票"
                         className="hover:bg-surface-container-low/50 transition-colors cursor-pointer"
@@ -570,6 +846,20 @@ export default function Holdings() {
                             </span>
                           ) : (
                             <span className="inline-flex gap-1">
+                              {/*
+                                展開看這一檔的逐筆買進。持股表一列只有「目前股數與平均成本」，
+                                沒有買進明細——那些在自訂沖銷帳那張獨立的表裡。
+                              */}
+                              <button
+                                type="button"
+                                onClick={() => toggleExpand(row)}
+                                title={expanded ? '收合買進明細' : '展開買進明細（自訂沖銷帳）'}
+                                className="p-1 rounded text-outline hover:text-primary hover:bg-surface-container transition-colors"
+                              >
+                                <span className="material-symbols-outlined text-[20px]">
+                                  {expanded ? 'expand_less' : 'expand_more'}
+                                </span>
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => startEdit(row)}
@@ -592,8 +882,94 @@ export default function Holdings() {
                           )}
                         </td>
                       </tr>
-                    );
-                  })}
+
+                            {expanded && (
+                              <tr className="bg-surface-container-low/40">
+                                <td colSpan={10} className="p-4">
+                                  <p className="font-label-caps text-label-caps uppercase text-primary mb-2">
+                                    {row.symbol} 的買進明細（自訂沖銷帳）
+                                  </p>
+                                  {lots?.loading && (
+                                    <p className="font-body-sm text-body-sm text-on-surface-variant">
+                                      載入中…
+                                    </p>
+                                  )}
+                                  {lots?.error && (
+                                    <p className="font-body-sm text-body-sm text-error">
+                                      {lots.error}
+                                    </p>
+                                  )}
+                                  {lots && !lots.loading && !lots.error && lots.lots.length === 0 && (
+                                    <p className="font-body-sm text-body-sm text-on-surface-variant">
+                                      這一檔在沖銷帳裡還沒有任何買進紀錄。持股表存的是「目前股數與平均成本」，
+                                      沒有逐筆明細；要看每一筆幾號、幾股、多少錢買的，得到
+                                      <span className="text-on-surface font-semibold">
+                                        「自訂沖銷帳」
+                                      </span>
+                                      逐筆輸入，或用那一頁的「從自選股匯入」把這一檔的部位先搬過去當起點。
+                                    </p>
+                                  )}
+                                  {lots && lots.lots.length > 0 && (
+                                    <>
+                                      <table className="w-full border-collapse">
+                                        <thead>
+                                          <tr>
+                                            <th className={`${headCell} text-left`}>成交日</th>
+                                            <th className={`${headCell} text-left`}>帳戶</th>
+                                            <th className={`${headCell} text-right`}>股數</th>
+                                            <th className={`${headCell} text-right`}>買價</th>
+                                            <th className={`${headCell} text-right`}>手續費</th>
+                                            <th className={`${headCell} text-right`}>每股成本</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-outline-variant/50">
+                                          {lots.lots.map((lot) => (
+                                            <tr key={lot.id}>
+                                              <td className="p-2 py-2 font-body-sm text-body-sm text-on-surface whitespace-nowrap">
+                                                {lot.trade_date}
+                                              </td>
+                                              <td className="p-2 py-2 font-body-sm text-body-sm text-on-surface-variant whitespace-nowrap">
+                                                {lot.account || DASH}
+                                              </td>
+                                              <td
+                                                className={`${numberCell} text-on-surface-variant`}
+                                              >
+                                                {formatNumber(lot.shares)}
+                                              </td>
+                                              <td
+                                                className={`${numberCell} text-on-surface-variant`}
+                                              >
+                                                {formatPrice(lot.price)}
+                                              </td>
+                                              <td
+                                                className={`${numberCell} text-on-surface-variant`}
+                                              >
+                                                {formatNumber(lot.fee)}
+                                              </td>
+                                              <td className={`${numberCell} text-on-surface`}>
+                                                {formatPrice(lot.unit_cost)}
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                      <p className="font-body-sm text-body-sm text-on-surface-variant mt-2">
+                                        這是自訂沖銷帳的紀錄，
+                                        <span className="text-on-surface font-semibold">
+                                          跟上面那一列的股數各記各的、不會自動同步
+                                        </span>
+                                        ——兩邊對不上就是有一邊沒維護。每股成本已含買進手續費。
+                                      </p>
+                                    </>
+                                  )}
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        );
+                      })}
+                    </Fragment>
+                  ))}
                 </tbody>
               </table>
             </div>
