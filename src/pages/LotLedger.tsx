@@ -31,6 +31,7 @@ import {
   formatPrice,
   formatSigned,
   formatSignedPercent,
+  priceSourceLabel,
   quoteColor,
   today,
 } from '../utils/format';
@@ -109,6 +110,30 @@ export default function LotLedger() {
   const broker = report.data?.broker;
   const recon = report.data?.reconcile;
   const fees = report.data?.fees;
+
+  /**
+   * 新增買進明細時，代號／名稱／帳戶的預設值。
+   *
+   * 這一頁本來就停在某一檔上，再叫使用者把代號打一次是多餘的，打錯還會把批次
+   * 加到別檔去。帳戶取最後一筆買進的：同一檔多半一直放在同一個券商，
+   * 換帳戶才需要改，而改了下一次又會沿用新的那一個。
+   *
+   * 三個欄位仍然可以改：庫存清單是空的時候，這張表單就是開一檔新沖銷帳的入口。
+   */
+  const lotDefaults = useMemo(() => {
+    const positions = strategy?.positions ?? [];
+    const last = positions[positions.length - 1]?.lot;
+    return { symbol, name: report.data?.name ?? '', account: last?.account ?? '' };
+  }, [symbol, report.data, strategy]);
+
+  // 表單收起來的時候，這三格一直跟著目前這一檔走；一打開就凍住，
+  // 免得報表在背景重抓（例如剛加完一筆）時把使用者正在改的欄位蓋掉。
+  useEffect(() => {
+    if (showLotForm) return;
+    setLotSymbol(lotDefaults.symbol);
+    setLotName(lotDefaults.name);
+    setLotAccount(lotDefaults.account);
+  }, [lotDefaults, showLotForm]);
 
   // 換一檔股票時，上一檔的指定沖銷完全沒有意義（批次 id 都不一樣），整個清掉。
   useEffect(() => {
@@ -596,6 +621,8 @@ export default function LotLedger() {
               </button>
             </div>
             <p className="font-body-sm text-body-sm text-on-surface-variant">
+              代號、名稱與帳戶已經照目前這一檔填好（帳戶取最後一筆買進的），
+              直接填股數與買價就行；要加到別檔或換券商時改掉那幾格即可。
               手續費留白就照後端目前的費率自動算，也可以直接填對帳單上的實際金額；
               <span className="text-on-surface font-semibold">填 0 代表這一筆真的沒收手續費</span>
               ，跟留白不是同一件事。買進手續費會攤進每股成本——不攤的話損益會虛胖一個手續費。
@@ -645,7 +672,7 @@ export default function LotLedger() {
 
             {hasLots && (
               <>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-stack-md">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-stack-md">
                   <StatCard
                     label="剩餘股數"
                     icon="inventory_2"
@@ -657,6 +684,40 @@ export default function LotLedger() {
                     icon="target"
                     value={strategy.avg_cost == null ? DASH : formatPrice(strategy.avg_cost)}
                     hint="元，我指定沖銷後剩下的"
+                  />
+                  {/* 現價那三張跟著策略帳走。取不到現價（收盤後 MIS 掛掉是常態）
+                      時一律破折號，不要退回 0——0 元市值會被讀成部位變壁紙。 */}
+                  <StatCard
+                    label="現在報酬率"
+                    icon="trending_up"
+                    value={formatSignedPercent(strategy.unrealized_rate)}
+                    hint={
+                      report.data?.price == null
+                        ? '取不到現價'
+                        : `現價 ${formatPrice(report.data.price)}${
+                            report.data.price_source && report.data.price_source !== 'TRADE'
+                              ? `（${priceSourceLabel(report.data.price_source)}）`
+                              : ''
+                          }`
+                    }
+                    valueClassName={quoteColor(strategy.unrealized_rate)}
+                  />
+                  <StatCard
+                    label="原本金額"
+                    icon="savings"
+                    value={strategy.shares > 0 ? formatNumber(strategy.cost) : DASH}
+                    hint="元，剩餘部位的成本（含買進手續費）"
+                  />
+                  <StatCard
+                    label="目前市值"
+                    icon="paid"
+                    value={strategy.market_value == null ? DASH : formatNumber(strategy.market_value)}
+                    hint={
+                      strategy.unrealized == null
+                        ? '元，取不到現價'
+                        : `元，未實現 ${formatSigned(strategy.unrealized, 0)}`
+                    }
+                    valueClassName={quoteColor(strategy.unrealized)}
                   />
                   <StatCard
                     label="券商帳平均成本"
@@ -681,6 +742,13 @@ export default function LotLedger() {
                 </div>
 
                 <p className="font-body-sm text-body-sm text-on-surface-variant">
+                  「現在報酬率」「原本金額」「目前市值」看的是
+                  <span className="text-on-surface font-semibold">還沒賣掉的那些</span>
+                  ：原本金額是剩餘部位的成本（含買進手續費），市值是它照現價值多少，
+                  報酬率是兩者的差除以成本。
+                  <span className="text-on-surface font-semibold">未實現那組沒有扣賣出的手續費與證交稅</span>
+                  ，跟已實現那組（已扣）口徑不同——賣出費用要等真的賣才知道賣幾股、分幾筆。
+                  這三個數字在券商帳會不一樣（剩餘股數相同但成本不同），畫面上顯示的是策略帳。
                   「兩帳差額」＝策略帳已實現 − 券商帳已實現，是
                   <span className="text-on-surface font-semibold">認列時間的差</span>
                   ，不是多賺或少賺的錢。剩餘股數的總和兩邊永遠相同，差別只在

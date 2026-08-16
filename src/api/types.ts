@@ -792,6 +792,20 @@ export interface Ledger {
   // 剩餘部位的每股平均成本。沒有部位時是 null，不是 0——0 元成本會讓損益算出 -100%。
   avg_cost: number | null;
   realized: number;
+
+  // 剩餘部位現在值多少＝剩餘股數 × 現價。
+  //
+  // 下面三個一起有一起沒有：取不到現價（收盤後上游掛掉、冷門股盤中沒撮合價）
+  // 或手上沒有部位時都是 null。null 是「不知道」不是 0——
+  // 0 元市值會被讀成「這批部位變成壁紙了」。
+  market_value: number | null;
+  // 未實現損益＝市值 − 剩餘部位成本。
+  //
+  // ⚠️ 沒有扣賣出的手續費與證交稅，跟 realized（已扣）的口徑不同。
+  unrealized: number | null;
+  // 未實現報酬率（%）。分母是這一本帳自己的成本，
+  // 所以策略帳與券商帳的數字不一樣——那正是這一頁要對照的東西。
+  unrealized_rate: number | null;
 }
 
 // 一筆買進在兩本帳裡的剩餘對照。
@@ -866,6 +880,14 @@ export interface LedgerReport {
   strategy: Ledger;
   broker: Ledger;
   reconcile: LedgerReconcile;
+
+  // 現價，兩本帳的市值都是拿它算的。
+  // null 代表這次取不到——沖銷帳本身跟現價無關，取價失敗不會讓整份報表失敗。
+  price: number | null;
+  // 現價的來源。不是 TRADE 就代表這不是本次快照的成交價，畫面要標示出來。
+  price_source: PriceSource;
+  // 現價實際成交的時間，RFC3339。來源沒給時是空字串。
+  price_as_of: string;
 }
 
 // 送出前的試算：同一張單在兩本帳裡各會變成什麼樣子。
