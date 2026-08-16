@@ -30,6 +30,18 @@ interface TrendChartProps {
   unit?: string;
   /** 圖表下方的說明，講清楚這張圖的陷阱。 */
   footnote?: string;
+  /**
+   * Y 軸反轉，小的值畫在上面。名次專用：第 1 名要在最上面，
+   * 不然「排名進步」會表現成一條往下掉的線，跟直覺相反。
+   *
+   * 只對 line 有意義。bar 是以零軸為基準上下長的，反轉會讓紅漲綠跌的方向也跟著顛倒。
+   */
+  invert?: boolean;
+  /**
+   * Y 軸刻度的小數位。不給就照級距自動決定。
+   * 名次這種整數量要給 0，不然會出現「第 38.0 名」。
+   */
+  digits?: number;
 }
 
 // 座標系與 PriceChart 一致，兩張圖放在同一頁時線寬與字級才會一樣。
@@ -56,6 +68,8 @@ export default function TrendChart({
   mode = 'line',
   unit,
   footnote,
+  invert = false,
+  digits: fixedDigits,
 }: TrendChartProps) {
   const scale = useMemo(() => {
     const values: number[] = [];
@@ -80,9 +94,12 @@ export default function TrendChart({
       max += pad / 2;
     }
     const span = max - min;
-    const y = (value: number) => BOTTOM - ((value - min) / span) * (BOTTOM - TOP);
+    const y = (value: number) =>
+      invert
+        ? TOP + ((value - min) / span) * (BOTTOM - TOP)
+        : BOTTOM - ((value - min) / span) * (BOTTOM - TOP);
     return { min, max, span, y, zero: y(0) };
-  }, [series, mode]);
+  }, [series, mode, invert]);
 
   const length = series[0]?.points.length ?? 0;
   // 有幾天真的有值。少於兩天畫不出走勢——一個點的折線圖只是一個孤立的圓，
@@ -107,7 +124,7 @@ export default function TrendChart({
   const x = (index: number) =>
     length === 1 ? LEFT + PLOT_WIDTH / 2 : LEFT + (index / (length - 1)) * PLOT_WIDTH;
 
-  const digits = axisDigits(scale.span);
+  const digits = fixedDigits ?? axisDigits(scale.span);
   const gridValues = Array.from(
     { length: GRID_LINES + 1 },
     (_, i) => scale.min + (scale.span * i) / GRID_LINES

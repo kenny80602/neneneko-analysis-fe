@@ -43,6 +43,18 @@ export interface DailyQuote {
   volume: number;
   trade_value: number;
   transaction_count: number;
+  // 當日全市場名次，1 起算，分母是同市場的普通股家數（上市跟上市比、上櫃跟上櫃比）。
+  //
+  // null 是「這一天沒有名次」而不是排最後：當天沒成交、不是普通股（ETF、權證、
+  // 特別股不納入排名），或這一列是回補進來的——回補走單檔歷史端點，
+  // 那裡問不到全市場，所以 2026-08-16 以前的資料一律是 null。
+  trade_value_rank: number | null;
+  trade_value_rank_total: number | null;
+  // 漲跌幅名次，第 1 名是當天漲最多的。除權息當天額外是 null——那天的漲跌跟前一日
+  // 沒有可比性，所以這一組的分母會比成交金額那一組少幾檔（實測上市 1,087 對 1,085），
+  // 不是算錯。
+  change_rank: number | null;
+  change_rank_total: number | null;
 }
 
 export interface DailyQuoteHistory {

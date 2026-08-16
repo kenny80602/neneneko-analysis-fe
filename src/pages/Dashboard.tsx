@@ -3,6 +3,7 @@ import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
 import PriceChart from '../components/PriceChart';
 import SymbolSearch from '../components/SymbolSearch';
+import TrendChart from '../components/TrendChart';
 import { getAnnouncementHistory } from '../api/announcement';
 import { getDailyQuoteHistory } from '../api/dailyQuote';
 import { getInstitutionalHistory } from '../api/institutional';
@@ -46,6 +47,9 @@ const PEER_LEADERS = 3;
 const PEER_RADIUS = 7;
 // 「近 5 日漲幅」用的間隔（5 個交易日 ≈ 一週）。
 const RECENT_SPAN = 5;
+// 名次走勢畫幾個交易日（約半年）。名次是從開始收集那天才有的，
+// 一開始遠遠不到這個數，這個上限是留給以後資料長起來之後。
+const RANK_SPAN = 120;
 
 const cardClass = 'bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm';
 const chipClass =
@@ -143,6 +147,18 @@ export default function Dashboard() {
   // 同產業比較。資料來自全市場的月營收，跟自選股無關，任何一檔都查得到。
   const peers = useAsyncData(() => getIndustryPeers(symbol), [symbol], { enabled });
   const peerRows = useMemo(() => buildPeerRows(peers.data), [peers.data]);
+
+  // 名次走勢直接吃 history 那份收盤行情，不另外發請求——名次就存在同一列上。
+  // x 軸只放有收盤資料的日子，那些就是交易日，不必另外維護一份交易日曆。
+  const ranks = useMemo(() => {
+    const points = [...(history.data?.quotes ?? [])].reverse().slice(-RANK_SPAN);
+    return {
+      points,
+      hasRank: points.some((q) => q.trade_value_rank != null || q.change_rank != null),
+      // 分母取最後一個有名次的交易日：掛牌檔數逐年變動，用最新的當標題比較貼近現況。
+      latest: [...points].reverse().find((q) => q.trade_value_rank_total != null),
+    };
+  }, [history.data]);
 
   const row = useMemo(
     () => valuation.data?.find((item) => item.symbol === symbol),
@@ -513,6 +529,62 @@ export default function Dashboard() {
               <PageState kind="error" message={history.error} onRetry={history.reload} />
             )}
             {!history.loading && !history.error && <PriceChart quotes={history.data?.quotes ?? []} />}
+
+            <section className={`${cardClass} p-6 flex flex-col gap-stack-md`}>
+              <h3 className="font-headline-md text-headline-md text-primary flex items-center gap-2">
+                <span className="material-symbols-outlined text-[20px]">leaderboard</span>
+                全市場名次走勢
+                {ranks.latest?.trade_value_rank_total != null && (
+                  <span className={chipClass}>
+                    {marketLabel(ranks.latest.market)} 共{' '}
+                    {formatNumber(ranks.latest.trade_value_rank_total)} 檔
+                  </span>
+                )}
+              </h3>
+
+              <p className="font-body-sm text-body-sm text-on-surface-variant">
+                這一檔每天在<span className="text-on-surface">同市場所有普通股</span>
+                裡的成交金額名次與漲跌幅名次（上市跟上市比、上櫃跟上櫃比）。
+                名次是收盤後從全市場收盤行情現算的，ETF、權證與特別股不納入，所以分母比掛牌檔數少。
+              </p>
+
+              {ranks.points.length > 0 && !ranks.hasRank && (
+                <p className="font-body-sm text-body-sm text-on-surface-variant">
+                  這段期間還沒有名次。名次只能每天收集、回補不了——回補走的是單檔歷史端點，
+                  那裡問不到當天的全市場，所以開始收集之前的日子一律沒有名次。
+                  另外 ETF 與當天沒成交的日子本來就不會有。
+                </p>
+              )}
+
+              {ranks.hasRank && (
+                <TrendChart
+                  mode="line"
+                  invert
+                  digits={0}
+                  unit="名"
+                  series={[
+                    {
+                      label: '成交金額名次',
+                      className: 'stroke-primary',
+                      points: ranks.points.map((q) => ({
+                        date: q.date,
+                        value: q.trade_value_rank,
+                      })),
+                    },
+                    {
+                      label: '漲跌幅名次',
+                      className: 'stroke-on-primary-container',
+                      dash: '8 5',
+                      points: ranks.points.map((q) => ({
+                        date: q.date,
+                        value: q.change_rank,
+                      })),
+                    },
+                  ]}
+                  footnote="Y 軸是反的：第 1 名在最上面，線往上代表名次進步。成交金額名次看的是「今天有多少錢在這一檔上進出」，漲跌幅名次看的是「今天贏過幾檔」，兩條常常不同步——量爆大但收黑的日子，一條衝上去另一條會掉下來。除權息當天沒有漲跌幅名次（那天的漲跌跟前一日沒有可比性），線會斷一格；當天沒成交則兩條都斷。"
+                />
+              )}
+            </section>
 
             <section className={`${cardClass} p-6 flex flex-col gap-stack-md`}>
               <h3 className="font-headline-md text-headline-md text-primary flex items-center gap-2">
