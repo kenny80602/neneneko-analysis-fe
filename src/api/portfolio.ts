@@ -55,13 +55,16 @@ export const updateHoldingPosition = (
   id: string,
   cost: number | null,
   shares: number | null,
-  account = ''
+  account = '',
+  tradeDate = ''
 ) =>
   request
     .put<ApiResponse<UpdatePositionResult>>(`/portfolio/positions/${id}`, {
       cost,
       shares,
       account,
+      // 成交日 YYYY-MM-DD，空字串代表清掉／不知道。格式不對後端回 400。
+      trade_date: tradeDate,
     })
     .then((res) => res.data.data);
 
@@ -74,10 +77,17 @@ export const addPosition = (
   symbol: string,
   cost: number | null,
   shares: number | null,
-  account = ''
+  account = '',
+  tradeDate = ''
 ) =>
   request
-    .post<ApiResponse<Holding>>('/portfolio/positions', { symbol, cost, shares, account })
+    .post<ApiResponse<Holding>>('/portfolio/positions', {
+      symbol,
+      cost,
+      shares,
+      account,
+      trade_date: tradeDate,
+    })
     .then((res) => res.data.data);
 
 // 刪掉單獨一筆部位。同一檔的其他筆（其他帳戶）不受影響。

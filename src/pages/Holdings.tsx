@@ -25,6 +25,7 @@ import {
   marketLabel,
   priceSourceLabel,
   quoteColor,
+  today,
 } from '../utils/format';
 
 // 這一頁跟「自選股」的差別：那邊看的是行情與買入時機，這邊看的是部位。
@@ -57,6 +58,8 @@ interface PositionRow {
 
   shares: number | null;
   cost: number | null;
+  /** 成交日 YYYY-MM-DD。空字串代表不知道（舊資料與從 LINE 加進來的都沒有）。 */
+  tradeDate: string;
   price: number | null;
   priceSource: string;
   /** 取價失敗的原因，成功時是空字串。 */
@@ -89,6 +92,7 @@ function toPositionRows(
         disabled: !h.enabled,
         shares: h.shares,
         cost: h.cost,
+        tradeDate: h.trade_date,
         price,
         priceSource: valuation?.price_source ?? '',
         error: valuation?.error ?? '',
@@ -106,6 +110,22 @@ function toPositionRows(
 
 /** 沒填帳戶時的顯示名稱。空字串與 null 都算同一組——兩者都是「沒指定」。 */
 const NO_ACCOUNT = '未指定帳戶';
+
+/**
+ * 從成交日到今天幾天。沒填成交日回 null，呼叫端顯示破折號。
+ *
+ * 用日曆天而不是交易日：交易日要有行事曆（後端也沒有），而「持有多久」
+ * 這個問題本來就是問日曆天。以台北時區的日界為準，跟成交日同一個基準。
+ */
+function holdingDays(tradeDate: string): string | null {
+  if (!tradeDate) return null;
+  const from = new Date(`${tradeDate}T00:00:00+08:00`);
+  if (Number.isNaN(from.getTime())) return null;
+  const to = new Date(`${today()}T00:00:00+08:00`);
+  const days = Math.round((to.getTime() - from.getTime()) / 86400000);
+  // 補登未來日期時會是負數，那是輸入錯誤，直接照實顯示比藏起來好。
+  return `${days} 天`;
+}
 
 /**
  * 同一個帳戶裡同一檔的合併結果，也就是表上實際看到的那一列。
@@ -275,6 +295,7 @@ export default function Holdings() {
   const [editShares, setEditShares] = useState('');
   const [editCost, setEditCost] = useState('');
   const [editAccount, setEditAccount] = useState('');
+  const [editTradeDate, setEditTradeDate] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
 
@@ -283,6 +304,7 @@ export default function Holdings() {
   const [newShares, setNewShares] = useState('');
   const [newCost, setNewCost] = useState('');
   const [newAccount, setNewAccount] = useState('');
+  const [newTradeDate, setNewTradeDate] = useState('');
 
   const allRows = useMemo(() => {
     const priceBySymbol = new Map<string, PortfolioRow>();
@@ -389,6 +411,7 @@ export default function Holdings() {
     setEditShares(row.shares == null ? '' : String(row.shares));
     setEditCost(row.cost == null ? '' : String(row.cost));
     setEditAccount(row.account);
+    setEditTradeDate(row.tradeDate);
     setNotice('');
   };
 
@@ -408,7 +431,7 @@ export default function Holdings() {
     setNotice('');
     try {
       // 這支是整組部位覆寫，三個值一定要一起送，不能只送有改的那個。
-      await updateHoldingPosition(row.id, cost, shares, editAccount.trim());
+      await updateHoldingPosition(row.id, cost, shares, editAccount.trim(), editTradeDate.trim());
       setEditingId('');
       setNotice(`已更新 ${row.symbol} 的部位`);
       holdings.reload();
@@ -448,7 +471,7 @@ export default function Holdings() {
     setBusy(true);
     setNotice('');
     try {
-      await addPosition(symbol, cost, shares, newAccount.trim());
+      await addPosition(symbol, cost, shares, newAccount.trim(), newTradeDate.trim());
       setNewSymbol('');
       setNewShares('');
       setNewCost('');
@@ -578,6 +601,19 @@ export default function Holdings() {
               onChange={(event) => setNewAccount(event.target.value)}
               placeholder="例如 永豐"
               className={`${formFieldClass} w-32`}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="font-label-caps text-label-caps text-on-surface-variant uppercase">
+              成交日
+            </label>
+            {/* 不預填今天：留空代表「不知道」，預填會讓人以為系統知道你哪天買的。 */}
+            <input
+              value={newTradeDate}
+              onChange={(event) => setNewTradeDate(event.target.value)}
+              type="date"
+              max={today()}
+              className={`${formFieldClass} w-40`}
             />
           </div>
           <button
@@ -971,11 +1007,13 @@ export default function Holdings() {
                                       <p className="font-label-caps text-label-caps uppercase text-primary mb-2">
                                         {item.symbol} 在「
                                         {item.account === NO_ACCOUNT ? '未指定帳戶' : item.account}
-                                        」的 {item.positions.length} 筆部位
+                                        」的 {item.positions.length} 筆部位（依成交日與市值）
                                       </p>
                                       <table className="w-full border-collapse">
                                         <thead>
                                           <tr>
+                                            <th className={`${headCell} text-left`}>成交日</th>
+                                            <th className={`${headCell} text-right`}>持有</th>
                                             <th className={`${headCell} text-right`}>股數</th>
                                             <th className={`${headCell} text-right`}>成本</th>
                                             <th className={`${headCell} text-right`}>市值</th>
@@ -990,6 +1028,28 @@ export default function Holdings() {
                                             const editing = editingId === row.id;
                                             return (
                                               <tr key={row.id}>
+                                                <td className="p-2 py-2 font-body-sm text-body-sm text-on-surface whitespace-nowrap">
+                                                  {editing ? (
+                                                    <input
+                                                      value={editTradeDate}
+                                                      onChange={(event) =>
+                                                        setEditTradeDate(event.target.value)
+                                                      }
+                                                      type="date"
+                                                      max={today()}
+                                                      className={`${editFieldClass} w-36 text-left`}
+                                                    />
+                                                  ) : (
+                                                    row.tradeDate || (
+                                                      <span className="text-outline">未填</span>
+                                                    )
+                                                  )}
+                                                </td>
+                                                <td
+                                                  className={`${numberCell} text-on-surface-variant`}
+                                                >
+                                                  {holdingDays(row.tradeDate) ?? DASH}
+                                                </td>
                                                 <td
                                                   className={`${numberCell} text-on-surface-variant`}
                                                 >

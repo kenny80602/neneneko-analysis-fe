@@ -321,6 +321,11 @@ export interface Holding {
   market: QuoteMarket;
   cost: number | null;
   shares: number | null;
+  // 這一筆是哪一天買的，YYYY-MM-DD。
+  //
+  // 空字串代表不知道，不是今天——多數列是從 xlsx 匯入的，當時沒有這個資訊。
+  // 不要拿 ctime 頂替：那是「這一列什麼時候被建出來」，對匯入的資料來說是匯入那天。
+  trade_date: string;
   // 這筆部位放在哪個券商帳戶。同一檔可以有好幾筆，分別對應不同帳戶；空字串代表沒指定。
   account: string;
   // 近四季 EPS（TTM）。
