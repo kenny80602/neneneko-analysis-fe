@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard';
 import Holdings from './pages/Holdings';
 import Institutional from './pages/Institutional';
 import Login from './pages/Login';
+import LotLedger from './pages/LotLedger';
 import Margin from './pages/Margin';
 import Market from './pages/Market';
 import PaperTrading from './pages/PaperTrading';
@@ -37,6 +38,7 @@ function App() {
               <Route path="/holdings" element={<Holdings />} />
               <Route path="/quotes" element={<DailyQuotes />} />
               <Route path="/paper" element={<PaperTrading />} />
+              <Route path="/ledger" element={<LotLedger />} />
               <Route path="/alert" element={<Alert />} />
 
               {/* 個股：共用 SymbolContext 的代號 */}

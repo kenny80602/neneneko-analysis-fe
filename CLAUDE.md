@@ -399,9 +399,72 @@ BROWSER=none npm start        # http://localhost:3000
 狀態整包存在 localStorage（`stock:paperTrading`），算式在 `utils/paperTrading.ts`，
 畫面上已標明「換一台電腦或清掉瀏覽器資料就歸零」。
 
+（`/ledger` 曾經也是這樣，但它已經搬到後端了——那一頁的資料是真的交易紀錄，
+清掉瀏覽器就沒了不能接受，這一頁的練習紀錄則無所謂。）
+
 費率是台股的公開規則不是本專案的假設：手續費 0.1425%（最低 20 元、折數可調）、
 賣出加收證交稅 0.3%。買進手續費會攤進平均成本，不攤的話損益會虛胖一個手續費。
 報價沿用 `/portfolio/valuation`，那支已經處理好即時報價掛掉時退到延遲報價。
+
+## 自訂沖銷帳（`/ledger`）
+
+券商與集保的結算一律先進先出，賣出時自動沖掉最早買進的批次；做短線波段時那個結果跟策略上
+實際在做的事對不起來。這一頁讓使用者**逐筆指定要沖哪一批**，同時把券商的 FIFO 結果算在旁邊對照。
+
+**算式整包在後端**（`internal/service/ledger/matcher.go`），前端只負責顯示與送出。
+剩餘股數、平均成本、已實現損益、對帳差異全部來自 `GET /ledger/reports/:symbol`，
+前端一個都不自己算——這個功能的產出就是「兩本帳的差額」，前後端各算一份的話那個差額沒有意義。
+費率（手續費率、折數、最低收費、證交稅率）同樣由後端定義，回應的 `fees` 原樣帶回來供顯示。
+
+> 這一頁曾經是純前端 + localStorage（`stock:lotLedger`，算式在已刪除的 `utils/lotLedger.ts`）。
+> 2026-08-16 整套搬到後端，localStorage 那條路徑連同前端那份算式一起移除，不要再加回來。
+
+### 後端的資料模型
+
+兩張**只增不改**的 collection，跟 `portfolio_holdings` 完全獨立：
+
+| collection | 內容 |
+|---|---|
+| `ledger_lots` | 買進事件：`trade_date`、`shares`、`price`、`fee`、`account`、`seq` |
+| `ledger_sells` | 賣出事件：`shares`、`price`、`picks[{lot_id, shares}]`、`fallback`、`seq` |
+
+**刻意不共用 `portfolio_holdings`**：那張表的一列是「目前部位」，`UpdatePosition` 會直接
+`$set` 覆寫 cost 與 shares，而 LINE 指令、匯入程序、`/彙總`、`/valuation` 全吃它。
+沖銷帳要的是不可變的買進事件——同一列兼任兩種語意的話，任何一次
+`PUT /portfolio/positions/:id` 都會靜靜毀掉沖銷歷史，而且不會有人發現。
+
+兩者只有 `POST /ledger/imports` 一條單向通道：把自選股某一檔的部位一次性搬成庫存批次。
+持股表沒有成交日與手續費，所以回應會帶 `dates_unknown` / `fees_unknown`，畫面要提醒使用者回去補
+——沖銷順序完全靠成交日。匯入之後兩邊各走各的，這裡的賣出**不會**回頭改動 `/portfolio` 的持股。
+
+### 端點
+
+```
+GET    /ledger/symbols            有沖銷帳的代號清單
+GET    /ledger/reports/:symbol    策略帳 + 券商 FIFO 帳 + 逐筆對帳（沒紀錄回空帳不是 404）
+POST   /ledger/lots               新增買進（fee 省略＝照費率算，送 0＝真的沒收手續費）
+DELETE /ledger/lots/:id           已被沖銷掉一部分的回 409
+POST   /ledger/sells/preview      試算，不寫入
+POST   /ledger/sells              記錄賣出
+DELETE /ledger/sells/:id          股數回到庫存，後面每一筆重算
+POST   /ledger/imports            從自選股持股匯入
+```
+
+架構上要守住的一件事：**買進與賣出是不可變的事件紀錄，兩本帳都是重播出來的衍生值**
+（`BuildLedger(lots, sells, fees, mode)`，FIFO 只是 `mode` 不同）。剩餘股數刻意不落地——
+同一批在兩本帳的剩餘本來就不同，存下來就會有兩個真相。要改判斷或加規則，改後端那一支就好。
+
+畫面上必須一直講清楚、不要在改版時拿掉的三件事：
+
+1. 這本帳**不會改變券商端的結算與交割**，它是自用的記帳。
+2. 沖銷方法只改變損益**認列在哪一筆、哪一天**，不改變總額。同一批庫存出清後兩本帳的
+   已實現損益完全相同，「兩帳差額」是時間差不是多賺的錢
+   （後端 `matcher_test.go` 的「沖銷方法不改變總損益」鎖著這條）。
+3. 個人證券交易所得目前停徵、證交稅按成交金額課，**跟沖銷方法無關**，這本帳不影響報稅。
+
+零股的最低手續費各家差很多（元大 1 元，也有券商照收 20 元），而零股單筆金額小，
+最低收費的佔比會直接主導損益。後端預設 1 元（`ioc/ledger.go`），要調就改那裡，
+**不要沿用 `/paper` 的 20 元**，也不要在前端另開一個設定。
 
 ## 已知的執行期限制
 

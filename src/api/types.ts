@@ -589,3 +589,173 @@ export interface WarningCollectResult {
   saved: number;
   failures: Record<string, string> | null;
 }
+
+// ===== 自訂沖銷帳（/ledger）=====
+//
+// 券商與集保的結算一律先進先出。這一組端點讓使用者自己指定要沖哪一筆買進，
+// 同時把券商 FIFO 的結果一起算出來對照。
+//
+// 三件事後端的 doc comment 有寫，前端顯示時不要弄丟：
+//   1. 這本帳不會、也不可能改變券商端的結算與交割。
+//   2. 沖銷方法只改變損益認列在哪一筆、哪一天，不改變總額——出清後兩帳差額必然歸零。
+//   3. 個人證券交易所得目前停徵，證交稅按成交金額課，跟沖銷方法無關。
+
+// 沒有逐筆指定時，剩下的股數照哪一種順序沖銷。
+// HIGHEST_COST 常常跟 LIFO 給出相反答案：往下攤平時最近買的反而最便宜。
+export type MatchRule = 'LIFO' | 'HIGHEST_COST' | 'FIFO';
+
+// 這幾股是使用者指定的，還是規則自動補的。
+export type AllocationSource = 'PICKED' | 'AUTO';
+
+// 哪一本帳。
+export type LedgerView = 'STRATEGY' | 'BROKER';
+
+// 一筆買進。存進去之後不再修改，賣出只會改變它的剩餘。
+export interface LedgerLot {
+  id: string;
+  symbol: string;
+  name: string;
+  // 成交日 YYYY-MM-DD。沖銷順序完全靠它。
+  trade_date: string;
+  shares: number;
+  price: number;
+  // 買進手續費，當時實際付的錢（不是用現在的費率回推）。
+  fee: number;
+  // 每股成本，後端已把買進手續費攤進去。不要在前端再攤一次。
+  unit_cost: number;
+  // 券商帳戶。空字串代表沒有指定。
+  account: string;
+  seq: number;
+}
+
+// 一筆買進在某一本帳裡的剩餘。
+export interface LedgerPosition {
+  lot: LedgerLot;
+  // 這本帳裡還剩幾股。0 代表已出清。
+  remaining: number;
+  cost_remaining: number;
+}
+
+// 一次賣出中，某一筆買進被沖掉的部分。
+export interface LedgerAllocation {
+  lot_id: string;
+  shares: number;
+  unit_cost: number;
+  cost: number;
+  // 整張單的費用按股數比例攤到這一筆，各筆加總會剛好等於整張單。
+  fee: number;
+  tax: number;
+  proceeds: number;
+  realized: number;
+  source: AllocationSource;
+}
+
+// 使用者當初指定了哪幾筆，原樣回送。
+export interface LedgerPick {
+  lot_id: string;
+  shares: number;
+}
+
+// 一筆賣出在某一本帳裡的沖銷結果。
+export interface LedgerMatchedSell {
+  id: string;
+  symbol: string;
+  trade_date: string;
+  shares: number;
+  price: number;
+  picks: LedgerPick[];
+  fallback: MatchRule;
+  seq: number;
+
+  // 成交金額，未含費用。
+  amount: number;
+  fee: number;
+  tax: number;
+  net_proceeds: number;
+  realized: number;
+
+  // 由規則自動補上的股數。0 代表完全照使用者指定。
+  auto_filled: number;
+  // 指定了但庫存不夠而沒沖成的股數。不是 0 就代表這筆該刪掉重記，畫面要提示。
+  unhonored: number;
+  // 整批庫存都不夠賣而少沖的股數。正常是 0。
+  shortfall: number;
+
+  allocations: LedgerAllocation[];
+}
+
+// 一檔在某一個視角下的完整帳。全部是後端重播算出來的，沒有任何一個數字落地。
+export interface Ledger {
+  view: LedgerView;
+  // 全部批次，含已出清的（remaining 為 0），順序照買進時序。
+  positions: LedgerPosition[];
+  sells: LedgerMatchedSell[];
+  shares: number;
+  cost: number;
+  // 剩餘部位的每股平均成本。沒有部位時是 null，不是 0——0 元成本會讓損益算出 -100%。
+  avg_cost: number | null;
+  realized: number;
+}
+
+// 一筆買進在兩本帳裡的剩餘對照。
+export interface LedgerReconcileRow {
+  lot_id: string;
+  trade_date: string;
+  unit_cost: number;
+  strategy_remaining: number;
+  broker_remaining: number;
+  // 策略帳剩餘 − 券商帳剩餘。正數＝券商已經沖掉但策略帳還留著。
+  diff: number;
+}
+
+export interface LedgerReconcile {
+  rows: LedgerReconcileRow[];
+  // 已實現損益的差額（策略 − 券商）。
+  // 這是認列時間的差不是多賺的錢：同一批庫存全部出清後必然歸零。
+  realized_diff: number;
+  // 平均成本的差額。兩邊都沒有部位時是 null。
+  avg_cost_diff: number | null;
+  // 有沒有任何一筆的剩餘股數對不上。
+  has_diff: boolean;
+}
+
+// 這次計算用的費率。由後端定義，前端只顯示不自己算——
+// 紅字門檻那組已經因為前後端各存一份而要記得同時改，不要再多一組。
+export interface LedgerFees {
+  // 手續費率，買賣都收。台股公開規則 0.001425。
+  rate: number;
+  // 折數，1 代表不打折。
+  discount: number;
+  // 手續費最低收費（元）。零股各家差很多，而零股單筆金額小，最低收費會主導損益。
+  minimum: number;
+  // 證券交易稅率，只有賣出收。台股公開規則 0.003。
+  tax_rate: number;
+}
+
+export interface LedgerReport {
+  symbol: string;
+  // 取最後一筆買進的名稱。完全沒有紀錄時是空字串。
+  name: string;
+  fees: LedgerFees;
+  strategy: Ledger;
+  broker: Ledger;
+  reconcile: LedgerReconcile;
+}
+
+// 送出前的試算：同一張單在兩本帳裡各會變成什麼樣子。
+export interface LedgerSellPreview {
+  strategy: LedgerMatchedSell;
+  broker: LedgerMatchedSell;
+  realized_diff: number;
+}
+
+// 從自選股持股匯入的結果。
+export interface LedgerImportResult {
+  symbol: string;
+  lots: LedgerLot[];
+  // 有幾筆是拿持股表的建立時間當成交日的。持股表沒有成交日欄位，
+  // 而沖銷順序完全靠成交日——不是 0 就要提醒使用者回去確認那幾筆的日期。
+  dates_unknown: number;
+  // 有幾筆的手續費是當成 0 匯進來的。持股表同樣沒有這一欄。
+  fees_unknown: number;
+}
