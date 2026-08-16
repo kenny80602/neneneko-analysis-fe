@@ -29,12 +29,20 @@ import {
 
 // 這一頁跟「自選股」的差別：那邊看的是行情與買入時機，這邊看的是部位。
 //
-// 一列 = 持股表的一列 = 一個帳戶的一筆部位，不併成一檔。
-// 同一檔分散在多個券商時，各家的股數與成本不一樣，併起來就看不出哪一筆是哪個帳戶的，
-// 賣出時也對不起來。合計則橫跨所有帳戶，那才是「我總共持有多少」。
+// 版面是兩層：先照**帳戶**分組（部位散在不同券商，看總數看不出哪一個帳戶在賺），
+// 組內再把**同一檔**併成一列，點開才看逐筆明細——就是券商 App（元大）的做法。
+//
+// 曾經刻意不併，理由是「併起來看不出哪一筆是哪個帳戶的，賣出時對不起來」。
+// 那個顧慮針對的是跨帳戶合併；先分組之後組內合併就沒有這個問題，
+// 而且展開的明細仍然是逐筆的，編輯與刪除也都對那些做。
+// 跨帳戶**不併**，這一條沒有變。
+//
+// 合併列的成本是加權平均，且只要有任何一筆沒填成本就整檔顯示破折號——
+// 拿有成本的那幾筆去平均，得到的是「部分部位的平均」卻掛在整檔上，比破折號更誤導。
 //
 // 之所以要打兩支 API：股數與成本只有 /portfolio/holdings 有，
 // 現價只有 /portfolio/valuation 有——後端的試算結果沒有帶股數。
+// 展開後的「買進明細」則來自 /ledger（自訂沖銷帳），唯讀，兩邊各記各的。
 
 /** 一筆部位（持股表的一列）加上以現價算出來的欄位。 */
 interface PositionRow {
@@ -99,10 +107,95 @@ function toPositionRows(
 /** 沒填帳戶時的顯示名稱。空字串與 null 都算同一組——兩者都是「沒指定」。 */
 const NO_ACCOUNT = '未指定帳戶';
 
+/**
+ * 同一個帳戶裡同一檔的合併結果，也就是表上實際看到的那一列。
+ *
+ * 為什麼要併：券商 App（元大）就是一檔一列，點進去才看明細。分批買同一檔會產生
+ * 好幾列部位，攤在表上會讓「我到底有多少張台積電」要自己心算。
+ *
+ * 只在**同一個帳戶內**併。跨帳戶併起來就看不出哪一筆是哪個帳戶的，賣出時對不起來——
+ * 這也是這一頁原本刻意不併的理由；先照帳戶分組之後，組內合併才變得安全。
+ */
+interface SymbolRow {
+  key: string;
+  symbol: string;
+  name: string;
+  market: string;
+  account: string;
+  /** 併進來的那幾筆部位，展開時逐筆顯示，編輯與刪除都對這些做。 */
+  positions: PositionRow[];
+  /** 這一檔在這個帳戶的總股數。 */
+  shares: number;
+  /**
+   * 加權平均成本。
+   *
+   * 只要有任何一筆沒填成本就是 null——拿有成本的那幾筆去平均，得到的是
+   * 「部分部位的平均」卻掛在整檔上，比顯示破折號更誤導人。
+   */
+  cost: number | null;
+  price: number | null;
+  priceSource: string;
+  /** 取價失敗的原因，成功時是空字串。 */
+  error: string;
+  /** 這一檔在這個帳戶的每一筆都停用了。 */
+  disabled: boolean;
+
+  marketValue: number | null;
+  costValue: number | null;
+  profit: number | null;
+  profitPercent: number | null;
+}
+
+/** 把同一個帳戶裡同一檔的部位併成一列。順序沿用市值由大到小。 */
+function mergeBySymbol(rows: PositionRow[], account: string): SymbolRow[] {
+  const bySymbol = new Map<string, PositionRow[]>();
+  for (const row of rows) {
+    const list = bySymbol.get(row.symbol) ?? [];
+    list.push(row);
+    bySymbol.set(row.symbol, list);
+  }
+
+  return Array.from(bySymbol, ([symbol, positions]) => {
+    const first = positions[0];
+    const shares = positions.reduce((sum, p) => sum + (p.shares ?? 0), 0);
+    // 有任何一筆缺成本，整檔的成本與損益就算不出來（見 SymbolRow.cost 的說明）。
+    const allCosted = positions.every((p) => p.cost != null);
+    const costValue = allCosted
+      ? positions.reduce((sum, p) => sum + (p.cost as number) * (p.shares ?? 0), 0)
+      : null;
+    const price = first.price;
+    const marketValue = price != null ? price * shares : null;
+    const cost = costValue != null && shares > 0 ? costValue / shares : null;
+    return {
+      key: `${account}::${symbol}`,
+      symbol,
+      name: first.name,
+      market: first.market,
+      account,
+      // 組內也照市值排，讓展開後的順序跟外面一致。
+      positions: [...positions].sort((a, b) => (b.marketValue ?? -1) - (a.marketValue ?? -1)),
+      shares,
+      cost,
+      price,
+      priceSource: first.priceSource,
+      error: first.error,
+      disabled: positions.every((p) => p.disabled),
+      marketValue,
+      costValue,
+      profit: marketValue != null && costValue != null ? marketValue - costValue : null,
+      profitPercent:
+        cost != null && cost !== 0 && price != null ? ((price - cost) / cost) * 100 : null,
+    };
+  }).sort((a, b) => (b.marketValue ?? -1) - (a.marketValue ?? -1));
+}
+
 /** 一個帳戶的小計。欄位語意與全站合計一致，只是範圍縮到單一帳戶。 */
 interface AccountGroup {
   account: string;
-  rows: PositionRow[];
+  /** 合併後的列，也就是表上看到的。 */
+  symbols: SymbolRow[];
+  /** 這個帳戶底下的原始部位筆數，用來說明「3 檔 / 4 筆」。 */
+  positionCount: number;
   /** 股數、成本、現價都齊的筆數。四個數字都只算這一群，範圍才內部一致。 */
   counted: number;
   marketValue: number;
@@ -132,17 +225,22 @@ function groupByAccount(rows: PositionRow[], weightBase: number): AccountGroup[]
   }
 
   const groups = Array.from(byAccount, ([account, list]) => {
-    // 跟全站合計同一個規則：只累加三個值都齊的那幾筆。
-    // 市值算 A 群、成本算 B 群的話，相減得到的損益不對應任何真實部位。
-    const complete = list.filter((r) => r.marketValue != null && r.costValue != null);
-    const marketValue = complete.reduce((sum, r) => sum + (r.marketValue as number), 0);
-    const costValue = complete.reduce((sum, r) => sum + (r.costValue as number), 0);
-    // 比重的分母跟全站合計一致，用「有市值」的那群（比可完整計算的寬）：
+    const symbols = mergeBySymbol(list, account);
+    // 小計從「合併後的列」算，不是從原始部位算：表上看得到的幾列加起來
+    // 必須等於這裡的小計，否則使用者拿計算機一加就對不上。
+    //
+    // 只累加三個值都齊的那幾列——市值算 A 群、成本算 B 群的話，
+    // 相減得到的損益不對應任何真實部位。
+    const complete = symbols.filter((s) => s.marketValue != null && s.costValue != null);
+    const marketValue = complete.reduce((sum, s) => sum + (s.marketValue as number), 0);
+    const costValue = complete.reduce((sum, s) => sum + (s.costValue as number), 0);
+    // 比重的分母比可完整計算的那群寬，用「有市值」的：
     // 只差成本的部位仍然佔著倉，不該從分布裡消失。
-    const groupMarketValue = list.reduce((sum, r) => sum + (r.marketValue ?? 0), 0);
+    const groupMarketValue = symbols.reduce((sum, s) => sum + (s.marketValue ?? 0), 0);
     return {
       account,
-      rows: list,
+      symbols,
+      positionCount: list.length,
       counted: complete.length,
       marketValue,
       costValue,
@@ -201,34 +299,34 @@ export default function Holdings() {
   const rows = useMemo(() => allRows.filter((row) => row.shares != null), [allRows]);
   const watchOnlyRows = useMemo(() => allRows.filter((row) => row.shares == null), [allRows]);
 
-  // 這一檔在幾個帳戶裡有部位，用來提示「同一檔有多筆」。
-  const lotsBySymbol = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const row of rows) counts.set(row.symbol, (counts.get(row.symbol) ?? 0) + 1);
-    return counts;
-  }, [rows]);
+  // 比重的分母。合併不影響它——一檔的市值就是它各筆部位市值的和。
+  const weightBase = useMemo(
+    () => rows.reduce((sum, row) => sum + (row.marketValue ?? 0), 0),
+    [rows]
+  );
 
-  // 合計只累加「股數、成本、現價都齊」的那幾筆。
-  //
-  // 四個數字用同一個子集：總市值算 A 群、總成本算 B 群的話，
-  // 兩者相減得到的損益不對應任何真實部位。寧可涵蓋範圍小一點，也要內部一致。
+  const groups = useMemo(() => groupByAccount(rows, weightBase), [rows, weightBase]);
+
+  /**
+   * 全站合計，從各帳戶的小計加起來。
+   *
+   * 不另外從原始部位算一次：那樣算出來的數字在邊界情況（同一檔有一筆有成本、
+   * 一筆沒有）會跟畫面上幾列的加總對不上，而使用者一定會拿計算機驗。
+   */
   const totals = useMemo(() => {
-    const complete = rows.filter((row) => row.marketValue != null && row.costValue != null);
-    const marketValue = complete.reduce((sum, row) => sum + (row.marketValue as number), 0);
-    const costValue = complete.reduce((sum, row) => sum + (row.costValue as number), 0);
+    const marketValue = groups.reduce((sum, g) => sum + g.marketValue, 0);
+    const costValue = groups.reduce((sum, g) => sum + g.costValue, 0);
     return {
-      counted: complete.length,
+      counted: groups.reduce((sum, g) => sum + g.counted, 0),
+      /** 合併後的列數（幾檔），跟部位筆數不同。 */
+      symbolCount: groups.reduce((sum, g) => sum + g.symbols.length, 0),
       marketValue,
       costValue,
       profit: marketValue - costValue,
       profitPercent: costValue > 0 ? ((marketValue - costValue) / costValue) * 100 : null,
-      // 比重的分母用「有市值」的那群，比可完整計算的那群寬：
-      // 只差成本的部位仍然佔著倉，不該從分布裡消失。
-      weightBase: rows.reduce((sum, row) => sum + (row.marketValue ?? 0), 0),
+      weightBase,
     };
-  }, [rows]);
-
-  const groups = useMemo(() => groupByAccount(rows, totals.weightBase), [rows, totals.weightBase]);
+  }, [groups, weightBase]);
 
   /**
    * 展開某一列時去撈那一檔的沖銷帳買進明細。
@@ -239,17 +337,19 @@ export default function Holdings() {
    *
    * 一檔一個 key 快取，收合再展開不重打；換頁重進才會重抓。
    */
-  const [expandedId, setExpandedId] = useState('');
+  // 展開狀態用「帳戶::代號」當 key，跟合併後那一列一致。
+  // 用部位 id 的話，同一檔的兩筆部位會各自被當成可展開的目標。
+  const [expandedKey, setExpandedKey] = useState('');
   const [lotsBySymbolCache, setLotsBySymbolCache] = useState<
     Record<string, { loading: boolean; error: string; lots: LedgerLot[] }>
   >({});
 
-  const toggleExpand = (row: PositionRow) => {
-    if (expandedId === row.id) {
-      setExpandedId('');
+  const toggleExpand = (row: { key: string; symbol: string }) => {
+    if (expandedKey === row.key) {
+      setExpandedKey('');
       return;
     }
-    setExpandedId(row.id);
+    setExpandedKey(row.key);
     if (lotsBySymbolCache[row.symbol]) return;
     setLotsBySymbolCache((prev) => ({
       ...prev,
@@ -399,7 +499,7 @@ export default function Holdings() {
       <PageHeader
         title="我的持股"
         icon="account_balance_wallet"
-        subtitle="逐筆列出各帳戶的部位，計算市值、未實現損益與各筆佔比。"
+        subtitle="依帳戶分組，同一檔併成一列；展開看逐筆部位與買進明細。"
         right={
           <>
             {notice && (
@@ -519,7 +619,7 @@ export default function Holdings() {
                 label="總市值"
                 icon="savings"
                 value={totals.counted > 0 ? formatAmount(totals.marketValue) : DASH}
-                hint={`元，涵蓋 ${totals.counted} / ${rows.length} 筆部位`}
+                hint={`元，涵蓋 ${totals.counted} / ${totals.symbolCount} 檔`}
               />
               <StatCard
                 label="總成本"
@@ -543,10 +643,11 @@ export default function Holdings() {
               />
             </div>
 
-            {totals.counted < rows.length && (
+            {totals.counted < totals.symbolCount && (
               <p className="font-body-sm text-body-sm text-on-surface-variant bg-surface-container border border-outline-variant rounded px-3 py-2">
-                有 {rows.length - totals.counted} 筆因為缺成本或取不到現價而沒有納入上面的合計，
-                在下表中對應欄位顯示破折號。補上成本，合計才會涵蓋全部部位。
+                有 {totals.symbolCount - totals.counted} 檔因為缺成本或取不到現價而沒有納入上面的合計，
+                在下表中對應欄位顯示破折號。一檔只要有任何一筆部位沒填成本，整檔就算不出成本與損益——
+                展開那一列就看得出是哪一筆缺。
               </p>
             )}
 
@@ -581,9 +682,14 @@ export default function Holdings() {
                             )}
                           </td>
                           <td className={`${numberCell} text-on-surface-variant`}>
-                            {group.counted < group.rows.length
-                              ? `${group.counted} / ${group.rows.length}`
-                              : formatNumber(group.rows.length)}
+                            {group.counted < group.symbols.length
+                              ? `${group.counted} / ${group.symbols.length}`
+                              : formatNumber(group.symbols.length)}
+                            {group.positionCount > group.symbols.length && (
+                              <span className="block font-body-sm text-body-sm text-outline">
+                                {group.positionCount} 筆部位
+                              </span>
+                            )}
                           </td>
                           <td className={`${numberCell} text-on-surface font-bold`}>
                             {group.counted > 0 ? formatAmount(group.marketValue) : DASH}
@@ -616,9 +722,14 @@ export default function Holdings() {
                           合計
                         </td>
                         <td className={`${numberCell} text-on-surface-variant`}>
-                          {totals.counted < rows.length
-                            ? `${totals.counted} / ${rows.length}`
-                            : formatNumber(rows.length)}
+                          {totals.counted < totals.symbolCount
+                            ? `${totals.counted} / ${totals.symbolCount}`
+                            : formatNumber(totals.symbolCount)}
+                          {rows.length > totals.symbolCount && (
+                            <span className="block font-body-sm text-body-sm text-outline">
+                              {rows.length} 筆部位
+                            </span>
+                          )}
                         </td>
                         <td className={`${numberCell} text-on-surface`}>
                           {totals.counted > 0 ? formatAmount(totals.marketValue) : DASH}
@@ -700,7 +811,9 @@ export default function Holdings() {
                             </span>
                           )}
                           <span className="ml-2 font-body-sm text-body-sm text-on-surface-variant">
-                            {group.rows.length} 筆
+                            {group.symbols.length} 檔
+                            {group.positionCount > group.symbols.length &&
+                              `／${group.positionCount} 筆部位`}
                           </span>
                         </td>
                         <td colSpan={3} className="px-2 py-2 text-right">
@@ -730,238 +843,375 @@ export default function Holdings() {
                         </td>
                         <td className="px-4 py-2" />
                       </tr>
-                      {group.rows.map((row) => {
+                      {group.symbols.map((item) => {
                         const weight =
-                          row.marketValue != null && totals.weightBase > 0
-                            ? (row.marketValue / totals.weightBase) * 100
+                          item.marketValue != null && totals.weightBase > 0
+                            ? (item.marketValue / totals.weightBase) * 100
                             : null;
-                        const editing = editingId === row.id;
-                        const expanded = expandedId === row.id;
-                        const lots = lotsBySymbolCache[row.symbol];
+                        const expanded = expandedKey === item.key;
+                        const lots = lotsBySymbolCache[item.symbol];
+                        const split = item.positions.length > 1;
                         return (
-                          <Fragment key={row.id}>
-                      <tr
-                        onClick={() => setSymbol(row.symbol)}
-                        title="點擊設為目前選取的股票"
-                        className="hover:bg-surface-container-low/50 transition-colors cursor-pointer"
-                      >
-                        {symbolCell(row, lotsBySymbol.get(row.symbol) ?? 1)}
+                          <Fragment key={item.key}>
+                            <tr
+                              onClick={() => setSymbol(item.symbol)}
+                              title="點擊設為目前選取的股票"
+                              className="hover:bg-surface-container-low/50 transition-colors cursor-pointer"
+                            >
+                              <td className="p-2 pl-4 py-3">
+                                <div className="flex flex-col">
+                                  <span className="font-data-md text-data-md text-primary font-bold">
+                                    {item.symbol}
+                                  </span>
+                                  <span className="font-body-sm text-body-sm text-on-surface-variant">
+                                    {item.name}
+                                    <span className="text-outline">
+                                      {' '}
+                                      · {marketLabel(item.market)}
+                                    </span>
+                                  </span>
+                                  {item.error && (
+                                    <span
+                                      className="font-body-sm text-body-sm text-error"
+                                      title={item.error}
+                                    >
+                                      取價失敗
+                                    </span>
+                                  )}
+                                  {item.disabled && (
+                                    <span className="font-body-sm text-body-sm text-outline">
+                                      已停用，不納入試算
+                                    </span>
+                                  )}
+                                  {/* 分批買的才提示，一筆的不用——多一行雜訊。 */}
+                                  {split && (
+                                    <span className="font-body-sm text-body-sm text-outline">
+                                      {item.positions.length} 筆分批買進，展開看明細
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
 
-                        <td className="p-2 py-3 font-body-md text-body-md text-on-surface-variant">
-                          {editing ? (
-                            <input
-                              value={editAccount}
-                              onChange={(event) => setEditAccount(event.target.value)}
-                              onClick={(event) => event.stopPropagation()}
-                              placeholder="帳戶"
-                              className={`${editFieldClass} text-left`}
-                            />
-                          ) : (
-                            row.account || <span className="text-outline">未指定</span>
-                          )}
-                        </td>
+                              <td className="p-2 py-3 font-body-md text-body-md text-on-surface-variant">
+                                {item.account === NO_ACCOUNT ? (
+                                  <span className="text-outline">未指定</span>
+                                ) : (
+                                  item.account
+                                )}
+                              </td>
 
-                        <td className={`${numberCell} text-on-surface-variant`}>
-                          {editing ? (
-                            <input
-                              value={editShares}
-                              onChange={(event) => setEditShares(event.target.value)}
-                              onClick={(event) => event.stopPropagation()}
-                              inputMode="numeric"
-                              className={editFieldClass}
-                            />
-                          ) : (
-                            formatNumber(row.shares)
-                          )}
-                        </td>
-                        <td className={`${numberCell} text-on-surface-variant`}>
-                          {editing ? (
-                            <input
-                              value={editCost}
-                              onChange={(event) => setEditCost(event.target.value)}
-                              onClick={(event) => event.stopPropagation()}
-                              inputMode="decimal"
-                              placeholder="留空=未知"
-                              className={editFieldClass}
-                            />
-                          ) : (
-                            formatPrice(row.cost)
-                          )}
-                        </td>
-                        <td className={`${numberCell} text-on-surface`}>
-                          {formatPrice(row.price)}
-                          <span className="block font-body-sm text-body-sm text-outline">
-                            {row.price == null ? '' : priceSourceLabel(row.priceSource)}
-                          </span>
-                        </td>
-                        <td className={`${numberCell} text-on-surface font-bold`}>
-                          {row.marketValue == null ? DASH : formatAmount(row.marketValue)}
-                        </td>
-                        <td className={`${numberCell} ${quoteColor(row.profit)}`}>
-                          {row.profit == null ? DASH : formatSigned(row.profit, 0)}
-                        </td>
-                        <td className={`${numberCell} ${quoteColor(row.profitPercent)}`}>
-                          {formatSignedPercent(row.profitPercent)}
-                        </td>
-                        <td className="p-2 py-3 text-right">
-                          <span className="font-data-md text-data-md text-on-surface-variant">
-                            {formatPercent(weight)}
-                          </span>
-                          {/* 佔比用一條長度成比例的橫條，掃一眼就知道倉位有沒有過度集中。 */}
-                          {weight != null && (
-                            <span className="block mt-1 h-1 w-full rounded-[9999px] bg-surface-container overflow-hidden">
-                              <span
-                                className="block h-full bg-primary"
-                                style={{ width: `${Math.min(100, weight)}%` }}
-                              />
-                            </span>
-                          )}
-                        </td>
-                        <td
-                          className="p-2 pr-4 py-3 text-right whitespace-nowrap"
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          {editing ? (
-                            <span className="inline-flex gap-1">
-                              <button
-                                type="button"
-                                onClick={() => saveEdit(row)}
-                                disabled={busy}
-                                title="儲存"
-                                className="p-1 rounded text-secondary hover:bg-surface-container transition-colors disabled:opacity-50"
-                              >
-                                <span className="material-symbols-outlined text-[20px]">
-                                  {busy ? 'hourglass_empty' : 'check'}
+                              <td className={`${numberCell} text-on-surface-variant`}>
+                                {formatNumber(item.shares)}
+                              </td>
+                              <td className={`${numberCell} text-on-surface-variant`}>
+                                {formatPrice(item.cost)}
+                                {/* 併起來的成本是加權平均，標一下免得被當成某一筆的買價。 */}
+                                {split && item.cost != null && (
+                                  <span className="block font-body-sm text-body-sm text-outline">
+                                    加權平均
+                                  </span>
+                                )}
+                              </td>
+                              <td className={`${numberCell} text-on-surface`}>
+                                {formatPrice(item.price)}
+                                <span className="block font-body-sm text-body-sm text-outline">
+                                  {item.price == null ? '' : priceSourceLabel(item.priceSource)}
                                 </span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={cancelEdit}
-                                disabled={busy}
-                                title="取消"
-                                className="p-1 rounded text-outline hover:bg-surface-container transition-colors disabled:opacity-50"
-                              >
-                                <span className="material-symbols-outlined text-[20px]">close</span>
-                              </button>
-                            </span>
-                          ) : (
-                            <span className="inline-flex gap-1">
-                              {/*
-                                展開看這一檔的逐筆買進。持股表一列只有「目前股數與平均成本」，
-                                沒有買進明細——那些在自訂沖銷帳那張獨立的表裡。
-                              */}
-                              <button
-                                type="button"
-                                onClick={() => toggleExpand(row)}
-                                title={expanded ? '收合買進明細' : '展開買進明細（自訂沖銷帳）'}
-                                className="p-1 rounded text-outline hover:text-primary hover:bg-surface-container transition-colors"
-                              >
-                                <span className="material-symbols-outlined text-[20px]">
-                                  {expanded ? 'expand_less' : 'expand_more'}
+                              </td>
+                              <td className={`${numberCell} text-on-surface font-bold`}>
+                                {item.marketValue == null ? DASH : formatAmount(item.marketValue)}
+                              </td>
+                              <td className={`${numberCell} ${quoteColor(item.profit)}`}>
+                                {item.profit == null ? DASH : formatSigned(item.profit, 0)}
+                              </td>
+                              <td className={`${numberCell} ${quoteColor(item.profitPercent)}`}>
+                                {formatSignedPercent(item.profitPercent)}
+                              </td>
+                              <td className="p-2 py-3 text-right">
+                                <span className="font-data-md text-data-md text-on-surface-variant">
+                                  {formatPercent(weight)}
                                 </span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => startEdit(row)}
-                                title="編輯這一筆部位"
-                                className="p-1 rounded text-outline hover:text-primary hover:bg-surface-container transition-colors"
+                                {/* 佔比用一條長度成比例的橫條，掃一眼就知道倉位有沒有過度集中。 */}
+                                {weight != null && (
+                                  <span className="block mt-1 h-1 w-full rounded-[9999px] bg-surface-container overflow-hidden">
+                                    <span
+                                      className="block h-full bg-primary"
+                                      style={{ width: `${Math.min(100, weight)}%` }}
+                                    />
+                                  </span>
+                                )}
+                              </td>
+                              <td
+                                className="p-2 pr-4 py-3 text-right whitespace-nowrap"
+                                onClick={(event) => event.stopPropagation()}
                               >
-                                <span className="material-symbols-outlined text-[20px]">edit</span>
-                              </button>
-                              {/* 只刪這一筆，同一檔的其他帳戶不受影響。 */}
-                              <button
-                                type="button"
-                                onClick={() => handleRemove(row)}
-                                disabled={busy}
-                                title="刪除這一筆部位"
-                                className="p-1 rounded text-outline hover:text-error hover:bg-surface-container transition-colors disabled:opacity-50"
-                              >
-                                <span className="material-symbols-outlined text-[20px]">delete</span>
-                              </button>
-                            </span>
-                          )}
-                        </td>
-                      </tr>
+                                {/*
+                                  編輯與刪除移到展開後的明細裡：那些動作是對「某一筆部位」做的，
+                                  掛在合併列上會讓人不知道按下去會改到哪一筆。
+                                */}
+                                <button
+                                  type="button"
+                                  onClick={() => toggleExpand(item)}
+                                  title={expanded ? '收合明細' : '展開股票明細'}
+                                  className="p-1 rounded text-outline hover:text-primary hover:bg-surface-container transition-colors"
+                                >
+                                  <span className="material-symbols-outlined text-[20px]">
+                                    {expanded ? 'expand_less' : 'expand_more'}
+                                  </span>
+                                </button>
+                              </td>
+                            </tr>
 
                             {expanded && (
                               <tr className="bg-surface-container-low/40">
                                 <td colSpan={10} className="p-4">
-                                  <p className="font-label-caps text-label-caps uppercase text-primary mb-2">
-                                    {row.symbol} 的買進明細（自訂沖銷帳）
-                                  </p>
-                                  {lots?.loading && (
-                                    <p className="font-body-sm text-body-sm text-on-surface-variant">
-                                      載入中…
-                                    </p>
-                                  )}
-                                  {lots?.error && (
-                                    <p className="font-body-sm text-body-sm text-error">
-                                      {lots.error}
-                                    </p>
-                                  )}
-                                  {lots && !lots.loading && !lots.error && lots.lots.length === 0 && (
-                                    <p className="font-body-sm text-body-sm text-on-surface-variant">
-                                      這一檔在沖銷帳裡還沒有任何買進紀錄。持股表存的是「目前股數與平均成本」，
-                                      沒有逐筆明細；要看每一筆幾號、幾股、多少錢買的，得到
-                                      <span className="text-on-surface font-semibold">
-                                        「自訂沖銷帳」
-                                      </span>
-                                      逐筆輸入，或用那一頁的「從自選股匯入」把這一檔的部位先搬過去當起點。
-                                    </p>
-                                  )}
-                                  {lots && lots.lots.length > 0 && (
-                                    <>
+                                  <div className="flex flex-col gap-stack-md">
+                                    {/* ── 這一檔的各筆部位 ── */}
+                                    <div>
+                                      <p className="font-label-caps text-label-caps uppercase text-primary mb-2">
+                                        {item.symbol} 在「
+                                        {item.account === NO_ACCOUNT ? '未指定帳戶' : item.account}
+                                        」的 {item.positions.length} 筆部位
+                                      </p>
                                       <table className="w-full border-collapse">
                                         <thead>
                                           <tr>
-                                            <th className={`${headCell} text-left`}>成交日</th>
-                                            <th className={`${headCell} text-left`}>帳戶</th>
                                             <th className={`${headCell} text-right`}>股數</th>
-                                            <th className={`${headCell} text-right`}>買價</th>
-                                            <th className={`${headCell} text-right`}>手續費</th>
-                                            <th className={`${headCell} text-right`}>每股成本</th>
+                                            <th className={`${headCell} text-right`}>成本</th>
+                                            <th className={`${headCell} text-right`}>市值</th>
+                                            <th className={`${headCell} text-right`}>未實現損益</th>
+                                            <th className={`${headCell} text-right`}>報酬率</th>
+                                            <th className={`${headCell} text-left`}>帳戶</th>
+                                            <th className={`${headCell} text-right`}>操作</th>
                                           </tr>
                                         </thead>
                                         <tbody className="divide-y divide-outline-variant/50">
-                                          {lots.lots.map((lot) => (
-                                            <tr key={lot.id}>
-                                              <td className="p-2 py-2 font-body-sm text-body-sm text-on-surface whitespace-nowrap">
-                                                {lot.trade_date}
-                                              </td>
-                                              <td className="p-2 py-2 font-body-sm text-body-sm text-on-surface-variant whitespace-nowrap">
-                                                {lot.account || DASH}
-                                              </td>
-                                              <td
-                                                className={`${numberCell} text-on-surface-variant`}
-                                              >
-                                                {formatNumber(lot.shares)}
-                                              </td>
-                                              <td
-                                                className={`${numberCell} text-on-surface-variant`}
-                                              >
-                                                {formatPrice(lot.price)}
-                                              </td>
-                                              <td
-                                                className={`${numberCell} text-on-surface-variant`}
-                                              >
-                                                {formatNumber(lot.fee)}
-                                              </td>
-                                              <td className={`${numberCell} text-on-surface`}>
-                                                {formatPrice(lot.unit_cost)}
-                                              </td>
-                                            </tr>
-                                          ))}
+                                          {item.positions.map((row) => {
+                                            const editing = editingId === row.id;
+                                            return (
+                                              <tr key={row.id}>
+                                                <td
+                                                  className={`${numberCell} text-on-surface-variant`}
+                                                >
+                                                  {editing ? (
+                                                    <input
+                                                      value={editShares}
+                                                      onChange={(event) =>
+                                                        setEditShares(event.target.value)
+                                                      }
+                                                      inputMode="numeric"
+                                                      className={editFieldClass}
+                                                    />
+                                                  ) : (
+                                                    formatNumber(row.shares)
+                                                  )}
+                                                </td>
+                                                <td
+                                                  className={`${numberCell} text-on-surface-variant`}
+                                                >
+                                                  {editing ? (
+                                                    <input
+                                                      value={editCost}
+                                                      onChange={(event) =>
+                                                        setEditCost(event.target.value)
+                                                      }
+                                                      inputMode="decimal"
+                                                      placeholder="留空=未知"
+                                                      className={editFieldClass}
+                                                    />
+                                                  ) : (
+                                                    formatPrice(row.cost)
+                                                  )}
+                                                </td>
+                                                <td className={`${numberCell} text-on-surface`}>
+                                                  {row.marketValue == null
+                                                    ? DASH
+                                                    : formatAmount(row.marketValue)}
+                                                </td>
+                                                <td
+                                                  className={`${numberCell} ${quoteColor(
+                                                    row.profit
+                                                  )}`}
+                                                >
+                                                  {row.profit == null
+                                                    ? DASH
+                                                    : formatSigned(row.profit, 0)}
+                                                </td>
+                                                <td
+                                                  className={`${numberCell} ${quoteColor(
+                                                    row.profitPercent
+                                                  )}`}
+                                                >
+                                                  {formatSignedPercent(row.profitPercent)}
+                                                </td>
+                                                <td className="p-2 py-2 font-body-sm text-body-sm text-on-surface-variant">
+                                                  {editing ? (
+                                                    <input
+                                                      value={editAccount}
+                                                      onChange={(event) =>
+                                                        setEditAccount(event.target.value)
+                                                      }
+                                                      placeholder="帳戶"
+                                                      className={`${editFieldClass} text-left`}
+                                                    />
+                                                  ) : (
+                                                    row.account || (
+                                                      <span className="text-outline">未指定</span>
+                                                    )
+                                                  )}
+                                                </td>
+                                                <td className="p-2 py-2 text-right whitespace-nowrap">
+                                                  {editing ? (
+                                                    <span className="inline-flex gap-1">
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => saveEdit(row)}
+                                                        disabled={busy}
+                                                        title="儲存"
+                                                        className="p-1 rounded text-secondary hover:bg-surface-container transition-colors disabled:opacity-50"
+                                                      >
+                                                        <span className="material-symbols-outlined text-[20px]">
+                                                          {busy ? 'hourglass_empty' : 'check'}
+                                                        </span>
+                                                      </button>
+                                                      <button
+                                                        type="button"
+                                                        onClick={cancelEdit}
+                                                        disabled={busy}
+                                                        title="取消"
+                                                        className="p-1 rounded text-outline hover:bg-surface-container transition-colors disabled:opacity-50"
+                                                      >
+                                                        <span className="material-symbols-outlined text-[20px]">
+                                                          close
+                                                        </span>
+                                                      </button>
+                                                    </span>
+                                                  ) : (
+                                                    <span className="inline-flex gap-1">
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => startEdit(row)}
+                                                        title="編輯這一筆部位"
+                                                        className="p-1 rounded text-outline hover:text-primary hover:bg-surface-container transition-colors"
+                                                      >
+                                                        <span className="material-symbols-outlined text-[20px]">
+                                                          edit
+                                                        </span>
+                                                      </button>
+                                                      {/* 只刪這一筆，同一檔的其他筆不受影響。 */}
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => handleRemove(row)}
+                                                        disabled={busy}
+                                                        title="刪除這一筆部位"
+                                                        className="p-1 rounded text-outline hover:text-error hover:bg-surface-container transition-colors disabled:opacity-50"
+                                                      >
+                                                        <span className="material-symbols-outlined text-[20px]">
+                                                          delete
+                                                        </span>
+                                                      </button>
+                                                    </span>
+                                                  )}
+                                                </td>
+                                              </tr>
+                                            );
+                                          })}
                                         </tbody>
                                       </table>
-                                      <p className="font-body-sm text-body-sm text-on-surface-variant mt-2">
-                                        這是自訂沖銷帳的紀錄，
-                                        <span className="text-on-surface font-semibold">
-                                          跟上面那一列的股數各記各的、不會自動同步
-                                        </span>
-                                        ——兩邊對不上就是有一邊沒維護。每股成本已含買進手續費。
+                                      {item.cost == null && (
+                                        <p className="font-body-sm text-body-sm text-on-surface-variant mt-2">
+                                          上面那一列的成本與損益是破折號，因為這幾筆裡有沒填成本的——
+                                          加權平均少算一筆就不是這一檔真正的成本了。補齊就會算出來。
+                                        </p>
+                                      )}
+                                    </div>
+
+                                    {/* ── 沖銷帳的逐筆買進 ── */}
+                                    <div>
+                                      <p className="font-label-caps text-label-caps uppercase text-primary mb-2">
+                                        買進明細（自訂沖銷帳）
                                       </p>
-                                    </>
-                                  )}
+                                      {lots?.loading && (
+                                        <p className="font-body-sm text-body-sm text-on-surface-variant">
+                                          載入中…
+                                        </p>
+                                      )}
+                                      {lots?.error && (
+                                        <p className="font-body-sm text-body-sm text-error">
+                                          {lots.error}
+                                        </p>
+                                      )}
+                                      {lots &&
+                                        !lots.loading &&
+                                        !lots.error &&
+                                        lots.lots.length === 0 && (
+                                          <p className="font-body-sm text-body-sm text-on-surface-variant">
+                                            這一檔在沖銷帳裡還沒有任何買進紀錄。上面那張表是「目前部位」，
+                                            沒有成交日與手續費；要逐筆記錄幾號、幾股、多少錢買的，
+                                            到
+                                            <span className="text-on-surface font-semibold">
+                                              「自訂沖銷帳」
+                                            </span>
+                                            輸入，或用那一頁的「從自選股匯入」把這一檔先搬過去當起點。
+                                          </p>
+                                        )}
+                                      {lots && lots.lots.length > 0 && (
+                                        <>
+                                          <table className="w-full border-collapse">
+                                            <thead>
+                                              <tr>
+                                                <th className={`${headCell} text-left`}>成交日</th>
+                                                <th className={`${headCell} text-left`}>帳戶</th>
+                                                <th className={`${headCell} text-right`}>股數</th>
+                                                <th className={`${headCell} text-right`}>買價</th>
+                                                <th className={`${headCell} text-right`}>手續費</th>
+                                                <th className={`${headCell} text-right`}>
+                                                  每股成本
+                                                </th>
+                                              </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-outline-variant/50">
+                                              {lots.lots.map((lot) => (
+                                                <tr key={lot.id}>
+                                                  <td className="p-2 py-2 font-body-sm text-body-sm text-on-surface whitespace-nowrap">
+                                                    {lot.trade_date}
+                                                  </td>
+                                                  <td className="p-2 py-2 font-body-sm text-body-sm text-on-surface-variant whitespace-nowrap">
+                                                    {lot.account || DASH}
+                                                  </td>
+                                                  <td
+                                                    className={`${numberCell} text-on-surface-variant`}
+                                                  >
+                                                    {formatNumber(lot.shares)}
+                                                  </td>
+                                                  <td
+                                                    className={`${numberCell} text-on-surface-variant`}
+                                                  >
+                                                    {formatPrice(lot.price)}
+                                                  </td>
+                                                  <td
+                                                    className={`${numberCell} text-on-surface-variant`}
+                                                  >
+                                                    {formatNumber(lot.fee)}
+                                                  </td>
+                                                  <td className={`${numberCell} text-on-surface`}>
+                                                    {formatPrice(lot.unit_cost)}
+                                                  </td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                          <p className="font-body-sm text-body-sm text-on-surface-variant mt-2">
+                                            這是自訂沖銷帳的紀錄，
+                                            <span className="text-on-surface font-semibold">
+                                              跟上面的部位各記各的、不會自動同步
+                                            </span>
+                                            ——兩邊對不上就是有一邊沒維護。每股成本已含買進手續費。
+                                          </p>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
                                 </td>
                               </tr>
                             )}
