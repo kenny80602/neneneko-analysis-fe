@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
+import StatCard from '../components/StatCard';
 import PriceChart from '../components/PriceChart';
 import SymbolSearch from '../components/SymbolSearch';
 import TrendChart from '../components/TrendChart';
@@ -10,6 +11,7 @@ import { getDailyQuoteHistory } from '../api/dailyQuote';
 import { getInstitutionalHistory } from '../api/institutional';
 import { getPortfolioValuation } from '../api/portfolio';
 import { getRealtimeQuote } from '../api/realtimeQuote';
+import { getFinancialHistory } from '../api/financial';
 import { getIndustryPeers, getRevenueHistory } from '../api/revenue';
 import { getGroupPeers } from '../api/stockGroup';
 import { IndustryPeer, IndustryPeers } from '../api/types';
@@ -19,6 +21,7 @@ import { useAsyncData } from '../hooks/useAsyncData';
 import { changePercentOver, toCandles } from '../utils/chart';
 import {
   DASH,
+  formatAmount,
   formatDate,
   formatDateTime,
   formatNumber,
@@ -146,9 +149,14 @@ export default function Dashboard() {
   // 試算是整份自選股一起回、不吃代號，所以 deps 留空只抓一次，換代號不必重打。
   // 但它會逐檔去取即時行情，沒選股就沒人要看，別讓它白打一輪上游。
   const valuation = useAsyncData(() => getPortfolioValuation(), [], { enabled });
+  // 財報摘要與 ROE。一季才換一次，所以不必跟著即時報價一起輪詢。
+  const financial = useAsyncData(() => getFinancialHistory(symbol), [symbol], { enabled });
   // 同產業比較。資料來自全市場的月營收，跟自選股無關，任何一檔都查得到。
   const peers = useAsyncData(() => getIndustryPeers(symbol), [symbol], { enabled });
   const peerRows = useMemo(() => buildPeerRows(peers.data), [peers.data]);
+
+  // 最新一季的財報。後端已經照年季由新到舊排好，取第一筆就是。
+  const latestFinancial = financial.data?.items[0];
 
   // 自己建的主題族群。跟上面那支是兩回事：官方產業別把矽晶圓三家全歸「半導體業」
   // （一百多家），又把散熱三家拆進三個不同產業，兩個方向都沒辦法「同類放一起」。
@@ -930,6 +938,136 @@ export default function Dashboard() {
                   </div>
                 </div>
               ))}
+            </section>
+
+            {/* ── 獲利體質（ROE）── */}
+            <section className={`${cardClass} p-6 flex flex-col gap-stack-md`}>
+              <h3 className="font-headline-md text-headline-md text-primary flex items-center gap-2">
+                <span className="material-symbols-outlined text-[20px]">savings</span>
+                獲利體質
+                {latestFinancial && <span className={chipClass}>{latestFinancial.period}</span>}
+              </h3>
+
+              <p className="font-body-sm text-body-sm text-on-surface-variant">
+                ROE ＝ 稅後淨利 ÷ 股東權益，衡量公司拿股東的錢賺回多少。
+                資料來自公開資訊觀測站的損益表與資產負債表，
+                <span className="text-on-surface">一季才換一次</span>
+                ，跟上面那些每天變的價格指標不同。分子只取「歸屬母公司」的淨利、
+                分母只取「歸屬母公司」的權益，兩邊口徑一致。
+              </p>
+
+              {financial.loading && (
+                <p className="font-body-sm text-body-sm text-on-surface-variant">載入中…</p>
+              )}
+              {financial.error && (
+                <p className="font-body-sm text-body-sm text-error">{financial.error}</p>
+              )}
+              {!financial.loading && !financial.error && !latestFinancial && (
+                <p className="font-body-sm text-body-sm text-on-surface-variant">
+                  查不到這一檔的財報。金融業（銀行、保險、證券、金控）不在上游的一般業報表裡，
+                  剛上市還沒申報的也查不到；另外這份是從 2026-08-16 才開始收集的，
+                  更早的季別沒有留下來。
+                </p>
+              )}
+
+              {latestFinancial && (
+                <>
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-gutter">
+                    <StatCard
+                      label="ROE（年化）"
+                      icon="percent"
+                      value={formatSignedPercent(latestFinancial.annualized_roe)}
+                      hint={`${latestFinancial.period} 累計 ${formatSignedPercent(
+                        latestFinancial.roe
+                      )} 推估`}
+                      valueClassName={quoteColor(latestFinancial.annualized_roe)}
+                    />
+                    <StatCard
+                      label="稅後淨利"
+                      icon="payments"
+                      value={formatAmount(latestFinancial.net_income * 1000)}
+                      hint={`元，${latestFinancial.period} 累計（ROE 的分子）`}
+                      valueClassName={quoteColor(latestFinancial.net_income)}
+                    />
+                    <StatCard
+                      label="股東權益"
+                      icon="account_balance"
+                      value={formatAmount(latestFinancial.equity * 1000)}
+                      hint="元，期末餘額（ROE 的分母）"
+                    />
+                    <StatCard
+                      label="每股淨值"
+                      icon="book"
+                      value={formatPrice(latestFinancial.book_value_per_share)}
+                      hint={`元，EPS ${formatPrice(latestFinancial.eps)}（累計）`}
+                    />
+                  </div>
+
+                  {financial.data && financial.data.count > 1 && (
+                    <div className="overflow-x-auto rounded-xl border border-outline-variant">
+                      <table className="w-full border-collapse">
+                        <thead className="bg-surface-container-low border-b border-outline-variant">
+                          <tr>
+                            <th className="p-2 pl-4 font-label-caps text-label-caps text-on-surface-variant uppercase text-left">
+                              期別
+                            </th>
+                            <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase text-right">
+                              ROE（累計）
+                            </th>
+                            <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase text-right">
+                              ROE（年化）
+                            </th>
+                            <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase text-right">
+                              稅後淨利
+                            </th>
+                            <th className="p-2 pr-4 font-label-caps text-label-caps text-on-surface-variant uppercase text-right">
+                              EPS
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-outline-variant/50">
+                          {financial.data.items.map((item) => (
+                            <tr key={item.period} className="hover:bg-surface-container-low/50">
+                              <td className="p-2 pl-4 py-3 font-body-md text-body-md text-on-surface">
+                                {item.period}
+                              </td>
+                              <td
+                                className={`p-2 py-3 text-right font-data-md text-data-md ${quoteColor(
+                                  item.roe
+                                )}`}
+                              >
+                                {formatSignedPercent(item.roe)}
+                              </td>
+                              <td
+                                className={`p-2 py-3 text-right font-data-md text-data-md ${quoteColor(
+                                  item.annualized_roe
+                                )}`}
+                              >
+                                {formatSignedPercent(item.annualized_roe)}
+                              </td>
+                              <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface-variant">
+                                {formatAmount(item.net_income * 1000)}
+                              </td>
+                              <td className="p-2 pr-4 py-3 text-right font-data-md text-data-md text-on-surface-variant">
+                                {formatPrice(item.eps)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  <p className="font-body-sm text-body-sm text-on-surface-variant">
+                    上游給的是<span className="text-on-surface">累計數</span>：
+                    {latestFinancial.period} 那一列指的是今年前 {latestFinancial.quarter} 季合計，
+                    不是單季。「年化」是拿它乘 4 ÷ {latestFinancial.quarter} 推成整年，
+                    <span className="text-on-surface">是推估不是實績</span>
+                    ——旺季在下半年的公司用上半年推會低估。真正的近四季 ROE 要等這份資料
+                    累積滿四季才算得出來（上游只回最新一季，補不回來）。
+                  </p>
+                </>
+              )}
             </section>
 
             <section className={`${cardClass} p-6 flex flex-col gap-stack-md`}>

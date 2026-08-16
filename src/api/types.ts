@@ -931,3 +931,47 @@ export interface ReportCatalog {
   // 檔案不存在時是空字串。
   index_path: string;
 }
+
+// ===== 財報摘要與 ROE（/stocks/financial）=====
+
+// 一季的財報摘要。
+//
+// ⚠️ 金額欄位是「累計數」不是單季：quarter 為 2 的那一列指的是上半年
+// （台積電 2026Q2 的 eps 是 49.33，那是半年的），所以 roe 也是累計的。
+export interface FinancialStatement {
+  symbol: string;
+  name: string;
+  market: Market;
+  // 西元年、季別 1～4，period 是兩者合起來的標示（例如 2026Q2）。
+  year: number;
+  quarter: number;
+  period: string;
+  // 上游出表日期，是「這份內容哪天產出」不是財報基準日。
+  report_date: string;
+
+  // 累計稅後淨利，只取歸屬於母公司業主的部分，單位仟元。ROE 的分子。
+  net_income: number;
+  // 歸屬於母公司業主之權益合計，單位仟元。ROE 的分母。
+  //
+  // 分子分母跟著比率一起回，畫面才解釋得了 ROE 是拿什麼算的。
+  equity: number;
+  // 基本每股盈餘、每股參考淨值，單位元。null 是上游沒給，不是 0。
+  eps: number | null;
+  book_value_per_share: number | null;
+
+  // 累計股東權益報酬率（%）＝ 累計淨利 ÷ 期末權益 × 100。
+  // null 代表算不出來（負淨值）——那時虧損公司會算出「正的」ROE，比破折號更誤導人。
+  roe: number | null;
+  // 年化 ROE（%）＝ roe × 4 ÷ quarter。
+  //
+  // ⚠️ 這是推估不是實績：獲利有季節性的公司（旺季在下半年）用上半年推會低估，
+  // 所以畫面上要跟累計值與期間一起顯示。
+  annualized_roe: number | null;
+}
+
+export interface FinancialHistory {
+  symbol: string;
+  count: number;
+  // 逐季，年季由新到舊。
+  items: FinancialStatement[];
+}
