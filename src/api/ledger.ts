@@ -76,6 +76,29 @@ export const addLedgerLot = (payload: {
     .post<ApiResponse<LedgerLot>>('/ledger/lots', payload)
     .then((res) => res.data.data as LedgerLot);
 
+// 修正一筆買進。用來改打錯的成交日、股數、買價或手續費。
+//
+// 只有「還沒被賣出沖到」的批次能改，已經沖銷掉一部分的回 409——
+// 改掉它等於偷偷改寫那幾筆賣出的已實現損益。要改就先刪掉相關的賣出。
+//
+// symbol 會被後端忽略（換代號等於搬到另一檔，那是刪掉重建不是修正）；
+// fee 省略一樣代表「照目前費率重算」，送 0 才是「這一筆真的沒收手續費」。
+export const updateLedgerLot = (
+  id: string,
+  payload: {
+    symbol: string;
+    name?: string;
+    trade_date: string;
+    shares: number;
+    price: number;
+    fee?: number;
+    account?: string;
+  }
+) =>
+  request
+    .put<ApiResponse<LedgerLot>>(`/ledger/lots/${id}`, payload)
+    .then((res) => res.data.data as LedgerLot);
+
 // 刪掉一筆買進。
 //
 // 已經被賣出沖銷掉一部分的會回 409（ledger lot already matched by a sell）：

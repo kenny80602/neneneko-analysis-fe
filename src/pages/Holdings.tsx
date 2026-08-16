@@ -9,7 +9,12 @@ import {
   removePosition,
   updateHoldingPosition,
 } from '../api/portfolio';
-import { getBrokerFees, getLedgerReport } from '../api/ledger';
+import {
+  getBrokerFees,
+  getLedgerReport,
+  removeLedgerLot,
+  updateLedgerLot,
+} from '../api/ledger';
 import { apiErrorMessage } from '../api/request';
 import { Holding, LedgerFees, LedgerLot, PortfolioRow } from '../api/types';
 import { useSymbol } from '../context/SymbolContext';
@@ -416,6 +421,87 @@ export default function Holdings() {
   const [lotsBySymbolCache, setLotsBySymbolCache] = useState<
     Record<string, { loading: boolean; error: string; lots: LedgerLot[] }>
   >({});
+
+  // 沖銷帳買進明細的行內編輯。跟上面部位的編輯分開兩組狀態：
+  // 兩者是不同的東西（一個是目前部位、一個是買進事件），共用會互相蓋掉。
+  const [editingLotId, setEditingLotId] = useState('');
+  const [lotDate, setLotDate] = useState('');
+  const [lotShares, setLotShares] = useState('');
+  const [lotPrice, setLotPrice] = useState('');
+  const [lotFee, setLotFee] = useState('');
+  const [lotAccount, setLotAccount] = useState('');
+
+  const startEditLot = (lot: LedgerLot) => {
+    setEditingLotId(lot.id);
+    setLotDate(lot.trade_date);
+    setLotShares(String(lot.shares));
+    setLotPrice(String(lot.price));
+    setLotFee(String(lot.fee));
+    setLotAccount(lot.account);
+    setNotice('');
+  };
+
+  /** 改完之後把這一檔的明細重抓：剩餘與每股成本都是後端重播出來的。 */
+  const reloadLots = async (symbol: string) => {
+    try {
+      const report = await getLedgerReport(symbol);
+      setLotsBySymbolCache((prev) => ({
+        ...prev,
+        [symbol]: {
+          loading: false,
+          error: '',
+          lots: report.strategy.positions.map((p) => p.lot),
+        },
+      }));
+    } catch (err) {
+      setLotsBySymbolCache((prev) => ({
+        ...prev,
+        [symbol]: { loading: false, error: apiErrorMessage(err), lots: [] },
+      }));
+    }
+  };
+
+  const saveLot = async (lot: LedgerLot) => {
+    const shares = Math.trunc(Number(lotShares));
+    const price = Number(lotPrice);
+    const feeText = lotFee.trim();
+    setBusy(true);
+    setNotice('');
+    try {
+      await updateLedgerLot(lot.id, {
+        symbol: lot.symbol,
+        name: lot.name,
+        trade_date: lotDate,
+        shares,
+        price,
+        // 留空代表「照目前費率重算」，填 0 是「這一筆真的沒收手續費」。
+        fee: feeText === '' ? undefined : Number(feeText),
+        account: lotAccount.trim() || undefined,
+      });
+      setEditingLotId('');
+      await reloadLots(lot.symbol);
+      setNotice(`已修正 ${lot.symbol} ${lotDate} 那一筆買進`);
+    } catch (err) {
+      setNotice(apiErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeLot = async (lot: LedgerLot, owner: { symbol: string }) => {
+    if (!window.confirm(`刪掉沖銷帳裡 ${lot.trade_date} 買進的 ${lot.shares} 股？`)) return;
+    setBusy(true);
+    setNotice('');
+    try {
+      await removeLedgerLot(lot.id);
+      await reloadLots(owner.symbol);
+      setNotice('已刪除該筆買進');
+    } catch (err) {
+      setNotice(apiErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const toggleExpand = (row: { key: string; symbol: string }) => {
     if (expandedKey === row.key) {
@@ -1340,56 +1426,216 @@ export default function Holdings() {
                                         )}
                                       {lots && lots.lots.length > 0 && (
                                         <>
-                                          <table className="w-full border-collapse">
-                                            <thead>
-                                              <tr>
-                                                <th className={`${headCell} text-left`}>成交日</th>
-                                                <th className={`${headCell} text-left`}>帳戶</th>
-                                                <th className={`${headCell} text-right`}>股數</th>
-                                                <th className={`${headCell} text-right`}>買價</th>
-                                                <th className={`${headCell} text-right`}>手續費</th>
-                                                <th className={`${headCell} text-right`}>
-                                                  每股成本
-                                                </th>
-                                              </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-outline-variant/50">
-                                              {lots.lots.map((lot) => (
-                                                <tr key={lot.id}>
-                                                  <td className="p-2 py-2 font-body-sm text-body-sm text-on-surface whitespace-nowrap">
-                                                    {lot.trade_date}
-                                                  </td>
-                                                  <td className="p-2 py-2 font-body-sm text-body-sm text-on-surface-variant whitespace-nowrap">
-                                                    {lot.account || DASH}
-                                                  </td>
-                                                  <td
-                                                    className={`${numberCell} text-on-surface-variant`}
-                                                  >
-                                                    {formatNumber(lot.shares)}
-                                                  </td>
-                                                  <td
-                                                    className={`${numberCell} text-on-surface-variant`}
-                                                  >
-                                                    {formatPrice(lot.price)}
-                                                  </td>
-                                                  <td
-                                                    className={`${numberCell} text-on-surface-variant`}
-                                                  >
-                                                    {formatNumber(lot.fee)}
-                                                  </td>
-                                                  <td className={`${numberCell} text-on-surface`}>
-                                                    {formatPrice(lot.unit_cost)}
-                                                  </td>
+                                          <div className="overflow-x-auto">
+                                            <table className="w-full border-collapse">
+                                              <thead>
+                                                <tr>
+                                                  <th className={`${headCell} text-left`}>成交日</th>
+                                                  <th className={`${headCell} text-left`}>帳戶</th>
+                                                  <th className={`${headCell} text-right`}>股數</th>
+                                                  <th className={`${headCell} text-right`}>買價</th>
+                                                  <th className={`${headCell} text-right`}>手續費</th>
+                                                  <th className={`${headCell} text-right`}>
+                                                    每股成本
+                                                  </th>
+                                                  <th className={`${headCell} text-right`}>
+                                                    每股損益
+                                                  </th>
+                                                  <th className={`${headCell} text-right`}>損益</th>
+                                                  <th className={`${headCell} text-right`}>報酬率</th>
+                                                  <th className={`${headCell} text-right`}>操作</th>
                                                 </tr>
-                                              ))}
-                                            </tbody>
-                                          </table>
+                                              </thead>
+                                              <tbody className="divide-y divide-outline-variant/50">
+                                                {lots.lots.map((lot) => {
+                                                  const editingLot = editingLotId === lot.id;
+                                                  // 每一筆的損益都拿這一檔的現價算：批次之間只有成本不同。
+                                                  const per =
+                                                    item.price == null
+                                                      ? null
+                                                      : item.price - lot.unit_cost;
+                                                  const lotCost = lot.unit_cost * lot.shares;
+                                                  const lotProfit =
+                                                    per == null ? null : per * lot.shares;
+                                                  const lotPercent =
+                                                    lotProfit == null || lotCost <= 0
+                                                      ? null
+                                                      : (lotProfit / lotCost) * 100;
+                                                  return (
+                                                    <tr key={lot.id}>
+                                                      <td className="p-2 py-2 font-body-sm text-body-sm text-on-surface whitespace-nowrap">
+                                                        {editingLot ? (
+                                                          <input
+                                                            value={lotDate}
+                                                            onChange={(e) =>
+                                                              setLotDate(e.target.value)
+                                                            }
+                                                            type="date"
+                                                            max={today()}
+                                                            className={`${editFieldClass} w-36 text-left`}
+                                                          />
+                                                        ) : (
+                                                          lot.trade_date
+                                                        )}
+                                                      </td>
+                                                      <td className="p-2 py-2 font-body-sm text-body-sm text-on-surface-variant whitespace-nowrap">
+                                                        {editingLot ? (
+                                                          <input
+                                                            value={lotAccount}
+                                                            onChange={(e) =>
+                                                              setLotAccount(e.target.value)
+                                                            }
+                                                            placeholder="帳戶"
+                                                            className={`${editFieldClass} w-24 text-left`}
+                                                          />
+                                                        ) : (
+                                                          lot.account || DASH
+                                                        )}
+                                                      </td>
+                                                      <td
+                                                        className={`${numberCell} text-on-surface-variant`}
+                                                      >
+                                                        {editingLot ? (
+                                                          <input
+                                                            value={lotShares}
+                                                            onChange={(e) =>
+                                                              setLotShares(e.target.value)
+                                                            }
+                                                            inputMode="numeric"
+                                                            className={editFieldClass}
+                                                          />
+                                                        ) : (
+                                                          formatNumber(lot.shares)
+                                                        )}
+                                                      </td>
+                                                      <td
+                                                        className={`${numberCell} text-on-surface-variant`}
+                                                      >
+                                                        {editingLot ? (
+                                                          <input
+                                                            value={lotPrice}
+                                                            onChange={(e) =>
+                                                              setLotPrice(e.target.value)
+                                                            }
+                                                            inputMode="decimal"
+                                                            className={editFieldClass}
+                                                          />
+                                                        ) : (
+                                                          formatPrice(lot.price)
+                                                        )}
+                                                      </td>
+                                                      <td
+                                                        className={`${numberCell} text-on-surface-variant`}
+                                                      >
+                                                        {editingLot ? (
+                                                          <input
+                                                            value={lotFee}
+                                                            onChange={(e) =>
+                                                              setLotFee(e.target.value)
+                                                            }
+                                                            inputMode="numeric"
+                                                            placeholder="留空=重算"
+                                                            className={editFieldClass}
+                                                          />
+                                                        ) : (
+                                                          formatNumber(lot.fee)
+                                                        )}
+                                                      </td>
+                                                      <td className={`${numberCell} text-on-surface`}>
+                                                        {formatPrice(lot.unit_cost)}
+                                                      </td>
+                                                      <td
+                                                        className={`${numberCell} ${quoteColor(per)}`}
+                                                      >
+                                                        {per == null ? DASH : formatSigned(per, 2)}
+                                                      </td>
+                                                      <td
+                                                        className={`${numberCell} ${quoteColor(
+                                                          lotProfit
+                                                        )}`}
+                                                      >
+                                                        {lotProfit == null
+                                                          ? DASH
+                                                          : formatSigned(lotProfit, 0)}
+                                                      </td>
+                                                      <td
+                                                        className={`${numberCell} ${quoteColor(
+                                                          lotPercent
+                                                        )}`}
+                                                      >
+                                                        {formatSignedPercent(lotPercent)}
+                                                      </td>
+                                                      <td className="p-2 py-2 text-right whitespace-nowrap">
+                                                        {editingLot ? (
+                                                          <span className="inline-flex gap-1">
+                                                            <button
+                                                              type="button"
+                                                              onClick={() => saveLot(lot)}
+                                                              disabled={busy}
+                                                              title="儲存"
+                                                              className="p-1 rounded text-secondary hover:bg-surface-container transition-colors disabled:opacity-50"
+                                                            >
+                                                              <span className="material-symbols-outlined text-[20px]">
+                                                                {busy ? 'hourglass_empty' : 'check'}
+                                                              </span>
+                                                            </button>
+                                                            <button
+                                                              type="button"
+                                                              onClick={() => setEditingLotId('')}
+                                                              disabled={busy}
+                                                              title="取消"
+                                                              className="p-1 rounded text-outline hover:bg-surface-container transition-colors disabled:opacity-50"
+                                                            >
+                                                              <span className="material-symbols-outlined text-[20px]">
+                                                                close
+                                                              </span>
+                                                            </button>
+                                                          </span>
+                                                        ) : (
+                                                          <span className="inline-flex gap-1">
+                                                            <button
+                                                              type="button"
+                                                              onClick={() => startEditLot(lot)}
+                                                              title="修正這一筆買進"
+                                                              className="p-1 rounded text-outline hover:text-primary hover:bg-surface-container transition-colors"
+                                                            >
+                                                              <span className="material-symbols-outlined text-[20px]">
+                                                                edit
+                                                              </span>
+                                                            </button>
+                                                            <button
+                                                              type="button"
+                                                              onClick={() => removeLot(lot, item)}
+                                                              disabled={busy}
+                                                              title="刪除這一筆買進"
+                                                              className="p-1 rounded text-outline hover:text-error hover:bg-surface-container transition-colors disabled:opacity-50"
+                                                            >
+                                                              <span className="material-symbols-outlined text-[20px]">
+                                                                delete
+                                                              </span>
+                                                            </button>
+                                                          </span>
+                                                        )}
+                                                      </td>
+                                                    </tr>
+                                                  );
+                                                })}
+                                              </tbody>
+                                            </table>
+                                          </div>
                                           <p className="font-body-sm text-body-sm text-on-surface-variant mt-2">
                                             這是自訂沖銷帳的紀錄，
                                             <span className="text-on-surface font-semibold">
                                               跟上面的部位各記各的、不會自動同步
                                             </span>
-                                            ——兩邊對不上就是有一邊沒維護。每股成本已含買進手續費。
+                                            ——兩邊對不上就是有一邊沒維護。每股成本已含買進手續費，
+                                            每一筆的損益與報酬率都是拿這一檔的現價對該筆成本算的，
+                                            所以同一檔各筆的報酬率會不一樣，這正是要指定沖銷哪一筆的依據。
+                                            手續費留空代表照目前費率重算，填 0 才是「真的沒收」。
+                                            <span className="text-on-surface font-semibold">
+                                              已經被賣出沖掉的批次不能改也不能刪
+                                            </span>
+                                            ，要動要先去沖銷帳刪掉那筆賣出。
                                           </p>
                                         </>
                                       )}
