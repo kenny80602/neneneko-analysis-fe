@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
 import PriceChart from '../components/PriceChart';
@@ -10,6 +11,7 @@ import { getInstitutionalHistory } from '../api/institutional';
 import { getPortfolioValuation } from '../api/portfolio';
 import { getRealtimeQuote } from '../api/realtimeQuote';
 import { getIndustryPeers, getRevenueHistory } from '../api/revenue';
+import { getGroupPeers } from '../api/stockGroup';
 import { IndustryPeer, IndustryPeers } from '../api/types';
 import { getWarningHistory } from '../api/warning';
 import { useSymbol } from '../context/SymbolContext';
@@ -147,6 +149,10 @@ export default function Dashboard() {
   // 同產業比較。資料來自全市場的月營收，跟自選股無關，任何一檔都查得到。
   const peers = useAsyncData(() => getIndustryPeers(symbol), [symbol], { enabled });
   const peerRows = useMemo(() => buildPeerRows(peers.data), [peers.data]);
+
+  // 自己建的主題族群。跟上面那支是兩回事：官方產業別把矽晶圓三家全歸「半導體業」
+  // （一百多家），又把散熱三家拆進三個不同產業，兩個方向都沒辦法「同類放一起」。
+  const groups = useAsyncData(() => getGroupPeers(symbol), [symbol], { enabled });
 
   // 名次走勢直接吃 history 那份收盤行情，不另外發請求——名次就存在同一列上。
   // x 軸只放有收盤資料的日子，那些就是交易日，不必另外維護一份交易日曆。
@@ -588,6 +594,142 @@ export default function Dashboard() {
 
             <section className={`${cardClass} p-6 flex flex-col gap-stack-md`}>
               <h3 className="font-headline-md text-headline-md text-primary flex items-center gap-2">
+                <span className="material-symbols-outlined text-[20px]">workspaces</span>
+                主題族群
+                {groups.data && groups.data.length > 1 && (
+                  <span className={chipClass}>{groups.data.length} 個</span>
+                )}
+              </h3>
+
+              <p className="font-body-sm text-body-sm text-on-surface-variant">
+                自己整理的族群，
+                <span className="text-on-surface">跟下面的官方產業別是兩回事</span>
+                ——矽晶圓的中美晶、環球晶、台勝科官方全歸「半導體業」（一百多家，台積電也在裡面）；
+                散熱的雙鴻、高力、奇鋐則分屬其他電子業、電機機械、電腦及週邊設備業，
+                官方分類永遠不會把它們放在一起。所以族群得自己維護，在
+                <Link to="/settings" className="text-primary hover:underline">
+                  設定
+                </Link>
+                裡改。
+                只比月營收：那是唯一涵蓋全市場的數字，成員不必在自選股裡（收盤價與法人只收自選股）。
+                金額單位為新台幣千元。
+              </p>
+
+              {groups.loading && (
+                <p className="font-body-sm text-body-sm text-on-surface-variant">載入中…</p>
+              )}
+              {groups.error && (
+                <p className="font-body-sm text-body-sm text-error">{groups.error}</p>
+              )}
+              {!groups.loading && !groups.error && groups.data?.length === 0 && (
+                <p className="font-body-sm text-body-sm text-on-surface-variant">
+                  這一檔還沒被歸進任何族群。族群是人工整理的，免費資料源沒有現成的，
+                  要自己在
+                  <Link to="/settings" className="text-primary hover:underline">
+                    設定
+                  </Link>
+                  裡建（例如建一個「散熱」，成員填 3324、8996、3017）。
+                  一檔可以同時屬於多個族群，中美晶就同時是矽晶圓與太陽能。
+                </p>
+              )}
+
+              {groups.data?.map((entry) => (
+                <div key={entry.group.id} className="flex flex-col gap-stack-sm">
+                  <p className="font-body-md text-body-md text-on-surface flex items-center gap-2">
+                    <span className={chipClass}>{entry.group.name}</span>
+                    <span className="font-body-sm text-body-sm text-on-surface-variant">
+                      {entry.peers.length} 檔
+                      {entry.month && ` · ${entry.month} 月營收`}
+                    </span>
+                  </p>
+                  <div className="overflow-x-auto rounded-xl border border-outline-variant">
+                    <table className="w-full border-collapse">
+                      <thead className="bg-surface-container-low border-b border-outline-variant">
+                        <tr>
+                          <th className="p-2 pl-4 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-left">
+                            股號 / 名稱
+                          </th>
+                          <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-left">
+                            官方產業別
+                          </th>
+                          <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-right">
+                            單月營收
+                          </th>
+                          <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-right">
+                            月增率
+                          </th>
+                          <th className="p-2 pr-4 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-right">
+                            年增率
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-outline-variant/50">
+                        {entry.peers.map((peer) => {
+                          const isSelf = peer.symbol === symbol;
+                          // 沒營收時月增率與年增率一起沒有意義，整列給破折號而不是 0%。
+                          const noRevenue = peer.revenue === null;
+                          return (
+                            <tr
+                              key={peer.symbol}
+                              onClick={() => setSymbol(peer.symbol)}
+                              title="點擊切換到這一檔"
+                              className={`transition-colors cursor-pointer ${
+                                isSelf
+                                  ? 'bg-primary-container/10'
+                                  : 'hover:bg-surface-container-low/50'
+                              }`}
+                            >
+                              <td className="p-2 pl-4 py-3 whitespace-nowrap">
+                                <span
+                                  className={`font-data-md text-data-md text-primary ${
+                                    isSelf ? 'font-bold' : ''
+                                  }`}
+                                >
+                                  {peer.symbol}
+                                </span>{' '}
+                                <span className="font-body-md text-body-md text-on-surface-variant">
+                                  {peer.name || DASH}
+                                </span>
+                                {/* 標出非自選股，否則使用者會以為是自己漏收了那幾檔的價格。 */}
+                                {!peer.in_watchlist && (
+                                  <span className="text-outline font-body-sm text-body-sm">
+                                    {' '}
+                                    · 非自選股
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-2 py-3 font-body-sm text-body-sm text-on-surface-variant whitespace-nowrap">
+                                {peer.industry || DASH}
+                              </td>
+                              <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface">
+                                {formatNumber(peer.revenue)}
+                              </td>
+                              <td
+                                className={`p-2 py-3 text-right font-data-md text-data-md ${
+                                  noRevenue ? '' : quoteColor(peer.mom)
+                                }`}
+                              >
+                                {noRevenue ? DASH : formatSignedPercent(peer.mom)}
+                              </td>
+                              <td
+                                className={`p-2 pr-4 py-3 text-right font-data-md text-data-md ${
+                                  noRevenue ? '' : quoteColor(peer.yoy)
+                                }`}
+                              >
+                                {noRevenue ? DASH : formatSignedPercent(peer.yoy)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+            </section>
+
+            <section className={`${cardClass} p-6 flex flex-col gap-stack-md`}>
+              <h3 className="font-headline-md text-headline-md text-primary flex items-center gap-2">
                 <span className="material-symbols-outlined text-[20px]">group</span>
                 同產業個股
                 {peers.data?.industry && (
@@ -603,7 +745,7 @@ export default function Dashboard() {
                 依證交所的官方產業分類，用最新月份的單月營收排名。
                 產業別直接沿用公開資訊觀測站，跟部分看盤軟體的自訂分類不一定一樣。
                 <span className="text-on-surface">這不是「散熱」「AI」那種主題族群</span>
-                ——主題族群是人工整理的選股清單，免費資料源沒有，同樣做散熱的公司常常分屬不同產業。
+                ——那個看上面那一塊，同樣做散熱的公司在這裡會分屬不同產業。
                 排名用營收而不是股價或本益比，是因為月營收是唯一涵蓋全市場的數字；
                 收盤價與估值只收自選股那幾檔，拿來排名會變成「自選股內排名」。
                 金額單位為新台幣千元。

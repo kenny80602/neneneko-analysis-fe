@@ -309,6 +309,48 @@ export interface IndustryPeers {
   peers: IndustryPeer[];
 }
 
+// ===== 主題族群（/stocks/groups）=====
+
+export interface StockGroup {
+  id: string;
+  // 族群名稱，同時也是鍵：同名視為覆蓋而不是新增。
+  name: string;
+  // 成員代號，順序照當初輸入的（可能刻意把龍頭放第一個），後端不會重排。
+  symbols: string[];
+  sort_order: number;
+}
+
+export interface GroupPeer {
+  symbol: string;
+  name: string;
+  // 官方產業別。刻意顯示出來，好讓「族群跟官方分類不是同一回事」看得見：
+  // 散熱族群的三家分屬電機機械、電腦及週邊設備業、其他電子業。
+  industry: string;
+  // 不在自選股裡的成員只有月營收，價格、法人、融資券那幾支沒收，畫面上是破折號。
+  in_watchlist: boolean;
+  // 營收月份 YYYY-MM。沒有營收資料時是空字串。
+  year_month: string;
+  // 單月營收，單位新台幣千元。沒有資料時是 null，不是 0。
+  revenue: number | null;
+  // 單位 %。revenue 是 null 時這兩個沒有意義。
+  yoy: number;
+  mom: number;
+}
+
+export interface GroupPeers {
+  group: StockGroup;
+  // 這份營收的資料月份 YYYY-MM。整個族群都沒有資料時是空字串。
+  month: string;
+  // 成員，月營收由大到小；沒有營收的排最後。
+  peers: GroupPeer[];
+}
+
+export interface RemoveGroupResult {
+  id: string;
+  // 刪掉幾列（0 或 1）。0 代表本來就不在了，不是錯誤。
+  removed: number;
+}
+
 // ===== 重大訊息（/stocks/announcement）=====
 
 export interface MaterialAnnouncement {
