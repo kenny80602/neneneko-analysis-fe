@@ -836,3 +836,27 @@ export interface LedgerImportResult {
   // 有幾筆的手續費是當成 0 匯進來的。持股表同樣沒有這一欄。
   fees_unknown: number;
 }
+
+// ===== 研究報告（/reports、/docs）=====
+
+// docs/ 底下的一篇報告。內容是一整頁做好的 HTML，前端只列目錄不 render 內容。
+export interface Report {
+  // 對外路徑，例如 /docs/market/lead-lag.html。要接上 API_BASE 才是完整網址。
+  path: string;
+  // 取自 HTML 的 <title>。後端抓不到時會退回檔名，不會是空字串。
+  title: string;
+  // 檔案所在的子目錄（maps／market／audit／design），中文分類名由前端決定。
+  // 直接放在 docs/ 底下的檔案是空字串。
+  category: string;
+  // 檔案最後修改時間，RFC3339。報告是 commit 進 repo 的靜態檔，
+  // 沒有「資料日期」可言，這是唯一問得出來的時間。
+  updated_at: string;
+}
+
+export interface ReportCatalog {
+  count: number;
+  items: Report[];
+  // 人工整理的總目錄（docs/index.html），有分類說明與每篇摘要。
+  // 檔案不存在時是空字串。
+  index_path: string;
+}

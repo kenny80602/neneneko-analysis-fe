@@ -13,6 +13,7 @@ const marketNavItems = [
   { icon: 'school', label: '模擬買賣', path: '/paper' },
   { icon: 'compare_arrows', label: '自訂沖銷帳', path: '/ledger' },
   { icon: 'notifications_active', label: '多喵 Alert', path: '/alert' },
+  { icon: 'menu_book', label: '研究報告', path: '/reports' },
   { icon: 'settings', label: '設定', path: '/settings' },
 ];
 
