@@ -9,9 +9,9 @@ import {
   removePosition,
   updateHoldingPosition,
 } from '../api/portfolio';
-import { getLedgerReport } from '../api/ledger';
+import { getBrokerFees, getLedgerReport } from '../api/ledger';
 import { apiErrorMessage } from '../api/request';
-import { Holding, LedgerLot, PortfolioRow } from '../api/types';
+import { Holding, LedgerFees, LedgerLot, PortfolioRow } from '../api/types';
 import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
 import {
@@ -70,11 +70,20 @@ interface PositionRow {
   costValue: number | null;
   profit: number | null;
   profitPercent: number | null;
+
+  /** 一股損益＝現價 − 成本。決定要認賠幾股時看這個，不必自己除。 */
+  perShare: number | null;
+  /** 現在全部賣掉會被扣的手續費與證交稅，加上當初的買進手續費。 */
+  fees: { buy: number; sell: number; tax: number } | null;
+  /** 扣掉上面那些之後真正落袋的損益。 */
+  netProfit: number | null;
+  netProfitPercent: number | null;
 }
 
 function toPositionRows(
   holdings: Holding[],
-  priceBySymbol: Map<string, PortfolioRow>
+  priceBySymbol: Map<string, PortfolioRow>,
+  brokerFees: LedgerFees | null
 ): PositionRow[] {
   return holdings
     .map((h) => {
@@ -82,6 +91,21 @@ function toPositionRows(
       const price = valuation?.price ?? null;
       const marketValue = price != null && h.shares != null ? price * h.shares : null;
       const costValue = h.cost != null && h.shares != null ? h.cost * h.shares : null;
+
+      // 費率還沒載回來、或算不出金額時一律 null，不要先用 0 頂著——
+      // 0 元手續費會讓淨損益看起來剛好等於毛損益，那是假的。
+      const breakdown =
+        brokerFees != null && marketValue != null && costValue != null
+          ? (() => {
+              const s = sellCost(marketValue, brokerFees);
+              return { buy: buyFee(costValue, brokerFees), sell: s.fee, tax: s.tax };
+            })()
+          : null;
+      const netProfit =
+        breakdown != null && marketValue != null && costValue != null
+          ? marketValue - costValue - breakdown.buy - breakdown.sell - breakdown.tax
+          : null;
+
       return {
         id: h.id,
         symbol: h.symbol,
@@ -103,6 +127,14 @@ function toPositionRows(
         // 「有成本、還沒填股數」的部位明明算得出來卻顯示破折號。
         profitPercent:
           h.cost != null && h.cost !== 0 && price != null ? ((price - h.cost) / h.cost) * 100 : null,
+        perShare: h.cost != null && price != null ? price - h.cost : null,
+        fees: breakdown,
+        netProfit,
+        // 分母用成本，跟毛報酬率同一個基準，兩個數字才比得出「費用吃掉多少」。
+        netProfitPercent:
+          netProfit != null && costValue != null && costValue > 0
+            ? (netProfit / costValue) * 100
+            : null,
       };
     })
     .sort((a, b) => (b.marketValue ?? -1) - (a.marketValue ?? -1));
@@ -110,6 +142,26 @@ function toPositionRows(
 
 /** 沒填帳戶時的顯示名稱。空字串與 null 都算同一組——兩者都是「沒指定」。 */
 const NO_ACCOUNT = '未指定帳戶';
+
+/**
+ * 賣出時券商會扣掉的錢：手續費 + 證交稅。
+ *
+ * 費率一律由後端給（見 getBrokerFees），這裡只做「無條件捨去到整數元、
+ * 套用最低收費」這段算術——那是券商實務，不是可調的政策。
+ *
+ * 買進手續費不在這裡：它已經付掉了，算在 buyFee()。
+ */
+function sellCost(amount: number, fees: LedgerFees): { fee: number; tax: number } {
+  return {
+    fee: Math.max(Math.floor(amount * fees.rate * fees.discount), fees.minimum),
+    tax: Math.floor(amount * fees.tax_rate),
+  };
+}
+
+/** 買進時付掉的手續費。用現在的費率回推，跟當初實際付的可能有落差。 */
+function buyFee(amount: number, fees: LedgerFees): number {
+  return Math.max(Math.floor(amount * fees.rate * fees.discount), fees.minimum);
+}
 
 /**
  * 從成交日到今天幾天。沒填成交日回 null，呼叫端顯示破折號。
@@ -290,6 +342,8 @@ export default function Holdings() {
   // 停用的列也一起拿：它們不在試算結果裡，但使用者仍該知道自己有這些部位。
   const holdings = useAsyncData(() => getHoldings(false), []);
   const valuation = useAsyncData(() => getPortfolioValuation(), []);
+  // 費率來自後端，前端不寫死。載不回來時淨損益顯示破折號而不是退回毛損益。
+  const brokerFees = useAsyncData(() => getBrokerFees(), []);
 
   const [editingId, setEditingId] = useState('');
   const [editShares, setEditShares] = useState('');
@@ -312,8 +366,8 @@ export default function Holdings() {
     for (const row of valuation.data ?? []) {
       if (!priceBySymbol.has(row.symbol)) priceBySymbol.set(row.symbol, row);
     }
-    return toPositionRows(holdings.data ?? [], priceBySymbol);
-  }, [holdings.data, valuation.data]);
+    return toPositionRows(holdings.data ?? [], priceBySymbol, brokerFees.data ?? null);
+  }, [holdings.data, valuation.data, brokerFees.data]);
 
   // 有填股數的才算持股，沒填的只是放著觀察。
   // 後端只有一張表，自選與持股混在一起，沒有「是不是持股」的欄位，
@@ -1009,6 +1063,7 @@ export default function Holdings() {
                                         {item.account === NO_ACCOUNT ? '未指定帳戶' : item.account}
                                         」的 {item.positions.length} 筆部位（依成交日與市值）
                                       </p>
+                                      <div className="overflow-x-auto">
                                       <table className="w-full border-collapse">
                                         <thead>
                                           <tr>
@@ -1016,9 +1071,13 @@ export default function Holdings() {
                                             <th className={`${headCell} text-right`}>持有</th>
                                             <th className={`${headCell} text-right`}>股數</th>
                                             <th className={`${headCell} text-right`}>成本</th>
+                                            <th className={`${headCell} text-right`}>一股損益</th>
                                             <th className={`${headCell} text-right`}>市值</th>
                                             <th className={`${headCell} text-right`}>未實現損益</th>
                                             <th className={`${headCell} text-right`}>報酬率</th>
+                                            <th className={`${headCell} text-right`}>賣出費用</th>
+                                            <th className={`${headCell} text-right`}>淨損益</th>
+                                            <th className={`${headCell} text-right`}>淨報酬率</th>
                                             <th className={`${headCell} text-left`}>帳戶</th>
                                             <th className={`${headCell} text-right`}>操作</th>
                                           </tr>
@@ -1083,6 +1142,16 @@ export default function Holdings() {
                                                     formatPrice(row.cost)
                                                   )}
                                                 </td>
+                                                <td
+                                                  className={`${numberCell} ${quoteColor(
+                                                    row.perShare
+                                                  )}`}
+                                                  title="現價 − 成本，決定要認賠幾股時看這個"
+                                                >
+                                                  {row.perShare == null
+                                                    ? DASH
+                                                    : formatSigned(row.perShare, 2)}
+                                                </td>
                                                 <td className={`${numberCell} text-on-surface`}>
                                                   {row.marketValue == null
                                                     ? DASH
@@ -1103,6 +1172,40 @@ export default function Holdings() {
                                                   )}`}
                                                 >
                                                   {formatSignedPercent(row.profitPercent)}
+                                                </td>
+                                                <td
+                                                  className={`${numberCell} text-on-surface-variant`}
+                                                  title={
+                                                    row.fees == null
+                                                      ? undefined
+                                                      : `買進手續費 ${formatNumber(
+                                                          row.fees.buy
+                                                        )}＋賣出手續費 ${formatNumber(
+                                                          row.fees.sell
+                                                        )}＋證交稅 ${formatNumber(row.fees.tax)}`
+                                                  }
+                                                >
+                                                  {row.fees == null
+                                                    ? DASH
+                                                    : `-${formatNumber(
+                                                        row.fees.buy + row.fees.sell + row.fees.tax
+                                                      )}`}
+                                                </td>
+                                                <td
+                                                  className={`${numberCell} font-bold ${quoteColor(
+                                                    row.netProfit
+                                                  )}`}
+                                                >
+                                                  {row.netProfit == null
+                                                    ? DASH
+                                                    : formatSigned(row.netProfit, 0)}
+                                                </td>
+                                                <td
+                                                  className={`${numberCell} ${quoteColor(
+                                                    row.netProfitPercent
+                                                  )}`}
+                                                >
+                                                  {formatSignedPercent(row.netProfitPercent)}
                                                 </td>
                                                 <td className="p-2 py-2 font-body-sm text-body-sm text-on-surface-variant">
                                                   {editing ? (
@@ -1178,6 +1281,32 @@ export default function Holdings() {
                                           })}
                                         </tbody>
                                       </table>
+                                      </div>
+                                      <p className="font-body-sm text-body-sm text-on-surface-variant mt-2">
+                                        <span className="text-on-surface font-semibold">一股損益</span>
+                                        ＝現價 − 成本，要決定認賠幾股時直接乘股數就好。
+                                        <span className="text-on-surface font-semibold">淨損益</span>
+                                        ＝市值 − 成本 − 買進手續費 − 賣出手續費 − 證交稅，
+                                        也就是現在全部賣掉真正落袋的金額；滑到「賣出費用」上看得到三項拆解。
+                                        {brokerFees.data && (
+                                          <>
+                                            {' '}
+                                            費率用手續費 {(brokerFees.data.rate * 100).toFixed(4)}%
+                                            {brokerFees.data.discount !== 1 &&
+                                              `（${(brokerFees.data.discount * 10).toFixed(2)} 折）`}
+                                            、最低 {formatNumber(brokerFees.data.minimum)} 元、
+                                            證交稅 {(brokerFees.data.tax_rate * 100).toFixed(1)}%。
+                                            <span className="text-on-surface font-semibold">
+                                              跟券商 App 對不上就是折數不同
+                                            </span>
+                                            ，在後端 .env.json 的 BROKER_FEE_DISCOUNT 調整。
+                                            買進手續費是用現在的費率回推的，跟當初實際付的可能有落差。
+                                          </>
+                                        )}
+                                        {brokerFees.error && (
+                                          <span className="text-error"> 費率載入失敗，淨損益顯示破折號。</span>
+                                        )}
+                                      </p>
                                       {item.cost == null && (
                                         <p className="font-body-sm text-body-sm text-on-surface-variant mt-2">
                                           上面那一列的成本與損益是破折號，因為這幾筆裡有沒填成本的——

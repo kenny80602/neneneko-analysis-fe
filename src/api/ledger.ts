@@ -2,6 +2,7 @@ import request from './request';
 import {
   ApiResponse,
   Ledger,
+  LedgerFees,
   LedgerImportResult,
   LedgerLot,
   LedgerMatchedSell,
@@ -31,6 +32,17 @@ export interface SellPayload {
   picks: LedgerPick[];
   fallback: MatchRule;
 }
+
+// 目前生效的券商費率：手續費率、折數、最低收費、證交稅率。
+//
+// 前端拿它算「現在賣掉會被扣多少、淨損益是多少」，**不要自己寫死費率**——
+// 定義只有後端那一份，折數與最低收費各家券商不同，在後端 .env.json 調整
+// （BROKER_FEE_DISCOUNT／BROKER_FEE_MINIMUM）。
+//
+// 費率其實不只沖銷帳在用（「我的持股」也吃它），端點掛在 /ledger 下面
+// 只是因為設定放在那個 service。
+export const getBrokerFees = () =>
+  request.get<ApiResponse<LedgerFees>>('/ledger/fees').then((res) => res.data.data as LedgerFees);
 
 // 有沖銷帳的代號清單。只看買進，空陣列代表還沒開始記帳。
 export const getLedgerSymbols = () =>
