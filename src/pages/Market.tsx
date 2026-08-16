@@ -5,8 +5,8 @@ import PageState from '../components/PageState';
 import StatCard from '../components/StatCard';
 import { getTPExMarketHighlight, getTPExPriceAdvanced, getTPExPriceDeclined } from '../api/tpex';
 import {
+  getLatestTWSEInstitutionalSummaries,
   getTWSEAdvanceDeclineSummaries,
-  getTWSEInstitutionalSummaries,
   getTWSEMarketTradings,
   getTWSEVolumeRanks,
 } from '../api/twse';
@@ -59,7 +59,9 @@ export default function Market() {
 
   const twse = useAsyncData(() => getTWSEMarketTradings(), []);
   const advanceDecline = useAsyncData(() => getTWSEAdvanceDeclineSummaries(), []);
-  const institutional = useAsyncData(() => getTWSEInstitutionalSummaries(), []);
+  // 這一支會自己往回找最近一個有資料的交易日，所以假日進來也看得到上一個交易日的數字。
+  // 同一頁其他區塊的上游端點都不吃日期，做不到同樣的事，休市時仍然是空的。
+  const institutional = useAsyncData(() => getLatestTWSEInstitutionalSummaries(), []);
   const tpex = useAsyncData(() => getTPExMarketHighlight(), []);
   const volumeRanks = useAsyncData(() => getTWSEVolumeRanks(), []);
 
@@ -163,7 +165,8 @@ export default function Market() {
       <div className="flex flex-col gap-stack-lg">
         <p className="font-body-sm text-body-sm text-on-surface-variant">
           這一頁全部是即時打交易所與櫃買中心的資料，不落地也不輪詢——上游有限流，要更新請按重新整理。
-          假日與收盤資料還沒出來的時段，各區塊會是空的，那不是壞掉。
+          假日與收盤資料還沒出來的時段，多數區塊會是空的，那不是壞掉；只有三大法人那一區的上游吃日期，
+          會自動退回最近一個有資料的交易日。
         </p>
 
         {loading && !latestTwse && <PageState kind="loading" />}
@@ -269,8 +272,8 @@ export default function Market() {
         )}
 
         {/*
-          這一塊即使空的也要留著。上游不帶 date 就是「今天」，而三大法人買賣金額要收盤後
-          約一小時才出得來——整塊消失會讓人以為畫面壞了或自己看漏，不如明講還沒出來。
+          這一塊即使空的也要留著。買賣金額要收盤後約一小時才出得來，而往回找也有找不到的時候
+          （上游更新延遲、超長連假）——整塊消失會讓人以為畫面壞了或自己看漏，不如明講。
         */}
         <section className="flex flex-col gap-stack-md">
           <div className="flex flex-wrap justify-between items-end gap-stack-sm">
@@ -290,8 +293,8 @@ export default function Market() {
           {!institutional.loading && !institutional.error && !institutional.data?.items.length && (
             <PageState
               kind="empty"
-              message="今天的三大法人買賣金額還沒出來"
-              hint="這支查的是當天，而上游收盤後約一小時才更新——盤中與假日拿到的一定是空的，不是壞掉。"
+              message="最近幾個交易日都還沒有三大法人買賣金額"
+              hint="已經從今天往回找過最近幾個交易日了。今天盤中或剛收盤（上游約收盤後一小時才更新）拿到空的很正常，晚點按重新整理即可。"
             />
           )}
 
@@ -340,6 +343,7 @@ export default function Market() {
           {!!institutional.data?.items.length && (
             <p className="font-body-sm text-body-sm text-on-surface-variant">
               合計那一列是上游算好的，前幾列相加不等於它——外資自營商已計入自營商，上游不重複計算。
+              假日、連假或當天資料還沒出來時，這張表顯示的是最近一個有資料的交易日，日期請看標題。
             </p>
           )}
         </section>

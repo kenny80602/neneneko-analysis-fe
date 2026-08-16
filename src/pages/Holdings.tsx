@@ -969,8 +969,11 @@ export default function Holdings() {
                         帳戶分隔列。小計直接寫在這一列上，不必回頭對照上面那張總覽——
                         往下捲到一半時最想知道的就是「我現在看的是哪個帳戶、它賺多少」。
                       */}
-                      <tr className="bg-surface-container-low/70 border-y border-outline-variant">
-                        <td colSpan={2} className="px-4 py-2 whitespace-nowrap">
+                      <tr className="bg-surface-container-high border-y border-outline-variant">
+                        <td
+                          colSpan={2}
+                          className="px-4 py-2 whitespace-nowrap border-l-4 border-l-primary"
+                        >
                           <span className="material-symbols-outlined text-[16px] align-middle mr-1 text-on-surface-variant">
                             account_balance_wallet
                           </span>
@@ -1029,7 +1032,7 @@ export default function Holdings() {
                             <tr
                               onClick={() => setSymbol(item.symbol)}
                               title="點擊設為目前選取的股票"
-                              className="hover:bg-surface-container-low/50 transition-colors cursor-pointer"
+                              className="odd:bg-surface-container-low/40 hover:bg-surface-container transition-colors cursor-pointer"
                             >
                               <td className="p-2 pl-4 py-3">
                                 <div className="flex flex-col">
@@ -1073,10 +1076,10 @@ export default function Holdings() {
                                 )}
                               </td>
 
-                              <td className={`${numberCell} text-on-surface-variant`}>
+                              <td className={`${numberCell} text-on-surface font-semibold`}>
                                 {formatNumber(item.shares)}
                               </td>
-                              <td className={`${numberCell} text-on-surface-variant`}>
+                              <td className={`${numberCell} text-on-surface`}>
                                 {formatPrice(item.cost)}
                                 {/* 併起來的成本是加權平均，標一下免得被當成某一筆的買價。 */}
                                 {split && item.cost != null && (
@@ -1135,12 +1138,17 @@ export default function Holdings() {
                               </td>
                             </tr>
 
+                            {/*
+                              展開區用實色底而不是 /40 半透明：疊在白底上會混成一片
+                              說不清是什麼的灰，而且兩張子表黏在一起分不出段落。
+                              改成有色底 + 兩塊白卡片，層次一眼看得出來。
+                            */}
                             {expanded && (
-                              <tr className="bg-surface-container-low/40">
+                              <tr className="bg-surface-container">
                                 <td colSpan={10} className="p-4">
                                   <div className="flex flex-col gap-stack-md">
                                     {/* ── 這一檔的各筆部位 ── */}
-                                    <div>
+                                    <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-3">
                                       <p className="font-label-caps text-label-caps uppercase text-primary mb-2">
                                         {item.symbol} 在「
                                         {item.account === NO_ACCOUNT ? '未指定帳戶' : item.account}
@@ -1192,6 +1200,8 @@ export default function Holdings() {
                                                 >
                                                   {holdingDays(row.tradeDate) ?? DASH}
                                                 </td>
+                                                {/* 股數與成本是這張表的主角，用最深的字色；
+                                                    成交日與持有天數是背景資訊，維持次要色。 */}
                                                 <td
                                                   className={`${numberCell} text-on-surface-variant`}
                                                 >
@@ -1396,7 +1406,7 @@ export default function Holdings() {
                                     </div>
 
                                     {/* ── 沖銷帳的逐筆買進 ── */}
-                                    <div>
+                                    <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-3">
                                       <p className="font-label-caps text-label-caps uppercase text-primary mb-2">
                                         買進明細（自訂沖銷帳）
                                       </p>
@@ -1439,6 +1449,9 @@ export default function Holdings() {
                                                     每股成本
                                                   </th>
                                                   <th className={`${headCell} text-right`}>
+                                                    總成本
+                                                  </th>
+                                                  <th className={`${headCell} text-right`}>
                                                     每股損益
                                                   </th>
                                                   <th className={`${headCell} text-right`}>損益</th>
@@ -1462,7 +1475,11 @@ export default function Holdings() {
                                                       ? null
                                                       : (lotProfit / lotCost) * 100;
                                                   return (
-                                                    <tr key={lot.id}>
+                                                    <tr
+                                                      key={lot.id}
+                                                      // 27 筆的表看久了會跳行，隔列上底色比拉格線輕。
+                                                      className="odd:bg-surface-container-low/60 hover:bg-surface-container transition-colors"
+                                                    >
                                                       <td className="p-2 py-2 font-body-sm text-body-sm text-on-surface whitespace-nowrap">
                                                         {editingLot ? (
                                                           <input
@@ -1493,7 +1510,7 @@ export default function Holdings() {
                                                         )}
                                                       </td>
                                                       <td
-                                                        className={`${numberCell} text-on-surface-variant`}
+                                                        className={`${numberCell} text-on-surface`}
                                                       >
                                                         {editingLot ? (
                                                           <input
@@ -1509,7 +1526,7 @@ export default function Holdings() {
                                                         )}
                                                       </td>
                                                       <td
-                                                        className={`${numberCell} text-on-surface-variant`}
+                                                        className={`${numberCell} text-on-surface`}
                                                       >
                                                         {editingLot ? (
                                                           <input
@@ -1543,6 +1560,13 @@ export default function Holdings() {
                                                       </td>
                                                       <td className={`${numberCell} text-on-surface`}>
                                                         {formatPrice(lot.unit_cost)}
+                                                      </td>
+                                                      {/*
+                                                        這一筆的持有成本＝每股成本 × 股數，
+                                                        跟券商對帳單上那一欄同一個定義（已含買進手續費）。
+                                                      */}
+                                                      <td className={`${numberCell} text-on-surface`}>
+                                                        {formatNumber(lotCost)}
                                                       </td>
                                                       <td
                                                         className={`${numberCell} ${quoteColor(per)}`}

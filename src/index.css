@@ -7,19 +7,145 @@
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
 
+/*
+  色票以 CSS 變數存 RGB 通道值（"24 40 60" 這種形式），tailwind.config.js 用
+  rgb(var(--c-x) / <alpha-value>) 引用。
+
+  為什麼是通道值而不是直接寫 #rrggbb：全站有二十幾處在用 bg-surface-container-low/50
+  這類透明度修飾詞，色票如果是完整色碼，Tailwind 就算不出 alpha。
+
+  深色主題只是換掉同一組變數，所以十幾頁的 className 一行都不用改。
+  切換靠 <html class="dark">，見 utils/theme.ts。
+
+  導覽列的 nav / on-nav 那組刻意不隨主題翻轉：側邊欄在兩個模式都維持深底，
+  它是整個版面的定錨。primary 則照 M3 正常翻轉——它主要當標題文字與按鈕底色，
+  深色模式下必須變亮才看得見。
+*/
+:root {
+    --c-background: 248 249 250;
+    --c-error: 186 26 26;
+    --c-error-container: 255 218 214;
+    --c-inverse-on-surface: 240 241 242;
+    --c-inverse-primary: 183 200 222;
+    --c-inverse-surface: 46 49 50;
+    --c-nav: 4 22 39;
+    --c-nav-active: 26 43 60;
+    --c-on-background: 25 28 29;
+    --c-on-error: 255 255 255;
+    --c-on-error-container: 147 0 10;
+    --c-on-nav: 255 255 255;
+    --c-on-nav-muted: 143 163 186;
+    --c-on-primary: 255 255 255;
+    --c-on-primary-container: 129 146 167;
+    --c-on-primary-fixed: 11 29 45;
+    --c-on-primary-fixed-variant: 56 72 90;
+    --c-on-secondary: 255 255 255;
+    --c-on-secondary-container: 0 114 57;
+    --c-on-secondary-fixed: 0 33 12;
+    --c-on-secondary-fixed-variant: 0 82 40;
+    --c-on-surface: 25 28 29;
+    --c-on-surface-variant: 68 71 76;
+    --c-on-tertiary: 255 255 255;
+    --c-on-tertiary-container: 251 90 72;
+    --c-on-tertiary-fixed: 65 0 0;
+    --c-on-tertiary-fixed-variant: 145 8 7;
+    --c-outline: 111 114 120;
+    --c-outline-variant: 196 198 205;
+    --c-primary: 4 22 39;
+    --c-primary-container: 26 43 60;
+    --c-primary-fixed: 210 228 251;
+    --c-primary-fixed-dim: 183 200 222;
+    --c-quote-down: 0 121 74;
+    --c-quote-up: 204 34 34;
+    --c-secondary: 0 109 55;
+    --c-secondary-container: 123 248 161;
+    --c-secondary-fixed: 126 251 164;
+    --c-secondary-fixed-dim: 97 222 138;
+    --c-surface: 248 249 250;
+    --c-surface-bright: 248 249 250;
+    --c-surface-container: 237 238 239;
+    --c-surface-container-high: 231 232 233;
+    --c-surface-container-highest: 225 227 228;
+    --c-surface-container-low: 243 244 245;
+    --c-surface-container-lowest: 255 255 255;
+    --c-surface-dim: 217 218 219;
+    --c-surface-tint: 79 96 115;
+    --c-surface-variant: 225 227 228;
+    --c-tertiary: 53 0 0;
+    --c-tertiary-container: 92 0 1;
+    --c-tertiary-fixed: 255 218 213;
+    --c-tertiary-fixed-dim: 255 180 169;
+}
+
+.dark {
+    --c-background: 18 23 26;
+    --c-error: 255 180 171;
+    --c-error-container: 147 0 10;
+    --c-inverse-on-surface: 18 23 26;
+    --c-inverse-primary: 58 90 122;
+    --c-inverse-surface: 226 230 232;
+    --c-nav: 4 22 39;
+    --c-nav-active: 26 43 60;
+    --c-on-background: 226 230 232;
+    --c-on-error: 105 0 5;
+    --c-on-error-container: 255 218 214;
+    --c-on-nav: 255 255 255;
+    --c-on-nav-muted: 143 163 186;
+    --c-on-primary: 11 33 55;
+    --c-on-primary-container: 207 227 251;
+    --c-on-primary-fixed: 11 29 45;
+    --c-on-primary-fixed-variant: 56 72 90;
+    --c-on-secondary: 0 57 27;
+    --c-on-secondary-container: 123 248 161;
+    --c-on-secondary-fixed: 0 33 12;
+    --c-on-secondary-fixed-variant: 0 82 40;
+    --c-on-surface: 226 230 232;
+    --c-on-surface-variant: 191 199 204;
+    --c-on-tertiary: 92 0 1;
+    --c-on-tertiary-container: 255 218 213;
+    --c-on-tertiary-fixed: 65 0 0;
+    --c-on-tertiary-fixed-variant: 145 8 7;
+    --c-outline: 139 148 153;
+    --c-outline-variant: 63 72 77;
+    --c-primary: 168 199 232;
+    --c-primary-container: 41 73 100;
+    --c-primary-fixed: 210 228 251;
+    --c-primary-fixed-dim: 183 200 222;
+    --c-quote-down: 32 192 132;
+    --c-quote-up: 255 125 125;
+    --c-secondary: 95 219 150;
+    --c-secondary-container: 0 82 42;
+    --c-secondary-fixed: 126 251 164;
+    --c-secondary-fixed-dim: 97 222 138;
+    --c-surface: 18 23 26;
+    --c-surface-bright: 44 50 53;
+    --c-surface-container: 32 39 43;
+    --c-surface-container-high: 38 46 51;
+    --c-surface-container-highest: 45 54 59;
+    --c-surface-container-low: 27 34 38;
+    --c-surface-container-lowest: 23 29 33;
+    --c-surface-dim: 13 17 20;
+    --c-surface-tint: 168 199 232;
+    --c-surface-variant: 63 72 77;
+    --c-tertiary: 255 180 169;
+    --c-tertiary-container: 127 15 7;
+    --c-tertiary-fixed: 255 218 213;
+    --c-tertiary-fixed-dim: 255 180 169;
+}
+
 /* 永遠保留捲軸槽寬度：避免頁面在有/無垂直捲軸間切換時，置中內容水平位移造成的畫面抖動。
    overflow-y: scroll 是跨瀏覽器最穩定的解法（scrollbar-gutter 在 root + overflow:visible 時
    不一定生效，且舊版 Safari 不支援，故兩者並用為保險）。 */
 html {
   overflow-y: scroll;
   scrollbar-gutter: stable;
-  background-color: #f8f9fa;
+  background-color: rgb(var(--c-background));
 }
 
 body {
   margin: 0;
-  background-color: #f8f9fa;
-  color: #191c1d;
+  background-color: rgb(var(--c-background));
+  color: rgb(var(--c-on-background));
   font-family: 'Inter', 'Noto Sans TC', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -37,25 +163,25 @@ body {
   height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: #f3f4f5;
+  background: rgb(var(--c-surface-container-low));
 }
 ::-webkit-scrollbar-thumb {
-  background: #c4c6cd;
+  background: rgb(var(--c-outline-variant));
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #74777d;
+  background: rgb(var(--c-outline));
 }
 
-/* 側邊欄是深色底，捲軸沿用淺色會很突兀。 */
+/* 側邊欄是深色底（兩個主題都是），捲軸沿用頁面的淺色會很突兀。 */
 .scrollbar-on-primary::-webkit-scrollbar-track {
-  background: #041627;
+  background: rgb(var(--c-nav));
 }
 .scrollbar-on-primary::-webkit-scrollbar-thumb {
-  background: #1a2b3c;
+  background: rgb(var(--c-nav-active));
 }
 .scrollbar-on-primary::-webkit-scrollbar-thumb:hover {
-  background: #38485a;
+  background: rgb(var(--c-on-nav-muted));
 }
 
 /* 隱藏 number input 的上下箭頭：報價／張數等欄位用鍵盤輸入即可，

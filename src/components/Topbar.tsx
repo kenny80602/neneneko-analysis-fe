@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { logout } from '../api/auth';
+import { Theme, resolveTheme, setTheme } from '../utils/theme';
 import SymbolPicker from './SymbolPicker';
 
 /**
@@ -10,6 +12,15 @@ import SymbolPicker from './SymbolPicker';
  */
 export default function Topbar() {
   const navigate = useNavigate();
+  // 初值直接讀已解析好的主題：index.tsx 在掛載前就套上去了，
+  // 這裡再讀一次只是為了讓按鈕圖示對得上，不會造成閃爍。
+  const [theme, setThemeState] = useState<Theme>(() => resolveTheme());
+
+  const toggleTheme = () => {
+    const next: Theme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    setThemeState(next);
+  };
 
   const handleLogout = async () => {
     // logout 內部已保證清掉本地 token，後端失敗也照樣導回登入頁。
@@ -37,6 +48,17 @@ export default function Topbar() {
             onSelect={() => navigate('/dashboard')}
           />
         </div>
+
+        <button
+          type="button"
+          onClick={toggleTheme}
+          title={theme === 'dark' ? '切換到淺色模式' : '切換到深色模式'}
+          className="text-on-surface-variant hover:text-primary transition-colors"
+        >
+          <span className="material-symbols-outlined text-[20px]">
+            {theme === 'dark' ? 'light_mode' : 'dark_mode'}
+          </span>
+        </button>
 
         {/* 通知與設定尚無對應後端，先停用而不是給一個按了沒反應的按鈕。 */}
         <button

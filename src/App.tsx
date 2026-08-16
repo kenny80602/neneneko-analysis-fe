@@ -19,9 +19,10 @@ import Valuation from './pages/Valuation';
 import Warnings from './pages/Warnings';
 
 function App() {
-  // basename 取 PUBLIC_URL：GitHub Pages 的專案站台掛在 /stock-market-analysis-fe/
-  // 子路徑下，不給 basename 的話所有路由都會少算這一段而對不到。
-  // 該值只在 CI 建置時由 workflow 注入，本機開發是空字串，等同沒設。
+  // basename 取 PUBLIC_URL：GitHub Pages 的專案站台掛在以 repo 名為名的子路徑下
+  // （目前是 /neneneko-analysis-fe/），不給 basename 的話所有路由都會少算這一段而對不到。
+  // 不寫死 repo 名是因為 workflow 是用 github.event.repository.name 動態注入的，
+  // repo 改名會自動跟上。該值只在 CI 建置時注入，本機開發是空字串，等同沒設。
   return (
     <BrowserRouter basename={process.env.PUBLIC_URL}>
       <SymbolProvider>
