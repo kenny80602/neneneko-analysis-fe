@@ -192,6 +192,37 @@ export interface MarginByDate {
   balances: MarginBalance[];
 }
 
+// 大盤（整個市場合計）的融資融券（/stocks/margin/summaries）。
+//
+// 欄位比個股那份少是上游決定的，不是這裡漏抄：大盤沒有限額、使用率與資券互抵，
+// 融券也只有張數——兩個市場的上游都沒有公布融券金額。
+export interface MarketMarginSummary {
+  market: Market;
+  date: string;
+
+  // 融資，單位張。
+  margin_lots: number;
+  margin_previous_lots: number;
+  // 今日 − 前日。正數代表整個市場的融資部位變多（散戶加碼）。
+  margin_lots_change: number;
+  // 融資金額，單位元（上游給仟元，後端已換算）。
+  margin_amount: number;
+  margin_previous_amount: number;
+  margin_amount_change: number;
+
+  // 融券，單位張。沒有金額欄位。
+  short_lots: number;
+  short_previous_lots: number;
+  // 正數代表看空的部位變多。
+  short_lots_change: number;
+}
+
+export interface MarketMarginSummaries {
+  count: number;
+  // 兩個市場的逐日餘額攤平在一起，日期由新到舊、同一天上市在前。
+  items: MarketMarginSummary[];
+}
+
 // ===== 估值指標（/stocks/valuation）=====
 
 // 數值為 null 代表「沒有這個值」：虧損的公司算不出本益比、沒配息的沒有殖利率。

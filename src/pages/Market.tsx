@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
 import StatCard from '../components/StatCard';
+import { getMarketMarginSummaries } from '../api/margin';
 import { getTPExMarketHighlight, getTPExPriceAdvanced, getTPExPriceDeclined } from '../api/tpex';
 import {
   getLatestTWSEInstitutionalSummaries,
@@ -10,7 +11,7 @@ import {
   getTWSEMarketTradings,
   getTWSEVolumeRanks,
 } from '../api/twse';
-import { TWSEVolumeRank } from '../api/types';
+import { MarketMarginSummary, TWSEVolumeRank } from '../api/types';
 import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
 import {
@@ -21,6 +22,7 @@ import {
   formatShareToLot,
   formatSigned,
   formatSignedPercent,
+  marketLabel,
   quoteColor,
 } from '../utils/format';
 
@@ -64,6 +66,9 @@ export default function Market() {
   const institutional = useAsyncData(() => getLatestTWSEInstitutionalSummaries(), []);
   const tpex = useAsyncData(() => getTPExMarketHighlight(), []);
   const volumeRanks = useAsyncData(() => getTWSEVolumeRanks(), []);
+  // 大盤融資融券。這一支跟同頁其他區塊不同，讀的是後端落地的資料而不是即時打上游，
+  // 所以假日與盤中一樣看得到最近一個交易日，不必像三大法人那樣自己往回找。
+  const margin = useAsyncData(() => getMarketMarginSummaries(), []);
 
   const [twseSort, setTwseSort] = useState<TwseSort>('volume');
   const [tpexSide, setTpexSide] = useState<TpexSide>('advanced');
@@ -89,6 +94,16 @@ export default function Market() {
     );
     return rows.slice(0, TOP_N);
   }, [movers.data, tpexSide]);
+
+  // 融資融券只顯示最新一個交易日，一個市場一列。
+  //
+  // 後端回的是最近 90 天、日期由新到舊，這裡取「最新那一天」的那幾列而不是前兩筆：
+  // 上櫃那份是後來才接的，早期只有上市，寫死兩筆會在那種日子把前一天的上市也算進來。
+  const latestMargin = useMemo(() => {
+    const items = margin.data?.items ?? [];
+    if (items.length === 0) return [] as MarketMarginSummary[];
+    return items.filter((row) => row.date === items[0].date);
+  }, [margin.data]);
 
   // 上游回的是陣列且日期由舊到新不一定固定，取最後一筆當「最新」不保險，
   // 直接依日期字串（YYYY-MM-DD 可字典序比較）挑最大的那筆。
@@ -136,6 +151,7 @@ export default function Market() {
     tpex.reload();
     volumeRanks.reload();
     movers.reload();
+    margin.reload();
   };
 
   // 點任何一列就把代號設成目前選取的檔並跳到個股總覽。
@@ -164,9 +180,9 @@ export default function Market() {
 
       <div className="flex flex-col gap-stack-lg">
         <p className="font-body-sm text-body-sm text-on-surface-variant">
-          這一頁全部是即時打交易所與櫃買中心的資料，不落地也不輪詢——上游有限流，要更新請按重新整理。
-          假日與收盤資料還沒出來的時段，多數區塊會是空的，那不是壞掉；只有三大法人那一區的上游吃日期，
-          會自動退回最近一個有資料的交易日。
+          這一頁多數區塊是即時打交易所與櫃買中心的資料，不落地也不輪詢——上游有限流，要更新請按重新整理。
+          假日與收盤資料還沒出來的時段那些區塊會是空的，那不是壞掉；三大法人那一區的上游吃日期，
+          會自動退回最近一個有資料的交易日；融資融券則是讀已經收集下來的資料，任何時候都看得到最近一天。
         </p>
 
         {loading && !latestTwse && <PageState kind="loading" />}
@@ -344,6 +360,94 @@ export default function Market() {
             <p className="font-body-sm text-body-sm text-on-surface-variant">
               合計那一列是上游算好的，前幾列相加不等於它——外資自營商已計入自營商，上游不重複計算。
               假日、連假或當天資料還沒出來時，這張表顯示的是最近一個有資料的交易日，日期請看標題。
+            </p>
+          )}
+        </section>
+
+        {/*
+          融資融券跟三大法人並列：兩者都是「大盤層級的籌碼」，一個看法人一個看散戶槓桿，
+          放在一起才看得出當天是誰在買。
+        */}
+        <section className="flex flex-col gap-stack-md">
+          <div className="flex flex-wrap justify-between items-end gap-stack-sm">
+            <h2 className="font-headline-md text-headline-md text-primary">
+              融資融券（大盤
+              {latestMargin[0]?.date ? ` · ${latestMargin[0].date}` : ''}）
+            </h2>
+            <span className="font-body-sm text-body-sm text-on-surface-variant">
+              餘額單位張，融資金額單位元
+            </span>
+          </div>
+
+          {margin.loading && <PageState kind="loading" />}
+          {margin.error && (
+            <PageState kind="error" message={margin.error} onRetry={margin.reload} />
+          )}
+          {!margin.loading && !margin.error && latestMargin.length === 0 && (
+            <PageState
+              kind="empty"
+              message="還沒有大盤融資融券資料"
+              hint="這份由每天晚間的排程收集（交易所當日晚間才公布），跟同頁其他區塊的即時查詢不同。排程還沒跑過就會是空的。"
+            />
+          )}
+
+          {latestMargin.length > 0 && (
+            <div className={`${cardClass} overflow-x-auto`}>
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-surface-container-low border-b border-outline-variant">
+                  <tr>
+                    <th className={`${thClass} pl-4 text-left`}>市場</th>
+                    <th className={`${thClass} text-right`}>融資餘額</th>
+                    <th className={`${thClass} text-right`}>融資增減</th>
+                    <th className={`${thClass} text-right`}>融資金額</th>
+                    <th className={`${thClass} text-right`}>融券餘額</th>
+                    <th className={`${thClass} pr-4 text-right`}>融券增減</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-outline-variant/50">
+                  {latestMargin.map((row) => (
+                    <tr
+                      key={row.market}
+                      className="hover:bg-surface-container-low/50 transition-colors"
+                    >
+                      <td className="p-2 pl-4 py-3 font-body-md text-body-md text-on-surface whitespace-nowrap">
+                        {marketLabel(row.market)}
+                      </td>
+                      <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface">
+                        {formatNumber(row.margin_lots)}
+                      </td>
+                      <td
+                        className={`p-2 py-3 text-right font-data-md text-data-md ${quoteColor(
+                          row.margin_lots_change
+                        )}`}
+                      >
+                        {formatSigned(row.margin_lots_change, 0)}
+                      </td>
+                      <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface-variant">
+                        {formatAmount(row.margin_amount)}
+                      </td>
+                      <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface">
+                        {formatNumber(row.short_lots)}
+                      </td>
+                      <td
+                        className={`p-2 pr-4 py-3 text-right font-data-md text-data-md ${quoteColor(
+                          row.short_lots_change
+                        )}`}
+                      >
+                        {formatSigned(row.short_lots_change, 0)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {latestMargin.length > 0 && (
+            <p className="font-body-sm text-body-sm text-on-surface-variant">
+              融資增加代表散戶用槓桿加碼、融券增加代表看空的部位變多，兩者都是籌碼面而不是價格
+              ——這裡的紅綠只標增減方向，跟當天大盤漲跌沒有關係。
+              融券只有張數：兩個市場的上游都沒有公布融券金額。
             </p>
           )}
         </section>
