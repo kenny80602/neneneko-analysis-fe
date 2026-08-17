@@ -708,14 +708,19 @@ export default function LotLedger() {
                     value={strategy.shares > 0 ? formatNumber(strategy.cost) : DASH}
                     hint="元，剩餘部位的成本（含買進手續費）"
                   />
+                  {/* 顯示的是扣掉賣出手續費與證交稅之後真的拿得回來的錢，不是毛市值：
+                      毛額跟含買進手續費的成本相減，等於少扣了賣出那一端，
+                      真的賣掉的那一刻數字會突然縮水，看起來像算錯。毛額放在 hint 裡對帳用。 */}
                   <StatCard
                     label="目前市值"
                     icon="paid"
-                    value={strategy.market_value == null ? DASH : formatNumber(strategy.market_value)}
+                    value={strategy.net_value == null ? DASH : formatNumber(strategy.net_value)}
                     hint={
-                      strategy.unrealized == null
+                      strategy.sell_fee == null || strategy.sell_tax == null
                         ? '元，取不到現價'
-                        : `元，未實現 ${formatSigned(strategy.unrealized, 0)}`
+                        : `元，未實現 ${formatSigned(strategy.unrealized, 0)}；毛額 ${formatNumber(
+                            strategy.market_value
+                          )} 已扣賣出費用 ${formatNumber(strategy.sell_fee + strategy.sell_tax)}`
                     }
                     valueClassName={quoteColor(strategy.unrealized)}
                   />
@@ -744,10 +749,13 @@ export default function LotLedger() {
                 <p className="font-body-sm text-body-sm text-on-surface-variant">
                   「現在報酬率」「原本金額」「目前市值」看的是
                   <span className="text-on-surface font-semibold">還沒賣掉的那些</span>
-                  ：原本金額是剩餘部位的成本（含買進手續費），市值是它照現價值多少，
-                  報酬率是兩者的差除以成本。
-                  <span className="text-on-surface font-semibold">未實現那組沒有扣賣出的手續費與證交稅</span>
-                  ，跟已實現那組（已扣）口徑不同——賣出費用要等真的賣才知道賣幾股、分幾筆。
+                  ：原本金額是剩餘部位的成本（含買進手續費），目前市值是
+                  <span className="text-on-surface font-semibold">現在賣掉真的拿得回來的錢</span>
+                  ——已經扣掉賣出的手續費與證交稅，跟已實現那組同一個口徑，
+                  報酬率是兩者的差除以成本。賣出費用照
+                  <span className="text-on-surface font-semibold">「用現價一次全部賣光」估算</span>
+                  ，最低收費只收一次；實際分好幾筆賣、零股單獨掛的話會比這個多一些。
+                  想跟券商 App 的市值對照請看卡片下方的毛額。
                   這三個數字在券商帳會不一樣（剩餘股數相同但成本不同），畫面上顯示的是策略帳。
                   「兩帳差額」＝策略帳已實現 − 券商帳已實現，是
                   <span className="text-on-surface font-semibold">認列時間的差</span>

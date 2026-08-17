@@ -166,9 +166,12 @@ export const emptyLedger = (view: Ledger['view']): Ledger => ({
   cost: 0,
   avg_cost: null,
   realized: 0,
-  // 沒有部位就沒有市值可言。這三個是 null 而不是 0——0 元市值會被讀成
+  // 沒有部位就沒有市值可言。這幾個是 null 而不是 0——0 元市值會被讀成
   // 「這批部位變成壁紙了」，跟「手上什麼都沒有」是兩件事。
   market_value: null,
+  sell_fee: null,
+  sell_tax: null,
+  net_value: null,
   unrealized: null,
   unrealized_rate: null,
 });
