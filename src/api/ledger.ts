@@ -32,6 +32,13 @@ export interface SellPayload {
   price: number;
   picks: LedgerPick[];
   fallback: MatchRule;
+  /**
+   * 從哪一個券商帳戶賣的。
+   *
+   * 沖銷只在同一帳戶內進行，所以可賣股數、指定得到的批次與費率都跟著它走。
+   * 空字串是合法的，代表「沒填帳戶的那一組」。
+   */
+  account: string;
 }
 
 // 目前生效的券商費率：手續費率、折數、最低收費、證交稅率。
@@ -64,10 +71,13 @@ export const getLedgerSymbols = () =>
     .get<ApiResponse<{ symbols: string[] }>>('/ledger/symbols')
     .then((res) => res.data.data?.symbols ?? []);
 
-// 一檔的完整沖銷帳：策略帳、券商 FIFO 帳，以及兩者的逐筆對帳。
+// 一檔的完整沖銷帳，逐帳戶分開：每個帳戶各有策略帳、券商 FIFO 帳與兩者的逐筆對帳。
 //
-// 這一檔完全沒有紀錄時回一本空帳而不是 404——「還沒開始記」是正常狀態，
-// 呼叫端要自己判斷 strategy.positions 是不是空的，不要當成錯誤。
+// 分帳戶是因為券商的結算是逐帳戶的：元大不會拿富邦的庫存去交割，混在一起排一次
+// FIFO 得到的券商帳不等於任何一家 App 的畫面。totals 是逐帳戶算完再相加。
+//
+// 這一檔完全沒有紀錄時 accounts 是空陣列而不是 404——「還沒開始記」是正常狀態，
+// 呼叫端要自己判斷，不要當成錯誤。
 export const getLedgerReport = (symbol: string) =>
   request
     .get<ApiResponse<LedgerReport>>(`/ledger/reports/${symbol}`)

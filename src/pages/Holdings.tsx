@@ -16,7 +16,14 @@ import {
   updateLedgerLot,
 } from '../api/ledger';
 import { apiErrorMessage } from '../api/request';
-import { FeeBook, Holding, LedgerFees, LedgerLot, PortfolioRow } from '../api/types';
+import {
+  FeeBook,
+  Holding,
+  LedgerFees,
+  LedgerLot,
+  LedgerReport,
+  PortfolioRow,
+} from '../api/types';
 import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
 import {
@@ -170,6 +177,20 @@ function sellFeesFor(book: FeeBook, account: string): LedgerFees {
     minimum: rule.sell_minimum,
     tax_rate: book.tax_rate,
   };
+}
+
+/**
+ * 沖銷帳報表裡這一檔的全部買進批次，跨帳戶攤平。
+ *
+ * 那份報表是逐帳戶分開的（沖銷不跨帳戶），但這一頁的展開明細問的是
+ * 「這一檔在沖銷帳裡有哪幾筆買進」，看的是紀錄本身而不是沖銷結果，所以攤平就好；
+ * 每一筆自己帶著 account，表上有那一欄。
+ *
+ * 取策略帳的部位：那是使用者眼中的真相，券商 FIFO 帳沖掉的批次不一定是同一筆
+ * （批次本身兩邊完全相同，只有剩餘股數不同，而這裡不看剩餘）。
+ */
+function ledgerLotsOf(report: LedgerReport): LedgerLot[] {
+  return report.accounts.flatMap((book) => book.strategy.positions.map((p) => p.lot));
 }
 
 function sellCost(amount: number, fees: LedgerFees): { sell: number; tax: number } {
@@ -400,6 +421,23 @@ export default function Holdings() {
   const groups = useMemo(() => groupByAccount(rows, weightBase), [rows, weightBase]);
 
   /**
+   * 「這個帳戶已經有這一檔」時，新增表單要提示它會併進哪一列。
+   *
+   * 這一頁的一列是「一個帳戶的一檔」，所以同代號同帳戶再加一筆不會多出一列，
+   * 而是變成那一列展開後的下一筆明細（股數相加、成本改加權平均）。表上看不出
+   * 多了東西，使用者會以為新增失敗而再按一次，結果多了兩筆。
+   *
+   * 只查已經有股數的那幾列：觀察中的那些還不是部位，填了股數才會併在一起。
+   */
+  const mergeTarget = useMemo(() => {
+    const code = newSymbol.trim();
+    if (!code) return null;
+    const account = newAccount.trim() || NO_ACCOUNT;
+    const group = groups.find((g) => g.account === account);
+    return group?.symbols.find((s) => s.symbol === code) ?? null;
+  }, [newSymbol, newAccount, groups]);
+
+  /**
    * 全站合計，從各帳戶的小計加起來。
    *
    * 不另外從原始部位算一次：那樣算出來的數字在邊界情況（同一檔有一筆有成本、
@@ -464,7 +502,7 @@ export default function Holdings() {
         [symbol]: {
           loading: false,
           error: '',
-          lots: report.strategy.positions.map((p) => p.lot),
+          lots: ledgerLotsOf(report),
         },
       }));
     } catch (err) {
@@ -535,8 +573,7 @@ export default function Holdings() {
           [row.symbol]: {
             loading: false,
             error: '',
-            // 用策略帳的部位：那是使用者眼中的真相，券商 FIFO 帳沖掉的批次不一定是同一筆。
-            lots: report.strategy.positions.map((p) => p.lot),
+            lots: ledgerLotsOf(report),
           },
         }));
       })
@@ -776,7 +813,26 @@ export default function Holdings() {
             新增部位
           </button>
           <span className="font-body-sm text-body-sm text-on-surface-variant">
-            同一檔可以加好幾筆（每個券商帳戶一筆）。代號要先在自選股清單裡。
+            {mergeTarget ? (
+              <>
+                「{mergeTarget.account}」已經有 {mergeTarget.symbol} {mergeTarget.name}（目前{' '}
+                <span className="font-data-md text-data-md text-on-surface">
+                  {formatNumber(mergeTarget.shares)}
+                </span>{' '}
+                股、均價{' '}
+                <span className="font-data-md text-data-md text-on-surface">
+                  {mergeTarget.cost == null ? DASH : formatPrice(mergeTarget.cost)}
+                </span>
+                ）。這一筆會
+                <span className="text-on-surface font-semibold">
+                  併進那一列成為第 {mergeTarget.positions.length + 1} 筆明細
+                </span>
+                ，表上不會多一列——股數相加、成本改加權平均，展開才看得到逐筆。
+                要分開列就填不一樣的帳戶。
+              </>
+            ) : (
+              '同一檔可以加好幾筆（每個券商帳戶一筆）。代號要先在自選股清單裡。'
+            )}
           </span>
         </form>
 

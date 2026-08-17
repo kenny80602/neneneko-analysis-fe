@@ -755,6 +755,8 @@ export interface LedgerMatchedSell {
   price: number;
   picks: LedgerPick[];
   fallback: MatchRule;
+  // 這筆從哪一個帳戶賣的。沖銷只在同一帳戶內進行。
+  account: string;
   seq: number;
 
   // 成交金額，未含費用。
@@ -880,14 +882,55 @@ export interface LedgerFees {
   tax_rate: number;
 }
 
-export interface LedgerReport {
-  symbol: string;
-  // 取最後一筆買進的名稱。完全沒有紀錄時是空字串。
-  name: string;
+// 一個券商帳戶的兩本帳與對帳結果。
+//
+// 沖銷的單位是「一檔 × 一個帳戶」而不是一檔：券商的結算是逐帳戶的，元大不會拿
+// 富邦的庫存去交割。混在一起排一次 FIFO，算出來的券商帳不等於任何一家 App 的畫面，
+// 「兩帳差額」也就不再只是認列時間的差。
+export interface LedgerAccountBook {
+  // 帳戶名稱。空字串代表這幾筆還沒填帳戶——那不是一個真的帳戶，
+  // 畫面上要標成「未指定帳戶」並排在最後。
+  account: string;
+  // 這個帳戶實際生效的賣出費率（各家的折數與最低收費不同）。
   fees: LedgerFees;
   strategy: Ledger;
   broker: Ledger;
   reconcile: LedgerReconcile;
+}
+
+// 全部帳戶的合計。後端逐帳戶算完再相加，不是把批次混在一起重播。
+//
+// 只有加得起來的數字。平均成本刻意沒有：跨帳戶加權平均沒有券商會顯示，
+// 卻很容易被當成「我這一檔的成本」。
+export interface LedgerTotals {
+  // 有幾個帳戶。1 的時候畫面不必分組。
+  accounts: number;
+  shares: number;
+  cost: number;
+  realized: number;
+  // 各帳戶「策略 − 券商」的差額總和。
+  realized_diff: number;
+
+  // 下面這組跟 Ledger 的同名欄位一樣是一起有一起沒有，取不到現價時全是 null。
+  market_value: number | null;
+  sell_fee: number | null;
+  sell_tax: number | null;
+  net_value: number | null;
+  unrealized: number | null;
+  unrealized_rate: number | null;
+}
+
+export interface LedgerReport {
+  symbol: string;
+  // 取最後一筆買進的名稱。完全沒有紀錄時是空字串。
+  name: string;
+  // 全站預設費率。個別帳戶實際生效的那一組在 accounts[].fees。
+  fees: LedgerFees;
+  // 逐帳戶的帳，依帳戶名遞增、未指定帳戶墊底。
+  // 完全沒有紀錄時是空陣列——「還沒開始記」是正常狀態，不是錯誤。
+  accounts: LedgerAccountBook[];
+  // 全部帳戶的合計。只有一個帳戶時它等於那一本。
+  totals: LedgerTotals;
 
   // 現價，兩本帳的市值都是拿它算的。
   // null 代表這次取不到——沖銷帳本身跟現價無關，取價失敗不會讓整份報表失敗。
