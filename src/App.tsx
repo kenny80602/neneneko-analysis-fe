@@ -4,6 +4,7 @@ import RequireAuth from './components/RequireAuth';
 import { SymbolProvider } from './context/SymbolContext';
 import Alert from './pages/Alert';
 import Announcements from './pages/Announcements';
+import Calendar from './pages/Calendar';
 import DailyQuotes from './pages/DailyQuotes';
 import Dashboard from './pages/Dashboard';
 import Holdings from './pages/Holdings';
@@ -42,6 +43,7 @@ function App() {
               <Route path="/holdings" element={<Holdings />} />
               <Route path="/quotes" element={<DailyQuotes />} />
               <Route path="/paper" element={<PaperTrading />} />
+              <Route path="/calendar" element={<Calendar />} />
               <Route path="/ledger" element={<LotLedger />} />
               <Route path="/ledger/summary" element={<LedgerSummary />} />
               <Route path="/alert" element={<Alert />} />

@@ -1019,6 +1019,109 @@ export interface LedgerImportResult {
   fees_unknown: number;
 }
 
+// ===== 台股行事曆（/stocks/calendar）=====
+//
+// 一支端點回五組資料，來源有三種，語意不同，畫面上要分得出來：
+//   1. 上游公告：休市日、除權息預告。
+//   2. 已落地的紀錄：法說會（從重大訊息撈——兩個交易所都沒有法說會資料集）。
+//   3. 規則推算：期貨結算日、財報申報期限。這兩種要標明「以主管機關公告為準」。
+
+// 一個非交易日，或提醒用的交易日。
+export interface MarketHoliday {
+  date: string;
+  // 例如「中華民國開國紀念日」。
+  name: string;
+  // 上游給的中文星期（「四」）。
+  weekday: string;
+  // 例如「依規定放假1日。」，可能是空字串。
+  description: string;
+  // ⚠️ 這份清單不全是休市日：它同時標出「農曆春節前最後交易日」這種**有交易**的
+  // 提醒日。把 trading 為 true 的畫成休市會讓人以為那天不能下單。
+  trading: boolean;
+  // 市場無交易、僅辦理結算交割作業。那幾天不能買賣，但券商照樣扣款交割。
+  settlement_only: boolean;
+}
+
+// 期貨／選擇權的月結算日。
+//
+// ⚠️ 推算值：期交所沒有未來結算日的資料集，這是照「第三個星期三」算出來的。
+export interface SettlementDay {
+  date: string;
+  // 目前只有 MONTHLY。週選擇權每週三都結算，列進來會塞滿行事曆。
+  kind: 'MONTHLY' | 'WEEKLY';
+  // 第三個星期三遇休市而順延過。true 的話特別需要用期交所公告確認。
+  shifted: boolean;
+}
+
+// 除權除息預告表的一列。上游只有接下來會發生的，沒有歷史。
+export interface ExRightPreview {
+  // 除權息交易日。這一天開盤價會扣掉權值，不是跌停。
+  date: string;
+  symbol: string;
+  name: string;
+  market: Market;
+  kind: 'DIVIDEND' | 'RIGHT' | 'BOTH';
+  // 每股現金股利（元）。null 是「這次沒配現金」而不是 0 元。
+  cash_dividend: number | null;
+  // 每股無償配股率，單位是「每一股配幾股」不是元（0.032 代表每千股配 32 股）。
+  // 跟現金股利擺在一起很容易誤讀，畫面要標單位。
+  stock_dividend_ratio: number | null;
+  // 現金增資認購價（元）。多數是 null。
+  subscription_price_per_share: number | null;
+  // 這一檔在自選股清單裡。全市場一次一百多檔，靠這一欄把自己那幾檔排前面。
+  watched: boolean;
+}
+
+// 一場法人說明會。
+//
+// ⚠️ 來源是**重大訊息**：兩個交易所的 OpenAPI 都沒有法說會資料集。主旨是自由文字，
+// 所以 event_date 解不出來時是空字串，那時只顯示公告日與主旨原文。
+export interface InvestorConference {
+  // 公告時間，RFC3339。這一定有。
+  announced_at: string;
+  // 法說會實際舉行的日期。解不出來時是空字串。
+  event_date: string;
+  symbol: string;
+  name: string;
+  market: Market;
+  // 重大訊息的主旨原文。
+  subject: string;
+  watched: boolean;
+}
+
+// 財報或營收的法定申報期限。
+//
+// ⚠️ 推算值，只涵蓋一般業。台灣的財報申報是法規統一期限而不是逐檔公告，
+// 某一家實際哪天公布由它自己的董事會決定。
+export interface FinancialDeadline {
+  date: string;
+  label: string;
+  note: string;
+}
+
+export interface MarketCalendar {
+  from: string;
+  to: string;
+
+  // 五組各自可能是空陣列，空的意思不一樣：休市日空代表這段期間沒有假日，
+  // 除權息空代表沒有公司在這段期間除權息（旺季在 6～8 月），
+  // 法說會空多半是那幾天剛好沒有公司公告。
+  holidays: MarketHoliday[];
+  settlements: SettlementDay[];
+  ex_rights: ExRightPreview[];
+  conferences: InvestorConference[];
+  deadlines: FinancialDeadline[];
+
+  // 自選股有幾檔。0 代表清單是空的，那時所有 watched 都是 false——
+  // 畫面要能區分「沒有自選股」與「這段期間都沒中」。
+  watchlist: number;
+  // 這次取不到的來源，key 是來源名稱、value 是原因。空物件代表全部拿到了。
+  //
+  // 一定要顯示：某一區塊是空的可能是「本來就沒有」，也可能是「上游掛了」，
+  // 兩者長得一樣，但後者使用者會想重新整理。
+  failures: Record<string, string>;
+}
+
 // ===== 研究報告（/reports、/docs）=====
 
 // docs/ 底下的一篇報告。內容是一整頁做好的 HTML，前端只列目錄不 render 內容。
