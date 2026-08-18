@@ -8,6 +8,7 @@ import DailyQuotes from './pages/DailyQuotes';
 import Dashboard from './pages/Dashboard';
 import Holdings from './pages/Holdings';
 import Institutional from './pages/Institutional';
+import LedgerSummary from './pages/LedgerSummary';
 import Login from './pages/Login';
 import LotLedger from './pages/LotLedger';
 import Margin from './pages/Margin';
@@ -42,6 +43,7 @@ function App() {
               <Route path="/quotes" element={<DailyQuotes />} />
               <Route path="/paper" element={<PaperTrading />} />
               <Route path="/ledger" element={<LotLedger />} />
+              <Route path="/ledger/summary" element={<LedgerSummary />} />
               <Route path="/alert" element={<Alert />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/settings" element={<Settings />} />

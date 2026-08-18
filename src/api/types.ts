@@ -920,6 +920,66 @@ export interface LedgerTotals {
   unrealized_rate: number | null;
 }
 
+// 跨檔總覽的一列：一檔在一個帳戶裡的合計。
+//
+// 沒有逐筆的買進與賣出：總覽問的是「這一檔賺了多少、還剩多少」，
+// 明細去 /ledger/reports/:symbol 看。
+export interface LedgerSummaryRow {
+  symbol: string;
+  name: string;
+  // 帳戶名稱。空字串代表這幾筆還沒填帳戶。
+  account: string;
+  // 這一檔在這個帳戶有幾筆買進、幾筆賣出。
+  lots: number;
+  sells: number;
+
+  shares: number;
+  cost: number;
+  // 剩餘部位的每股平均成本。沒有部位時是 null，不是 0。
+  avg_cost: number | null;
+  // 策略帳已實現，broker_realized 是同一批賣出在 FIFO 下會認列的。
+  realized: number;
+  broker_realized: number;
+  // 策略 − 券商。認列時間的差，全部出清後必然歸零。
+  realized_diff: number;
+
+  // 現價。null 代表這一檔這次取不到，下面那組跟著全是 null。
+  price: number | null;
+  price_source: PriceSource;
+
+  market_value: number | null;
+  sell_fee: number | null;
+  sell_tax: number | null;
+  net_value: number | null;
+  unrealized: number | null;
+  unrealized_rate: number | null;
+}
+
+// 一個帳戶底下的全部代號。
+export interface LedgerSummaryGroup {
+  account: string;
+  // 依代號遞增。不照金額排：這是一本帳的索引，順序每次重整都該一樣。
+  rows: LedgerSummaryRow[];
+  // 這個帳戶的小計。accounts 固定是 1。
+  totals: LedgerTotals;
+}
+
+// 跨檔的沖銷帳總覽。
+//
+// ⚠️ 合計橫跨不同股票，那是投組層級的加總，跟沖銷（同一檔之內的批次配對）
+// 是兩件事：拿別檔的獲利去補這一檔的虧損，不會改變這一檔的任何一個數字。
+export interface LedgerSummary {
+  // 依帳戶名遞增，沒填帳戶的墊底。空陣列代表還沒開始記帳。
+  accounts: LedgerSummaryGroup[];
+  // 全部帳戶的合計，accounts 是去重後的帳戶數。
+  totals: LedgerTotals;
+  // 一共幾檔（去重）。
+  symbols: number;
+  // 有幾列因為取不到現價而沒有市值。不是 0 的話畫面要說明合計的未實現
+  // 少算了那幾檔，否則使用者會以為總額就是全部。
+  unpriced: number;
+}
+
 export interface LedgerReport {
   symbol: string;
   // 取最後一筆買進的名稱。完全沒有紀錄時是空字串。

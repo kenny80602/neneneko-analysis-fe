@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
 import StatCard from '../components/StatCard';
@@ -86,7 +87,10 @@ const ghostButton =
   'px-3 py-1.5 bg-surface border border-outline-variant rounded text-primary font-body-sm text-body-sm hover:bg-surface-container-low transition-colors disabled:opacity-40';
 
 export default function LotLedger() {
-  const [selected, setSelected] = useState('');
+  // 沖銷帳總覽點代號會帶著 ?symbol= 過來。只讀不寫：換下拉時不去改網址，
+  // 不然每選一檔就在瀏覽器歷史多一筆，按上一頁要按十次才回得去總覽。
+  const [searchParams] = useSearchParams();
+  const [selected, setSelected] = useState(searchParams.get('symbol') ?? '');
   const [notice, setNotice] = useState('');
   const [showLotForm, setShowLotForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -140,6 +144,13 @@ export default function LotLedger() {
     }
     return { symbol, name: report.data?.name ?? '', account: last?.account ?? '' };
   }, [symbol, report.data, books]);
+
+  // 從別頁帶著代號進來時跟上。用 effect 而不是只在 useState 給初值：
+  // 已經停在這一頁時再點一次別檔的連結，元件不會重新掛載，初值不會重跑。
+  useEffect(() => {
+    const fromUrl = searchParams.get('symbol');
+    if (fromUrl) setSelected(fromUrl);
+  }, [searchParams]);
 
   // 表單收起來的時候，這三格一直跟著目前這一檔走；一打開就凍住，
   // 免得報表在背景重抓（例如剛加完一筆）時把使用者正在改的欄位蓋掉。

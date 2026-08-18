@@ -10,6 +10,7 @@ import {
   LedgerPick,
   LedgerReport,
   LedgerSellPreview,
+  LedgerSummary,
   MatchRule,
 } from './types';
 
@@ -70,6 +71,16 @@ export const getLedgerSymbols = () =>
   request
     .get<ApiResponse<{ symbols: string[] }>>('/ledger/symbols')
     .then((res) => res.data.data?.symbols ?? []);
+
+// 跨檔總覽：每一檔在每一個帳戶的已實現與未實現，加上各帳戶小計與全部合計。
+//
+// getLedgerReport 一次只有一檔，「我整體到底賺沒賺」在那裡問不到。
+// 這一支會逐檔取即時報價（後端併發，有上限），比其他讀取端點慢，
+// 所以不要輪詢，讓使用者按重新整理。
+export const getLedgerSummary = () =>
+  request
+    .get<ApiResponse<LedgerSummary>>('/ledger/summary')
+    .then((res) => res.data.data as LedgerSummary);
 
 // 一檔的完整沖銷帳，逐帳戶分開：每個帳戶各有策略帳、券商 FIFO 帳與兩者的逐筆對帳。
 //
