@@ -1,9 +1,14 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
 import { getMarketCalendar } from '../api/calendar';
+import { getExhibitions } from '../api/exhibition';
+import { getFOMCMeetings } from '../api/macroIndicators';
 import {
+  Exhibition,
   ExRightPreview,
+  FOMCMeeting,
   InvestorConference,
   MarketCalendar,
 } from '../api/types';
@@ -63,7 +68,7 @@ interface MarketEvent {
   /** 徽章文字。 */
   kind: string;
   /** 徽章配色。 */
-  tone: 'closed' | 'trading' | 'settlement' | 'deadline';
+  tone: 'closed' | 'trading' | 'settlement' | 'deadline' | 'fed';
   title: string;
   note: string;
   /** 這一則是照規則推算的，不是上游公告的。 */
@@ -123,11 +128,48 @@ function toEvents(calendar: MarketCalendar): MarketEvent[] {
   return events.sort((a, b) => a.date.localeCompare(b.date));
 }
 
+/**
+ * FOMC 併進同一條時間軸，日期用**台北公布日**而不是美東會期日。
+ *
+ * 這一頁問的是「台股哪一天會發生什麼」，而 Fed 在美東下午兩點公布時台股早就收盤了
+ * ——台北時間是隔天凌晨兩三點，實際反應在再下一個交易日。放美東日期會讓人以為
+ * 那天盤中就會動。美東會期仍寫在說明欄，才對得上財經媒體講的「9 月會議」。
+ *
+ * 缺 announcement_at_tw（系統沒有時區資料庫）時退回美東日期並在說明裡講明。
+ */
+function toFedEvents(meetings: FOMCMeeting[], from: string, to: string): MarketEvent[] {
+  const events: MarketEvent[] = [];
+  for (const meeting of meetings) {
+    const twDate = meeting.announcement_at_tw.slice(0, 10);
+    const date = twDate || meeting.end;
+    // 日程一次回好幾次會議，只留落在目前區間裡的那幾次。
+    if (date < from || date > to) continue;
+    const time = meeting.announcement_at_tw
+      ? meeting.announcement_at_tw.slice(11, 16)
+      : '';
+    events.push({
+      date,
+      weekday: weekdayOf(date),
+      kind: 'Fed 決策',
+      tone: 'fed',
+      title: meeting.has_projection
+        ? 'FOMC 利率決策（附點陣圖與記者會）'
+        : 'FOMC 利率決策',
+      note: twDate
+        ? `美東會期 ${meeting.start} ～ ${meeting.end}，台北時間 ${time} 公布。公布時台股已收盤，最快要到下一個交易日才反應得到。`
+        : `美東會期 ${meeting.start} ～ ${meeting.end}。這一列用的是美東日期（取不到台北公布時間），台股實際反應會再晚一天。`,
+      derived: false,
+    });
+  }
+  return events;
+}
+
 const TONE_CLASS: Record<MarketEvent['tone'], string> = {
   closed: 'bg-error-container/40 text-error',
   trading: 'bg-secondary-container/50 text-secondary',
   settlement: 'bg-primary-container/40 text-primary',
   deadline: 'bg-surface-container text-on-surface-variant',
+  fed: 'bg-primary-container/40 text-primary',
 };
 
 export default function Calendar() {
@@ -142,7 +184,15 @@ export default function Calendar() {
     [from, to]
   );
 
-  const events = useMemo(() => (data ? toEvents(data) : []), [data]);
+  // FOMC 與台股行事曆是兩支不同的端點、不同的上游，各自失敗：Fed 那份是後端手動
+  // 維護的靜態表，就算交易所的 OpenAPI 掛了它照樣回得出來，反之亦然。
+  const fomc = useAsyncData(() => getFOMCMeetings(), []);
+
+  const events = useMemo(() => {
+    const base = data ? toEvents(data) : [];
+    const fed = toFedEvents(fomc.data?.items ?? [], from, to);
+    return [...base, ...fed].sort((a, b) => a.date.localeCompare(b.date));
+  }, [data, fomc.data, from, to]);
   const failures = Object.entries(data?.failures ?? {});
 
   return (
@@ -152,8 +202,8 @@ export default function Calendar() {
         icon="event"
         subtitle={
           data
-            ? `${formatDate(data.from)} ～ ${formatDate(data.to)}．休市、結算、除權息、法說會`
-            : '休市與結算日、除權除息、法人說明會、財報申報期限'
+            ? `${formatDate(data.from)} ～ ${formatDate(data.to)}．休市、結算、除權息、法說會、Fed 決策`
+            : '休市與結算日、除權除息、法人說明會、財報申報期限、Fed 決策與展覽檔期'
         }
         right={
           <>
@@ -193,6 +243,18 @@ export default function Calendar() {
           則是照規則推算的（標了「推算」徽章）。
           推算的那兩種<span className="text-on-surface font-semibold">以主管機關公告為準</span>
           ，遇連假調整或另行公告時可能不準。
+        </p>
+
+        <p className="font-body-sm text-body-sm text-on-surface-variant">
+          <span className="text-on-surface font-semibold">Fed 決策</span>
+          那幾列的日期是<span className="text-on-surface font-semibold">台北公布日</span>
+          不是美東會期日：Fed 在美東下午兩點公布，換算台北是凌晨兩三點，當天台股早就收盤，
+          最快要到下一個交易日才反應得到。美東會期寫在說明欄，那才是財經媒體講的「9 月會議」。
+          機率與會議全表在
+          <Link to="/macro" className="mx-1 text-primary underline">
+            Fed 與總經
+          </Link>
+          。
         </p>
 
         {loading && <PageState kind="loading" />}
@@ -291,6 +353,9 @@ export default function Calendar() {
 
             {/* ── 法人說明會 ── */}
             <ConferenceSection rows={data.conferences} watchlist={data.watchlist} />
+
+            {/* ── 展覽檔期 ── */}
+            <ExhibitionSection />
           </>
         )}
       </div>
@@ -485,5 +550,167 @@ function ConferenceSection({
         {watchlist === 0 && '　目前自選股是空的，所以沒有任何一列被標記。'}
       </p>
     </section>
+  );
+}
+
+/** 分類代碼→中文。對不到的直接顯示原碼，不要因為沒翻譯就把那一檔藏起來。 */
+const EXHIBITION_CATEGORY_LABEL: Record<string, string> = {
+  semiconductor: '半導體',
+  computer: '電腦',
+  robot: '機器人',
+  display: '顯示器',
+  other: '其他',
+};
+
+/** 篩選鈕。value 為空字串代表不篩。 */
+const EXHIBITION_FILTERS = [
+  { label: '全部', value: '' },
+  { label: '半導體', value: 'semiconductor' },
+  { label: '機器人', value: 'robot' },
+  { label: '電腦', value: 'computer' },
+  { label: '顯示器', value: 'display' },
+];
+
+const EXHIBITION_STATUS: Record<Exhibition['status'], { label: string; className: string }> = {
+  ONGOING: { label: '展期中', className: 'bg-error-container/40 text-error' },
+  SCHEDULED: { label: '尚未開展', className: 'bg-primary-container/40 text-primary' },
+  ENDED: { label: '已結束', className: 'bg-surface-container text-on-surface-variant' },
+};
+
+/**
+ * 展覽檔期。
+ *
+ * 為什麼一個看台股的站要列展覽：半導體展、自動化展、COMPUTEX 前後是相關族群最常
+ * 被提起的時候，展前拉貨與展中發表都會反映在報價上。它回答的是「什麼時候會有題材」，
+ * 跟上面那張「哪天不能交易」是兩件事，所以獨立一塊而不是併進時間軸。
+ *
+ * 也因此**刻意不吃頁面上方的區間**：大型展一年就那幾檔，卡在 30 天的區間裡多半
+ * 一檔都看不到，而使用者問「今年半導體展什麼時候」時要的是下一檔，不是這個月有沒有。
+ */
+function ExhibitionSection() {
+  const [category, setCategory] = useState('');
+  const { data, loading, error, reload } = useAsyncData(
+    () => getExhibitions({ category: category || undefined }),
+    [category]
+  );
+  const items = data?.items ?? [];
+
+  return (
+    <section className="flex flex-col gap-stack-md">
+      <div className="flex flex-wrap items-baseline justify-between gap-stack-sm">
+        <h2 className="font-headline-md text-headline-md text-primary">
+          展覽檔期（{items.length} 檔）
+        </h2>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {EXHIBITION_FILTERS.map((filter) => (
+            <button
+              key={filter.value}
+              type="button"
+              onClick={() => setCategory(filter.value)}
+              className={`px-3 py-1.5 rounded border font-body-sm text-body-sm transition-colors ${
+                category === filter.value
+                  ? 'border-primary bg-primary-container/20 text-primary font-semibold'
+                  : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-low'
+              }`}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <p className="font-body-sm text-body-sm text-on-surface-variant">
+        這一區<span className="text-on-surface font-semibold">不受上方的區間限制</span>
+        ，列的是全部還沒結束的檔期——大型展一年就那幾檔，卡在 30 天裡多半一檔都看不到。
+        <span className="text-on-surface font-semibold">分類是照展覽名稱貼的標籤</span>
+        ，不是上游給的官方分類：台灣機器人與智慧自動化展（TAIROS）跟自動化工業大展同場同期，
+        上游只列後者，所以「機器人」那一類看到的會是「台北國際自動化工業大展」。
+        <span className="text-on-surface font-semibold">只有日期沒有時間</span>
+        ，每天幾點開放請點各展的官網——上游給的時段是展館的制式 10:00~18:00，照抄會是假的精確。
+      </p>
+
+      {loading && <PageState kind="loading" />}
+      {error && <PageState kind="error" message={error} onRetry={reload} />}
+
+      {!loading && !error && items.length === 0 && (
+        <PageState
+          kind="empty"
+          message={category ? '這一類目前沒有還沒結束的展' : '目前沒有展覽檔期'}
+          hint="兩種可能而且畫面上分不出來：後端還沒收集過這份資料（要跑一次收集），或這一類接下來真的沒有展。先換成「全部」看看有沒有東西。"
+        />
+      )}
+
+      {items.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-stack-md">
+          {items.map((item) => (
+            <ExhibitionCard key={`${item.name}-${item.start_date}`} item={item} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** 一檔展覽。 */
+function ExhibitionCard({ item }: { item: Exhibition }) {
+  const status = EXHIBITION_STATUS[item.status];
+
+  return (
+    <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-4 shadow-sm flex flex-col gap-1.5">
+      <div className="flex items-start gap-2">
+        <h3 className="font-body-lg text-body-lg text-on-surface font-semibold min-w-0">
+          {item.name}
+        </h3>
+        <span
+          className={`ml-auto shrink-0 px-2 py-0.5 rounded font-body-sm text-body-sm ${status.className}`}
+        >
+          {status.label}
+        </span>
+      </div>
+
+      <p className="font-data-md text-data-md text-on-surface">
+        {formatDate(item.start_date)} ～ {formatDate(item.end_date)}
+        <span className="ml-2 font-body-sm text-body-sm text-on-surface-variant">
+          共 {item.days} 天
+        </span>
+        {/* 已經開展的是 null 不是 0：「今天開展」跟「展到第三天」是兩件事。 */}
+        {item.days_until != null && (
+          <span className="ml-2 font-body-sm text-body-sm text-primary">
+            還有 {item.days_until} 天
+          </span>
+        )}
+      </p>
+
+      <div className="flex flex-wrap gap-1.5">
+        {item.categories.map((code) => (
+          <span
+            key={code}
+            className="px-2 py-0.5 rounded bg-surface-container-low border border-outline-variant font-body-sm text-body-sm text-on-surface-variant"
+          >
+            {EXHIBITION_CATEGORY_LABEL[code] ?? code}
+          </span>
+        ))}
+      </div>
+
+      <p className="font-body-sm text-body-sm text-on-surface-variant">
+        {item.venues.length > 0 ? item.venues.join('、') : DASH}
+        {item.organizer && <span className="ml-2 text-outline">主辦：{item.organizer}</span>}
+      </p>
+
+      {item.description && (
+        <p className="font-body-sm text-body-sm text-outline">{item.description}</p>
+      )}
+
+      {item.url && (
+        <a
+          href={item.url}
+          target="_blank"
+          rel="noreferrer"
+          className="self-start font-body-sm text-body-sm text-primary underline"
+        >
+          官網（每天的開放時間看這裡）
+        </a>
+      )}
+    </div>
   );
 }

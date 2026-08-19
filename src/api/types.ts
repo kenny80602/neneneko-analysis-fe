@@ -1487,6 +1487,54 @@ export interface FOMCSchedule {
   source: string;
 }
 
+// ===== 展覽檔期（/stocks/exhibitions）=====
+//
+// 台灣的大型專業展：半導體、電腦、機器人、顯示。兩個上游合併（南港展覽館的展會 API
+// 與外貿協會的檔期表），不分主辦單位。
+//
+// ⚠️ 只有日期沒有時間。南港那支其實有時分，但幾乎每一筆都是 10:00~18:00——
+// 那是展館的制式時段而不是各展真正的開放時間，照抄會是假的精確。每天幾點開放看 url。
+
+export type ExhibitionStatus = 'SCHEDULED' | 'ONGOING' | 'ENDED';
+
+export interface Exhibition {
+  name: string;
+  // 展期第一天與最後一天，YYYY-MM-DD。最後一天當天仍在展。
+  start_date: string;
+  end_date: string;
+  // 展期幾天，含頭尾。
+  days: number;
+  status: ExhibitionStatus;
+  // 距離開展還有幾天。已經開展（含當天）是 null 而不是 0——
+  // 「今天開展」跟「已經展到第三天」是兩件事。
+  days_until: number | null;
+  // 分類，一檔可以同時屬於多類：semiconductor／computer／robot／display／other。
+  //
+  // ⚠️ 這是照展覽名稱的關鍵字貼的標籤，不是上游給的分類。台灣機器人與智慧自動化展
+  // （TAIROS）跟自動化工業大展同場同期，上游只列後者，所以 robot 那一類看到的是
+  // 「台北國際自動化工業大展」。
+  categories: string[];
+  // 展館，可能不只一個（COMPUTEX 一次用四個場館）。
+  venues: string[];
+  // 官網。上游對自己主辦的展只給站內連結，那種情況是空字串。
+  url: string;
+  // 簡介，來自貿協那一份（已被上游截斷），多數是空字串。
+  description: string;
+  // 主辦單位，只有南港那支給，其餘是空字串。
+  organizer: string;
+  // 這一列來自哪幾個上游：tainex（南港展覽館）、taiwantradeshows（貿協）。
+  //
+  // 兩邊對同一檔展給的日期不一定一樣（國際半導體展貿協寫 8/31 起、南港寫 9/2 起，
+  // 差的兩天是同期論壇），後端取的是南港的。
+  sources: string[];
+}
+
+export interface ExhibitionList {
+  count: number;
+  // 檔期，開展日由近到遠。
+  items: Exhibition[];
+}
+
 // ===== 集保股權分散：大戶與散戶持股（/stocks/shareholding）=====
 //
 // ⚠️ 這是**持股比例（存量）**不是**買量（流量）**。某一週大戶比例上升，代表週末
