@@ -17,7 +17,7 @@ import Market from './pages/Market';
 import PaperTrading from './pages/PaperTrading';
 import Portfolio from './pages/Portfolio';
 import Reports from './pages/Reports';
-import RoeRanks from './pages/RoeRanks';
+import Ranks from './pages/Ranks';
 import Revenue from './pages/Revenue';
 import Settings from './pages/Settings';
 import Shareholding from './pages/Shareholding';
@@ -46,7 +46,7 @@ function App() {
               <Route path="/quotes" element={<DailyQuotes />} />
               <Route path="/paper" element={<PaperTrading />} />
               <Route path="/calendar" element={<Calendar />} />
-              <Route path="/roe" element={<RoeRanks />} />
+              <Route path="/ranks" element={<Ranks />} />
               <Route path="/ledger" element={<LotLedger />} />
               <Route path="/ledger/summary" element={<LedgerSummary />} />
               <Route path="/alert" element={<Alert />} />

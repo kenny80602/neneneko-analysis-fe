@@ -276,6 +276,34 @@ export interface RevenueHistory {
   items: MonthlyRevenue[];
 }
 
+// 全市場月營收排行的一列：月營收明細再加名次與公司識別。
+export interface RevenueRankItem extends MonthlyRevenue {
+  // 名次，1 起算。是「這一次查詢的母體」裡的名次——有指定 market 就是那個市場的。
+  // min_yoy 不影響名次，門檻篩掉的是排序後的尾端。
+  rank: number;
+  symbol: string;
+  name: string;
+  market: Market;
+  // 官方產業別，例如「水泥工業」。不是「散熱」那種主題族群。
+  industry: string;
+}
+
+export interface RevenueRanks {
+  // 實際查的月份 YYYY-MM。空字串代表這張表還沒有任何資料。
+  month: string;
+  // 實際用的排序鍵。
+  sort: 'yoy' | 'mom' | 'revenue';
+  // total 這個月收集到的家數，ranked 其中排得出名次的家數（名次的分母），
+  // count 實際回了幾筆（套用 min_yoy 與 limit 之後）。
+  //
+  // total − ranked 是「沒有比較基期」的家數：去年同月還沒上市的算不出年增率。
+  // 排序鍵是 revenue 時兩者相等，因為金額不需要基期。
+  total: number;
+  ranked: number;
+  count: number;
+  items: RevenueRankItem[];
+}
+
 // 同產業的一家公司（/stocks/revenue/peers/:symbol）。
 //
 // 只有月營收相關欄位：收盤價與本益比那幾張表只收自選股，同產業動輒兩百家，
