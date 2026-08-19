@@ -1271,53 +1271,220 @@ export interface ReportCatalog {
   index_path: string;
 }
 
-// ===== 國際指標（/stocks/macro）=====
+// ===== 總經指標（/macro）=====
 //
-// 布蘭特原油、VIX 恐慌指數、美元兌新台幣。三個都**不是台股資料**：交易時段、
-// 時區與休市日都跟台股不同，所以同一頁上它們的「最新」跟台股的「最新」不會是
-// 同一個時間點，畫面要各自標時間。
+// 影響台股但不屬於台股的外部指標：VIX、布蘭特原油、Fed 升息機率與美國經濟統計。
 //
-// ⚠️ 這三個的「上漲」都不是好消息，不能套台股漲紅跌綠的直覺：
-//   - USDTWD 上升 ＝ **台幣貶值**（要更多台幣才換得到一美元）
-//   - VIX 上升 ＝ 恐慌升高，通常伴隨股市下跌
-//   - 布蘭特上升 ＝ 輸入型通膨壓力
-// 所以畫面用中性色＋文字講方向，不用 quoteColor。
+// 路徑前綴是 /macro 不是 /stocks/macro：這幾支的標的不是台股，
+// 掛在 /stocks 底下會讓「查一檔股票」跟「查全球風險胃納」看起來是同一組東西。
+//
+// ⚠️ 四組端點的資料性質完全不同，畫面不要用同一種語氣呈現：
+//   - indicators 是觀測值，上游給什麼就是什麼
+//   - economy 是官方統計的轉述，未經加工，但永遠是回頭看的（上個月、上一季）
+//   - rates 是**推算值**，由聯邦基金期貨反推，依賴一組假設（assumptions 要照著標）
+//   - meetings 是行事曆，不會過時到出錯，但它是手動維護的表（stale 要提示）
+//
+// ⚠️ 這幾個指標的「上漲」都不是好消息，不能套台股漲紅跌綠的直覺：
+// VIX 上升＝恐慌升高、布蘭特上升＝輸入型通膨壓力。所以畫面用中性色＋文字講方向。
 
-/** 目前支援的三個指標。key 是後端與前端共用的識別字。 */
-export type MacroKey = 'BRENT' | 'VIX' | 'USDTWD';
-
-export interface MacroPoint {
-  // 交易日 YYYY-MM-DD。
-  date: string;
-  // 收盤值。null 代表那一天沒有報價（休市、上游沒給），線會斷開，不要補 0。
-  value: number | null;
-}
-
+/** 一個總經指標的當下報價。 */
 export interface MacroIndicator {
-  key: MacroKey;
-  // 顯示名稱，後端給什麼就顯示什麼。
+  // 上游的 ticker，例如 ^VIX、BZ=F。留著讓人能自己去對一次價。
+  symbol: string;
   name: string;
-  // 單位，例如「美元／桶」。沒有單位的指數是空字串。
+  // 單位。VIX 是無單位的指數（空字串），布蘭特是 USD/bbl。
   unit: string;
 
-  // 最新值。null 代表這次沒取到（上游限流、休市中且沒有前值）。
+  // 現價。null 代表取不到，不是 0——這兩個指標的 0 都是不可能的值。
   price: number | null;
-  // 對前一個收盤的變化與變化率（%）。null 的意思同上。
+  previous_close: number | null;
   change: number | null;
   change_percent: number | null;
-  // 最新值的時間，RFC3339。這三個指標各自的市場時間，不是台股時間。
-  as_of: string;
-  // 小數位數。原油兩位、VIX 兩位、匯率三位，由後端決定，前端照著印。
-  digits: number;
 
-  // 逐日走勢，日期由舊到新。空陣列代表這次沒取到歷史。
-  points: MacroPoint[];
+  week_high_52: number | null;
+  week_low_52: number | null;
+  // 現價落在 52 週區間的位置（0~100）。
+  //
+  // VIX 唯一有意義的讀法：「VIX 15.8」沒有資訊，
+  // 「落在 52 週區間的 11%，接近一年來最平靜」才有。
+  percentile_in_52_week: number | null;
+
+  // 報價時間，RFC3339。
+  //
+  // ⚠️ 一定要顯示：美股與紐約商品交易所收盤時台灣是清晨，台灣人盤中看到的
+  // 永遠是昨晚的收盤價。不標時間會被讀成即時值。
+  as_of: string;
 }
 
-export interface MacroSnapshot {
-  // 這次查詢的回看區間，原樣回送。
-  range: string;
+export interface MacroIndicators {
+  count: number;
   items: MacroIndicator[];
+}
+
+/** 一個總體經濟指標。 */
+export interface EconomicIndicator {
+  // 上游的序列代號（FRED），例如 UNRATE。留著讓人能自己去對一次數字。
+  id: string;
+  name: string;
+  unit: string;
+
+  // 數值。是區間時這裡是上緣。
+  value: number;
+  // 區間下緣。只有政策利率有，其他都是 null。
+  value_low: number | null;
+  // 直接可以印的字串：「3.50% ~ 3.75%」「4.1%」。
+  // 後端算好而不是前端組：區間與單點的組法不同，各寫一次一定有人漏掉區間那種。
+  display: string;
+
+  // 參考期間的人話說法：「2026 年 6 月」「2026 Q2」。
+  //
+  // ⚠️ 必須顯示。這一組數字**永遠是回頭看的**——失業率是上個月的、
+  // GDP 是上一季的、PCE 有兩個月的延遲。不標期間會被讀成當下的數字。
+  period: string;
+  // 參考期間的起點，YYYY-MM-DD。不是發布日。
+  as_of: string;
+}
+
+export interface Economy {
+  count: number;
+  items: EconomicIndicator[];
+  // 資料來源。這一組是原封不動轉述官方統計，跟自己算的升息機率可信度不同。
+  source: string;
+}
+
+/** 一種可能的決策結果與它的機率。 */
+export interface RateOutcome {
+  // 調整幾碼。正數升息、0 不動、負數降息。
+  steps: number;
+  // 對應的基點數，等於 steps × 25。
+  change_bps: number;
+  // 給畫面直接用的說法：「升 1 碼」「不動」「降 1 碼」。
+  label: string;
+  // 機率（%）。
+  probability: number;
+}
+
+/** 對某一次 FOMC 會議的定價。 */
+export interface RateExpectation {
+  // 決策公布日，YYYY-MM-DD。
+  meeting_date: string;
+  // 這次是否附經濟預測摘要（點陣圖）與主席記者會。有的那四次市場反應通常大得多。
+  has_projection: boolean;
+
+  // 會議前後的隱含 EFFR（%）。
+  rate_before: number;
+  rate_after: number;
+  // 隱含變動基點數。
+  //
+  // ⚠️ 這是期望值不是任何一種結果：「+12.5bp」的意思是「一半機率升一碼」，
+  // 不是「會升 0.5 碼」。畫面上要嘛顯示機率、要嘛把這個數字講成「隱含」。
+  change_bps: number;
+
+  // 三個方向的總機率（%）。
+  hike_probability: number;
+  hold_probability: number;
+  cut_probability: number;
+
+  // 逐格的機率，由大到小。相加為 100（四捨五入後可能是 99.99）。
+  outcomes: RateOutcome[];
+
+  // 反推所用的期貨合約，例如 ZQU26.CBT。
+  // 推算值一定要留得下驗證的路——拿這個代碼去 Yahoo 查得到同一個價格。
+  contract_symbol: string;
+}
+
+export interface RateExpectationSnapshot {
+  // 計算日，YYYY-MM-DD。
+  date: string;
+  // 當下的有效聯邦基金利率（%），來自 FRED。整條推算的起點。
+  current_effr: number;
+  // 目標區間上緣（%）。只為顯示，不參與計算。
+  target_upper: number;
+
+  // 由近到遠的各次會議定價。
+  //
+  // ⚠️ 越後面的越不可靠：每一次的會前利率是前一次算出來的會後利率，
+  // 誤差會一路累積，而且遠月合約成交稀疏。
+  expectations: RateExpectation[];
+
+  // 內建 FOMC 日程涵蓋到哪一天。日程表是寫死的（Fed 沒有提供 API），
+  // expectations 比預期少時對照這一欄就看得出是表該更新了，而不是市場沒在定價。
+  schedule_through: string;
+
+  // 資料來源，讓人看得出這個數字是自己算的、不是抄來的。
+  source: string;
+  // 推算所依賴的假設。
+  //
+  // 這一欄不是裝飾：這幾個數字是推算值，不標假設就會被當成 Fed 的官方預告。
+  // 要放在機率旁邊，不要收進「關於」區。
+  assumptions: string[];
+}
+
+/** 某一天對某次會議的定價。 */
+export interface MeetingTrendPoint {
+  date: string;
+  hike_probability: number;
+  hold_probability: number;
+  cut_probability: number;
+  implied_rate: number;
+}
+
+/**
+ * 一次會議的機率走勢。
+ *
+ * 這支才是那份歷史真正的用途：單看今天的機率是一個沒有脈絡的數字，
+ * 看它在 CPI 公布前後從 30% 跳到 70%，才讀得出市場在反應什麼。
+ */
+export interface MeetingTrend {
+  meeting_date: string;
+  count: number;
+  points: MeetingTrendPoint[];
+}
+
+/** 一次 FOMC 會議。 */
+export interface FOMCMeeting {
+  // 會期首日與末日，都是**美東日期**，不轉台北——FOMC 的「9 月會議」指的是
+  // 美東的 9/15-9/16，轉成台北會變成 9/16-9/17，跟財經媒體與 Fed 官網對不起來。
+  start: string;
+  end: string;
+
+  // 決策公布時刻的台北時間，RFC3339。
+  //
+  // 這一欄才回答「台股哪一天開盤會反應」——美東 14:00 對台北是隔天凌晨 2、3 點
+  // （夏令時間差一小時），公布時台股已經收盤，要到再下一個交易日才反應得到。
+  // 系統缺時區資料庫時是空字串，顯示破折號即可。
+  announcement_at_tw: string;
+
+  // 這次是否附經濟預測摘要（SEP，即市場說的點陣圖）與主席記者會。
+  // 一年八次裡有四次有，市場反應通常大得多。
+  has_projection: boolean;
+
+  // 距離決策公布還有幾個日曆天。會期中是 0。
+  days_until: number;
+  // 是否正在開會（首日已過、決策未公布）。
+  in_progress: boolean;
+
+  // 可以直接印的說法：「2026 年 9 月 16 日（附點陣圖）」。
+  // 後端組而不是前端拼：「附點陣圖」漏掉的話，四次大場會議會被看成跟另外四次一樣。
+  label: string;
+}
+
+export interface FOMCSchedule {
+  count: number;
+  items: FOMCMeeting[];
+  // 最近一次還沒公布決策的會議。沒有時是 null。
+  // 跟 items[0] 是同一筆，重複帶是因為九成的畫面只要這一筆。
+  next: FOMCMeeting | null;
+
+  // 這份日程涵蓋到哪一天。
+  schedule_through: string;
+  // 這份表是不是快用完了（剩不到半年）。
+  //
+  // ⚠️ 為 true 時畫面要提示：這份表也是升息機率的輸入，
+  // 表過期時 /macro/rates 會跟著算不出遠月的機率。
+  stale: boolean;
+
+  source: string;
 }
 
 // ===== 集保股權分散：大戶與散戶持股（/stocks/shareholding）=====

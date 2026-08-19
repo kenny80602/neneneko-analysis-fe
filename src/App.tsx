@@ -11,6 +11,7 @@ import Holdings from './pages/Holdings';
 import Institutional from './pages/Institutional';
 import LedgerSummary from './pages/LedgerSummary';
 import Login from './pages/Login';
+import Macro from './pages/Macro';
 import LotLedger from './pages/LotLedger';
 import Margin from './pages/Margin';
 import Market from './pages/Market';
@@ -49,6 +50,7 @@ function App() {
               <Route path="/calendar" element={<Calendar />} />
               <Route path="/ranks" element={<Ranks />} />
               <Route path="/groups" element={<StockGroups />} />
+              <Route path="/macro" element={<Macro />} />
               <Route path="/ledger" element={<LotLedger />} />
               <Route path="/ledger/summary" element={<LedgerSummary />} />
               <Route path="/alert" element={<Alert />} />

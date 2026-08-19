@@ -39,6 +39,7 @@ const NAV_GROUPS: NavGroup[] = [
       { icon: 'leaderboard', label: '全市場排行', path: '/ranks' },
       { icon: 'workspaces', label: '主題族群', path: '/groups' },
       { icon: 'event', label: '台股行事曆', path: '/calendar' },
+      { icon: 'account_balance', label: 'Fed 與總經', path: '/macro' },
     ],
   },
   {
