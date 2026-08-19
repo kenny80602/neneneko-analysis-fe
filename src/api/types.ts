@@ -1200,3 +1200,60 @@ export interface FinancialHistory {
   // 逐季，年季由新到舊。
   items: FinancialStatement[];
 }
+
+// 全市場 ROE 排行的一列：財報摘要再加一個名次。
+export interface FinancialRankItem extends FinancialStatement {
+  // 名次，1 起算。是「這一次查詢的母體」裡的名次——有指定 market 就是那個市場的。
+  // min_roe 不影響名次，門檻篩掉的是排序後的尾端。
+  rank: number;
+}
+
+export interface FinancialRanks {
+  // 實際查的那一季。全部是 0 與空字串代表這張表還沒有任何資料。
+  year: number;
+  quarter: number;
+  period: string;
+  // total 這一季收集到的家數，ranked 其中算得出 ROE 的家數（名次的分母），
+  // count 實際回了幾筆（套用 min_roe 與 limit 之後）。
+  //
+  // 三個都要顯示，畫面才講得出「1,824 家裡有 1,791 家排得出名次，這裡列前 50 名」。
+  // total − ranked 就是負淨值排不進榜的家數。
+  total: number;
+  ranked: number;
+  count: number;
+  items: FinancialRankItem[];
+}
+
+// 族群裡一家公司的 ROE。
+export interface FinancialPeer {
+  // 族群內的 ROE 名次，1 起算。算不出 ROE 的（沒財報、負淨值）是 0。
+  rank: number;
+  symbol: string;
+  // 公司簡稱。沒有那一季財報時是空字串——族群表只存代號。
+  name: string;
+  // 那一季的財報摘要。null 代表這一檔沒有那一季的資料：金融業（不在上游的
+  // 一般業報表裡）、還沒申報、或族群裡的代號打錯，三種分不出來，都該是破折號。
+  statement: FinancialStatement | null;
+}
+
+export interface FinancialGroupPeers {
+  group_id: string;
+  group_name: string;
+  // 這份比較的年季。全族群固定同一季，不各取各的最新一季——
+  // 那會變成拿上半年的 ROE 比第一季的 ROE。
+  year: number;
+  quarter: number;
+  period: string;
+  // ranked 排得出 ROE 的家數（名次的分母），count 是成員總數。
+  ranked: number;
+  count: number;
+  // 成員，ROE 由高到低；算不出 ROE 的排最後。
+  peers: FinancialPeer[];
+}
+
+export interface FinancialPeers {
+  symbol: string;
+  count: number;
+  // 這一檔所屬的每一個族群。一檔可以屬於多個（中美晶既是矽晶圓也是太陽能）。
+  groups: FinancialGroupPeers[];
+}

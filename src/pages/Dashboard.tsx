@@ -11,10 +11,10 @@ import { getDailyQuoteHistory } from '../api/dailyQuote';
 import { getInstitutionalHistory } from '../api/institutional';
 import { getPortfolioValuation } from '../api/portfolio';
 import { getRealtimeQuote } from '../api/realtimeQuote';
-import { getFinancialHistory } from '../api/financial';
+import { getFinancialHistory, getFinancialPeers } from '../api/financial';
 import { getIndustryPeers, getRevenueHistory } from '../api/revenue';
 import { getGroupPeers } from '../api/stockGroup';
-import { IndustryPeer, IndustryPeers } from '../api/types';
+import { FinancialPeer, IndustryPeer, IndustryPeers } from '../api/types';
 import { getWarningHistory } from '../api/warning';
 import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
@@ -161,6 +161,32 @@ export default function Dashboard() {
   // 自己建的主題族群。跟上面那支是兩回事：官方產業別把矽晶圓三家全歸「半導體業」
   // （一百多家），又把散熱三家拆進三個不同產業，兩個方向都沒辦法「同類放一起」。
   const groups = useAsyncData(() => getGroupPeers(symbol), [symbol], { enabled });
+  // 族群成員的 ROE。跟上面那支是同一組成員、不同的資料源與更新頻率
+  // （營收一個月一次、ROE 一季一次），後端也是兩支端點，所以這裡分開抓再併。
+  //
+  // 併不到就是那一格破折號：ROE 慢一季、族群剛加的成員可能還沒有那一季的財報。
+  // 讓它們共用一次請求的話，任何一邊慢或失敗都會拖累另一邊。
+  const groupRoe = useAsyncData(() => getFinancialPeers(symbol), [symbol], { enabled });
+
+  /** 族群 ROE 依「族群 id + 代號」查得到的索引，給下面那張表併欄用。 */
+  const roeByGroup = useMemo(() => {
+    const index = new Map<string, FinancialPeer>();
+    for (const group of groupRoe.data?.groups ?? []) {
+      for (const peer of group.peers) {
+        index.set(`${group.group_id}::${peer.symbol}`, peer);
+      }
+    }
+    return index;
+  }, [groupRoe.data]);
+
+  /** 每個族群那一季的標示（2026Q2）。各族群固定同一季，但不同族群可能不同。 */
+  const roePeriodByGroup = useMemo(() => {
+    const index = new Map<string, string>();
+    for (const group of groupRoe.data?.groups ?? []) {
+      index.set(group.group_id, group.period);
+    }
+    return index;
+  }, [groupRoe.data]);
 
   // 名次走勢直接吃 history 那份收盤行情，不另外發請求——名次就存在同一列上。
   // x 軸只放有收盤資料的日子，那些就是交易日，不必另外維護一份交易日曆。
@@ -619,14 +645,17 @@ export default function Dashboard() {
                   設定
                 </Link>
                 裡改。
-                比的是<span className="text-on-surface">近五日漲跌幅與月營收</span>
-                ：成員不必在自選股裡，所以那兩欄各走一條路——
+                比的是<span className="text-on-surface">近五日漲跌幅、ROE 與月營收</span>
+                ：成員不必在自選股裡，所以那幾欄各走一條路——
                 月營收是唯一涵蓋全市場的落地資料，
                 <span className="text-on-surface">近五日漲跌幅則是即時去問延遲約 20 分鐘的日 K</span>
                 （站上落地的收盤只收自選股，只靠它會有一半是破折號）。
                 「近五日」是滾動 5 個交易日，不是本週一到今天——後者在週一只涵蓋一天，
-                成員之間就沒得比。破折號代表這次沒取到（不滿五個交易日、代號查無、上游沒回），
-                不是 0%。金額單位為新台幣千元。
+                成員之間就沒得比。
+                <span className="text-on-surface">ROE 是年化值、一季才換一次</span>
+                ，跟左邊的股價與右邊的月營收都不同步，三個期間各自標在族群名稱旁邊；
+                金融業不在上游的一般業報表裡，那幾檔的 ROE 一律是破折號。
+                破折號一律代表「沒取到或算不出來」而不是 0%。金額單位為新台幣千元。
               </p>
 
               {groups.loading && (
@@ -654,6 +683,9 @@ export default function Dashboard() {
                     <span className="font-body-sm text-body-sm text-on-surface-variant">
                       {entry.peers.length} 檔
                       {entry.month && ` · ${entry.month} 月營收`}
+                      {/* 兩個期間都標出來：營收是月、ROE 是季，同一張表上不同步。 */}
+                      {roePeriodByGroup.get(entry.group.id) &&
+                        ` · ${roePeriodByGroup.get(entry.group.id)} ROE`}
                     </span>
                   </p>
                   <div className="overflow-x-auto rounded-xl border border-outline-variant">
@@ -672,6 +704,12 @@ export default function Dashboard() {
                           >
                             近五日
                           </th>
+                          <th
+                            className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-right"
+                            title="年化 ROE。一季換一次，跟左邊的股價與右邊的月營收都不同步"
+                          >
+                            ROE
+                          </th>
                           <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-right">
                             單月營收
                           </th>
@@ -688,6 +726,9 @@ export default function Dashboard() {
                           const isSelf = peer.symbol === symbol;
                           // 沒營收時月增率與年增率一起沒有意義，整列給破折號而不是 0%。
                           const noRevenue = peer.revenue === null;
+                          // ROE 走另一支端點，用「族群 id + 代號」併回來。
+                          // 併不到（沒那一季的財報、金融業、代號打錯）就是破折號。
+                          const roe = roeByGroup.get(`${entry.group.id}::${peer.symbol}`);
                           return (
                             <tr
                               key={peer.symbol}
@@ -729,6 +770,18 @@ export default function Dashboard() {
                                 )}`}
                               >
                                 {formatSignedPercent(peer.week_change)}
+                              </td>
+                              {/* 年化 ROE。名次放 title 而不是排進表格：這張表是照營收排的，
+                                  多一欄名次會讓人以為表格本身是照 ROE 排序。 */}
+                              <td
+                                className="p-2 py-3 text-right font-data-md text-data-md text-on-surface"
+                                title={
+                                  roe?.rank
+                                    ? `族群內 ROE 第 ${roe.rank} 名`
+                                    : 'ROE 算不出來或沒有那一季的財報'
+                                }
+                              >
+                                {formatSignedPercent(roe?.statement?.annualized_roe ?? null)}
                               </td>
                               <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface">
                                 {formatNumber(peer.revenue)}
