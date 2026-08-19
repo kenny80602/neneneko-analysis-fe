@@ -1157,6 +1157,69 @@ export interface ReportCatalog {
   index_path: string;
 }
 
+// ===== 集保股權分散：大戶與散戶持股（/stocks/shareholding）=====
+//
+// ⚠️ 這是**持股比例（存量）**不是**買量（流量）**。某一週大戶比例上升，代表週末
+// 那個時點大戶手上的股數變多，但看不出是誰賣給他的、也看不出中間來回買賣過幾次。
+// 「大戶今天買了幾張」這份資料答不出來。
+//
+// ⚠️ 週資料不是日資料，一週一筆（資料日期通常是週五）。要跟股價對照的話，
+// 股價那條要先降頻成週，不要跟日 K 疊在同一個時間軸上。
+
+// 分級 1~15 的原始人數與股數。上游定義的股數區間，不是我們分的。
+export interface ShareholdingLevel {
+  level: number;
+  holders: number;
+  shares: number;
+}
+
+// 某一週的股權分散。
+export interface ShareholdingWeek {
+  // 資料日期＝**該週基準日**（通常是週五），不是公布日——那一份實際上要到
+  // 下週一至週三才拿得到。畫面上寫「資料日期」不要寫「更新於」。
+  date: string;
+
+  // 大戶（≥400 張）、千張大戶（≥1,000 張）、散戶（≤50 張）佔集保庫存的 %。
+  //
+  // ⚠️ 大戶 + 散戶 ≠ 100%：中間還有 50～400 張那一段（中實戶）。
+  // 不要做成堆疊長條或圓餅，那會讓人以為兩者互補。
+  //
+  // null 代表那一檔那一週沒有集保庫存資料，顯示破折號。
+  big_holder_ratio: number | null;
+  thousand_lot_ratio: number | null;
+  retail_ratio: number | null;
+
+  // 跟**前一週**相比的增減，單位百分點。
+  //
+  // null 代表「沒有前一週可以比」——最舊那一筆一定是 null，資料剛開始收集時
+  // 每一筆都是 null。畫面要顯示破折號，顯示 0.00 會被讀成「這週沒變」，
+  // 意思完全相反。
+  big_holder_change: number | null;
+  thousand_lot_change: number | null;
+  retail_change: number | null;
+
+  // 股東總人數，以及跟前一週的增減（人）。change 為 null 的意思同上。
+  total_holders: number;
+  holders_change: number | null;
+
+  // 集保庫存總股數。
+  //
+  // ⚠️ **不是發行股數**：不含未匯入集保的實體股票與海外存託憑證，會略小於發行
+  // 股數。不要拿它去算市值或週轉率，會高估。它的唯一用途是當比例的分母。
+  total_shares: number;
+  // 平均每人持有幾張。
+  average_lots: number | null;
+
+  levels: ShareholdingLevel[];
+}
+
+export interface ShareholdingHistory {
+  symbol: string;
+  count: number;
+  // 逐週，日期由新到舊。
+  items: ShareholdingWeek[];
+}
+
 // ===== 財報摘要與 ROE（/stocks/financial）=====
 
 // 一季的財報摘要。

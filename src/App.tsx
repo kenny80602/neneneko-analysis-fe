@@ -20,6 +20,7 @@ import Reports from './pages/Reports';
 import RoeRanks from './pages/RoeRanks';
 import Revenue from './pages/Revenue';
 import Settings from './pages/Settings';
+import Shareholding from './pages/Shareholding';
 import Valuation from './pages/Valuation';
 import Warnings from './pages/Warnings';
 
@@ -60,6 +61,7 @@ function App() {
               <Route path="/revenue" element={<Revenue />} />
               <Route path="/announcements" element={<Announcements />} />
               <Route path="/warnings" element={<Warnings />} />
+              <Route path="/shareholding" element={<Shareholding />} />
             </Route>
           </Route>
 

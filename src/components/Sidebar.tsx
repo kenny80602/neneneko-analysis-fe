@@ -24,6 +24,7 @@ const symbolNavItems = [
   { icon: 'candlestick_chart', label: '個股總覽', path: '/dashboard' },
   { icon: 'groups', label: '三大法人', path: '/institutional' },
   { icon: 'account_balance', label: '融資融券', path: '/margin' },
+  { icon: 'groups_2', label: '大戶散戶', path: '/shareholding' },
   { icon: 'calculate', label: '估值指標', path: '/valuation' },
   { icon: 'receipt_long', label: '月營收', path: '/revenue' },
   { icon: 'campaign', label: '重大訊息', path: '/announcements' },
