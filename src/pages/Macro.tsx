@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
+import MacroCard from '../components/MacroIndicatorCard';
 import TrendChart from '../components/TrendChart';
 import {
   getEconomy,
   getFOMCMeetings,
+  getMacroIndicators,
   getMeetingTrend,
   getRateExpectations,
 } from '../api/macroIndicators';
@@ -37,7 +39,7 @@ export default function Macro() {
       <PageHeader
         title="Fed 與總經"
         icon="account_balance"
-        subtitle="市場對 Fed 的定價、會議日程，以及美國的通膨、就業與成長"
+        subtitle="VIX 與油價、市場對 Fed 的定價、會議日程，以及美國的通膨、就業與成長"
       />
 
       <div className="flex flex-col gap-stack-lg">
@@ -47,11 +49,67 @@ export default function Macro() {
           台股要到再下一個交易日才反應得到。破折號代表「沒有這個數字」而不是 0。
         </p>
 
+        <IndicatorsSection />
         <RatesSection />
         <MeetingsSection />
         <EconomySection />
       </div>
     </>
+  );
+}
+
+/**
+ * 國際指標：VIX 與布蘭特原油。
+ *
+ * 市場概況也有同一組卡（那裡是掃一眼大盤的脈絡），這裡則是「總經」這件事的完整版
+ * ——同一份資料兩個入口，但卡片是共用元件，說明只有一份不會分岔。
+ */
+function IndicatorsSection() {
+  // 不輪詢：這兩支的上游一天只更新一次收盤。
+  const { data, loading, error, reload } = useAsyncData(() => getMacroIndicators(), []);
+  const items = data?.items ?? [];
+
+  return (
+    <section className="flex flex-col gap-stack-md">
+      <div className="flex flex-wrap items-baseline justify-between gap-stack-sm">
+        <h2 className="font-headline-md text-headline-md text-primary">國際指標</h2>
+        <button
+          type="button"
+          onClick={reload}
+          className="flex items-center gap-2 px-3 py-1.5 bg-surface border border-outline-variant rounded text-primary font-body-sm text-body-sm hover:bg-surface-container-low transition-colors"
+        >
+          <span className="material-symbols-outlined text-[18px]">refresh</span>
+          重新整理
+        </button>
+      </div>
+
+      <p className="font-body-sm text-body-sm text-on-surface-variant">
+        美股與紐約商品交易所收盤時台灣是清晨，所以盤中看到的
+        <span className="text-on-surface font-semibold">永遠是昨晚的收盤</span>
+        ，時間標在卡片下方。
+        <span className="text-on-surface font-semibold">這兩個的「上漲」都不是好消息</span>
+        ，所以不用台股的漲紅跌綠——數值走中性色，方向用文字講。
+      </p>
+
+      {loading && <PageState kind="loading" />}
+      {error && <PageState kind="error" message={error} onRetry={reload} />}
+
+      {!loading && !error && items.length === 0 && (
+        <PageState
+          kind="empty"
+          message="這次沒取到國際指標"
+          hint="這兩支直接打 Yahoo 與 FRED，上游限流或暫時掛掉時會是空的。跟「數值是 0」是兩回事——VIX 與油價的 0 都是不可能的值。"
+        />
+      )}
+
+      {items.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-stack-md">
+          {items.map((item) => (
+            <MacroCard key={item.symbol} item={item} />
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
