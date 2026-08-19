@@ -6,8 +6,8 @@ import { getHoldings } from '../api/portfolio';
 import { getRealtimeQuote } from '../api/realtimeQuote';
 import { apiErrorMessage } from '../api/request';
 import {
+  getGroupMembers,
   getGroupPeers,
-  getStockGroups,
   removeStockGroup,
   saveStockGroup,
 } from '../api/stockGroup';
@@ -112,9 +112,13 @@ const NAME_LOOKUP_LIMIT = 8;
  * 「3324 8996 3017」要對著看盤軟體查三次才知道自己在編什麼。
  */
 function GroupPanel() {
-  const groups = useAsyncData(() => getStockGroups(), []);
-  // 自選股清單只是拿來當代號→名稱的字典，順便給新增時的下拉建議。
-  // 族群成員不必在自選股裡，所以這份查不到的還要靠下面兩條路補。
+  // 族群清單與成員名稱一次拿完。這一支完全不打上游（只讀族群表、月營收與自選股
+  // 三張表），所以整份族群一載入就有名稱——不必展開、也不必逐檔去問報價。
+  const members = useAsyncData(() => getGroupMembers(), []);
+  const entries = members.data?.items ?? [];
+
+  // 自選股清單只給新增時的下拉建議用。族群成員不必在自選股裡，
+  // 所以它不是名稱的主要來源，只是「挑一檔已經在追蹤的」比較快。
   const holdings = useAsyncData(() => getHoldings(), []);
 
   const [drafts, setDrafts] = useState<GroupDraft[]>([]);
@@ -125,10 +129,10 @@ function GroupPanel() {
   // 全部展開等於一次打好幾十檔，上游會回 429。
   const [openId, setOpenId] = useState('');
 
-  // 代號→名稱。三個來源疊上去，先到的不會被後到的蓋掉：
-  //   1. 自選股清單（一次請求，涵蓋清單內的檔）
-  //   2. 展開過的族群成員（peers 的名稱來自月營收，全市場都有）
-  //   3. 新加入一檔時去問一次即時報價
+  // 代號→名稱。來源疊上去，先到的不會被後到的蓋掉：
+  //   1. /stocks/groups/members（已儲存的成員，一次拿完，這是主要來源）
+  //   2. 自選股清單
+  //   3. **還沒儲存**的新成員：剛加進來的那一檔不在上面兩份裡，去問一次即時報價
   // 查不到就顯示代號本身，不擋任何操作——名稱只是幫忙確認，不是必要資料。
   const [names, setNames] = useState<Record<string, string>>({});
 
@@ -146,6 +150,12 @@ function GroupPanel() {
     });
   }, []);
 
+  // deps 放 members.data 而不是 entries：後者每次 render 都是新陣列，會讓這個
+  // effect 每次都跑一遍（learnNames 擋得住無謂的 setState，但沒必要每次繞一圈）。
+  useEffect(() => {
+    for (const entry of members.data?.items ?? []) learnNames(entry.members);
+  }, [members.data, learnNames]);
+
   useEffect(() => {
     if (holdings.data) learnNames(holdings.data);
   }, [holdings.data, learnNames]);
@@ -153,14 +163,14 @@ function GroupPanel() {
   // 存檔後重抓，本地編輯一律以伺服器為準蓋回去。族群沒有「未儲存草稿」的需求，
   // 留著反而會出現「畫面上有但其實沒存到」。
   useEffect(() => {
-    if (groups.data) setDrafts(groups.data.map(toGroupDraft));
-  }, [groups.data]);
+    if (members.data) setDrafts(members.data.items.map((entry) => toGroupDraft(entry.group)));
+  }, [members.data]);
 
   // 成員明細只問一檔：peers 那一支回的是「這一檔所屬的每一個族群，各自帶完整成員」，
   // 所以拿族群的第一個成員去問，就會拿回整個族群的名單，不必逐檔打。
   //
   // 用伺服器上的成員而不是編輯中的草稿：草稿每加一檔都會變，那會變成邊編邊打上游。
-  const openGroup = groups.data?.find((g) => g.id === openId);
+  const openGroup = entries.find((entry) => entry.group.id === openId)?.group;
   const seed = openGroup?.symbols[0] ?? '';
   const peers = useAsyncData(() => getGroupPeers(seed), [seed], { enabled: !!seed });
   const detail = peers.data?.find((entry) => entry.group.id === openId);
@@ -210,7 +220,7 @@ function GroupPanel() {
         sort_order: draft.sortOrder === '' ? 0 : Math.trunc(order),
       });
       if (isNew) setCreating(NEW_GROUP);
-      groups.reload();
+      members.reload();
       setNotice(`已儲存「${name}」`);
     } catch (err) {
       setNotice(apiErrorMessage(err));
@@ -226,7 +236,7 @@ function GroupPanel() {
     try {
       await removeStockGroup(draft.id);
       if (openId === draft.id) setOpenId('');
-      groups.reload();
+      members.reload();
       setNotice(`已刪掉「${draft.name}」`);
     } catch (err) {
       setNotice(apiErrorMessage(err));
@@ -239,7 +249,7 @@ function GroupPanel() {
   const renderCard = (draft: GroupDraft, isNew: boolean) => {
     const key = isNew ? '__new__' : draft.id;
     const isOpen = !isNew && openId === draft.id;
-    const saved = groups.data?.find((g) => g.id === draft.id);
+    const saved = entries.find((entry) => entry.group.id === draft.id)?.group;
     // 存檔前後的成員可能不一樣，展開區顯示的一律是伺服器上的那一份。
     const dirty = !isNew && saved != null && saved.symbols.join(' ') !== draft.symbols.join(' ');
     // 名稱就是後端的鍵，改名會建出另一個族群而不是改名。在按下儲存之前就要講。
@@ -414,10 +424,21 @@ function GroupPanel() {
         成員的順序會照原樣存下來，龍頭想擺第一個就用箭頭挪。
       </p>
 
-      {groups.loading && <PageState kind="loading" />}
-      {groups.error && <PageState kind="error" message={groups.error} onRetry={groups.reload} />}
+      {members.data != null && members.data.unnamed > 0 && (
+        <p className="font-body-sm text-body-sm text-on-surface-variant">
+          有 {members.data.unnamed} 檔<span className="text-on-surface font-semibold">查不到名稱</span>
+          ，chip 上只會顯示代號。名稱取自月營收那份資料（唯一涵蓋全市場的，1,900 多家），
+          所以查不到多半是<span className="text-on-surface font-semibold">代號打錯</span>
+          ，也可能是 ETF 或剛上市還沒公告過營收。
+        </p>
+      )}
 
-      {!groups.loading && !groups.error && (
+      {members.loading && <PageState kind="loading" />}
+      {members.error && (
+        <PageState kind="error" message={members.error} onRetry={members.reload} />
+      )}
+
+      {!members.loading && !members.error && (
         <>
           {drafts.length === 0 && (
             <PageState

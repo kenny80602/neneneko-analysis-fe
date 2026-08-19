@@ -384,6 +384,32 @@ export interface GroupPeers {
   peers: GroupPeer[];
 }
 
+/** 族群裡的一家公司，只有身分資料沒有行情。 */
+export interface GroupMember {
+  symbol: string;
+  // 公司名稱。空字串代表這一檔從來沒公告過月營收——ETF、剛上市、或代號根本打錯。
+  // 維護畫面就是靠這個看出代號有沒有打錯，所以後端查不到時不補任何替代值。
+  name: string;
+  // 官方產業別。同樣可能是空字串。
+  industry: string;
+  in_watchlist: boolean;
+}
+
+export interface GroupMembers {
+  group: StockGroup;
+  // 成員，**照族群裡儲存的順序**，不重排——順序本身就是使用者編出來的資料。
+  // 跟 GroupPeers 不同，那邊是比較用的表所以照營收由大到小排。
+  members: GroupMember[];
+}
+
+export interface GroupMembersList {
+  count: number;
+  items: GroupMembers[];
+  // 有幾檔查不到名稱（跨族群去重後）。
+  // 給畫面解釋「為什麼有幾檔只有代號」用：不是壞掉，是那幾檔不在月營收那份資料裡。
+  unnamed: number;
+}
+
 export interface RemoveGroupResult {
   id: string;
   // 刪掉幾列（0 或 1）。0 代表本來就不在了，不是錯誤。
