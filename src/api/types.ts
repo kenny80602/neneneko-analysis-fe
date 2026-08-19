@@ -1185,6 +1185,55 @@ export interface ReportCatalog {
   index_path: string;
 }
 
+// ===== 國際指標（/stocks/macro）=====
+//
+// 布蘭特原油、VIX 恐慌指數、美元兌新台幣。三個都**不是台股資料**：交易時段、
+// 時區與休市日都跟台股不同，所以同一頁上它們的「最新」跟台股的「最新」不會是
+// 同一個時間點，畫面要各自標時間。
+//
+// ⚠️ 這三個的「上漲」都不是好消息，不能套台股漲紅跌綠的直覺：
+//   - USDTWD 上升 ＝ **台幣貶值**（要更多台幣才換得到一美元）
+//   - VIX 上升 ＝ 恐慌升高，通常伴隨股市下跌
+//   - 布蘭特上升 ＝ 輸入型通膨壓力
+// 所以畫面用中性色＋文字講方向，不用 quoteColor。
+
+/** 目前支援的三個指標。key 是後端與前端共用的識別字。 */
+export type MacroKey = 'BRENT' | 'VIX' | 'USDTWD';
+
+export interface MacroPoint {
+  // 交易日 YYYY-MM-DD。
+  date: string;
+  // 收盤值。null 代表那一天沒有報價（休市、上游沒給），線會斷開，不要補 0。
+  value: number | null;
+}
+
+export interface MacroIndicator {
+  key: MacroKey;
+  // 顯示名稱，後端給什麼就顯示什麼。
+  name: string;
+  // 單位，例如「美元／桶」。沒有單位的指數是空字串。
+  unit: string;
+
+  // 最新值。null 代表這次沒取到（上游限流、休市中且沒有前值）。
+  price: number | null;
+  // 對前一個收盤的變化與變化率（%）。null 的意思同上。
+  change: number | null;
+  change_percent: number | null;
+  // 最新值的時間，RFC3339。這三個指標各自的市場時間，不是台股時間。
+  as_of: string;
+  // 小數位數。原油兩位、VIX 兩位、匯率三位，由後端決定，前端照著印。
+  digits: number;
+
+  // 逐日走勢，日期由舊到新。空陣列代表這次沒取到歷史。
+  points: MacroPoint[];
+}
+
+export interface MacroSnapshot {
+  // 這次查詢的回看區間，原樣回送。
+  range: string;
+  items: MacroIndicator[];
+}
+
 // ===== 集保股權分散：大戶與散戶持股（/stocks/shareholding）=====
 //
 // ⚠️ 這是**持股比例（存量）**不是**買量（流量）**。某一週大戶比例上升，代表週末

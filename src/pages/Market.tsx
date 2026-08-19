@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
 import StatCard from '../components/StatCard';
+import TrendChart from '../components/TrendChart';
+import { getMacroIndicators } from '../api/macroIndicators';
 import { getMarketMarginSummaries } from '../api/margin';
 import { getTPExMarketHighlight, getTPExPriceAdvanced, getTPExPriceDeclined } from '../api/tpex';
 import {
@@ -11,7 +13,7 @@ import {
   getTWSEMarketTradings,
   getTWSEVolumeRanks,
 } from '../api/twse';
-import { MarketMarginSummary, TWSEVolumeRank } from '../api/types';
+import { MacroIndicator, MacroKey, MarketMarginSummary, TWSEVolumeRank } from '../api/types';
 import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
 import {
@@ -652,7 +654,234 @@ export default function Market() {
             </div>
           </div>
         </section>
+
+        <MacroSection />
       </div>
     </>
+  );
+}
+
+/**
+ * 三個指標各自的顯示語意。
+ *
+ * ⚠️ 這三個的「上漲」都不是好消息，所以**不套 quoteColor**。台股的紅漲綠跌在這裡
+ * 會直接說反話：台幣貶值畫成紅色，在台股語彙裡紅是好事。所以數值一律走中性色，
+ * 方向用文字講——跟大戶散戶那頁「散戶增加不能配紅色」是同一個決定。
+ */
+const MACRO_META: Record<
+  MacroKey,
+  { icon: string; up: string; down: string; note: string }
+> = {
+  USDTWD: {
+    icon: 'currency_exchange',
+    // 匯率報的是「一美元換幾台幣」，所以數字變大是台幣變薄。
+    up: '台幣貶值',
+    down: '台幣升值',
+    note: '報價是一美元兌多少新台幣，所以數字上升代表台幣貶值。台幣貶值對電子出口股是順風、對原料進口與海外旅遊是逆風。',
+  },
+  BRENT: {
+    icon: 'local_gas_station',
+    up: '油價上漲',
+    down: '油價下跌',
+    note: '布蘭特是北海原油，國際油價的主要基準之一（美國那邊看的是西德州 WTI）。台灣的油幾乎全靠進口，油價上漲是輸入型通膨壓力，對塑化、航運、航空的成本影響最直接。',
+  },
+  VIX: {
+    icon: 'crisis_alert',
+    up: '恐慌升高',
+    down: '恐慌降溫',
+    note: 'VIX 是標普 500 選擇權隱含波動率，俗稱恐慌指數，反映的是「美股未來 30 天預期波動」而不是漲跌方向。它通常在股市下跌時竄升，20 以下算平靜、30 以上算恐慌。它是美股的溫度計，台股隔天開盤常跟著反應。',
+  },
+};
+
+/** 回看區間。原油與匯率看季線，VIX 看更短的比較有意義，但共用一個選擇比較好懂。 */
+const MACRO_RANGES = [
+  { label: '近 1 個月', value: '1mo' },
+  { label: '近 3 個月', value: '3mo' },
+  { label: '近 6 個月', value: '6mo' },
+  { label: '近 1 年', value: '1y' },
+];
+
+/**
+ * 國際指標：布蘭特原油、VIX、美元兌新台幣。
+ *
+ * 獨立成一個元件而不是攤在頁面裡，是為了讓它**自己失敗**：這一區打的是跟其他區塊
+ * 完全不同的上游，取不到的時候不該把整頁的台股資料一起拖下水。
+ */
+function MacroSection() {
+  const [range, setRange] = useState('3mo');
+  const [active, setActive] = useState<MacroKey>('USDTWD');
+
+  // 不輪詢，理由同這一頁其他區塊。deps 放原始值。
+  const { data, loading, error, reload } = useAsyncData(() => getMacroIndicators(range), [range]);
+
+  const items = data?.items ?? [];
+  const current = items.find((item) => item.key === active);
+
+  const series = useMemo(() => {
+    if (!current) return [];
+    return [
+      {
+        label: current.name,
+        points: current.points.map((point) => ({ date: point.date, value: point.value })),
+        className: 'stroke-primary',
+      },
+    ];
+  }, [current]);
+
+  return (
+    <section className="flex flex-col gap-stack-md">
+      <div className="flex flex-wrap items-baseline justify-between gap-stack-sm">
+        <h2 className="font-headline-md text-headline-md text-primary">國際指標</h2>
+        <div className="flex items-center gap-stack-sm">
+          <select
+            value={range}
+            onChange={(event) => setRange(event.target.value)}
+            className="px-3 py-2 bg-surface-container border border-outline-variant rounded font-body-sm text-body-sm text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+          >
+            {MACRO_RANGES.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={reload}
+            className="flex items-center justify-center gap-2 px-3 py-1.5 bg-surface border border-outline-variant rounded text-primary font-body-sm text-body-sm hover:bg-surface-container-low transition-colors"
+          >
+            <span className="material-symbols-outlined text-[18px]">refresh</span>
+            重新整理
+          </button>
+        </div>
+      </div>
+
+      <p className="font-body-sm text-body-sm text-on-surface-variant">
+        這三個<span className="text-on-surface font-semibold">都不是台股資料</span>
+        ：交易時段、時區與休市日都跟台股不同，所以它們的「最新」跟這一頁上面那些台股
+        數字不是同一個時間點，各自的時間標在卡片下方。
+        <span className="text-on-surface font-semibold">
+          它們的「上漲」也都不是好消息
+        </span>
+        ，所以這一區不用台股的漲紅跌綠——數值走中性色，方向用文字講。
+      </p>
+
+      {loading && <PageState kind="loading" />}
+
+      {/* 端點還沒上線時不要把整頁弄成錯誤畫面：這一區自己顯示狀態就好。 */}
+      {error && !loading && (
+        <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-4 flex flex-col gap-stack-sm">
+          <p className="font-body-md text-body-md text-on-surface">這一區還沒有資料</p>
+          <p className="font-body-sm text-body-sm text-on-surface-variant">
+            畫面已經照契約做好，等後端的{' '}
+            <span className="font-data-md text-data-md text-on-surface">GET /stocks/macro</span>{' '}
+            上線就會自己出現。回應形狀見{' '}
+            <span className="font-data-md text-data-md text-on-surface">
+              src/api/types.ts
+            </span>{' '}
+            的 MacroSnapshot：三個 key 是 BRENT／VIX／USDTWD，points 由舊到新，
+            取不到的值一律 null 不要給 0——這三個指標的 0 都是不可能的值，會被畫成崩盤。
+          </p>
+          <p className="font-body-sm text-body-sm text-outline">目前的回應：{error}</p>
+          <button
+            type="button"
+            onClick={reload}
+            className="self-start px-3 py-1.5 bg-surface border border-outline-variant rounded text-primary font-body-sm text-body-sm hover:bg-surface-container-low transition-colors"
+          >
+            再試一次
+          </button>
+        </div>
+      )}
+
+      {!loading && !error && items.length > 0 && (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-stack-md">
+            {items.map((item) => (
+              <MacroCard
+                key={item.key}
+                item={item}
+                selected={item.key === active}
+                onSelect={() => setActive(item.key)}
+              />
+            ))}
+          </div>
+
+          {current && (
+            <div className="flex flex-col gap-stack-sm">
+              <h3 className="font-body-md text-body-md text-on-surface font-semibold">
+                {current.name} 走勢
+              </h3>
+              {current.points.length === 0 ? (
+                <PageState
+                  kind="empty"
+                  message="這個區間沒有走勢資料"
+                  hint="換一個區間看看。上游休市或這次沒取到歷史時會是空的，那跟「數值是 0」是兩回事。"
+                />
+              ) : (
+                <TrendChart
+                  series={series}
+                  unit={current.unit}
+                  digits={current.digits}
+                  footnote={MACRO_META[current.key].note}
+                />
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+/** 一個指標的卡片。點下去換下面那張圖畫哪一條。 */
+function MacroCard({
+  item,
+  selected,
+  onSelect,
+}: {
+  item: MacroIndicator;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const meta = MACRO_META[item.key];
+  // 方向用文字講而不是用顏色：這三個漲都不是好事，套漲紅跌綠會說反話。
+  const direction =
+    item.change == null || item.change === 0 ? '' : item.change > 0 ? meta.up : meta.down;
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`text-left rounded-xl border p-4 shadow-sm transition-colors ${
+        selected
+          ? 'border-primary bg-primary-container/10'
+          : 'border-outline-variant bg-surface-container-lowest hover:bg-surface-container-low/50'
+      }`}
+    >
+      <div className="flex items-center gap-2 text-on-surface-variant">
+        <span className="material-symbols-outlined text-[18px]">{meta.icon}</span>
+        <span className="font-label-caps text-label-caps uppercase">{item.name}</span>
+      </div>
+      <p className="font-data-lg text-data-lg text-on-surface">
+        {item.price == null ? DASH : formatNumber(item.price, item.digits)}
+        {item.unit && (
+          <span className="ml-1 font-body-sm text-body-sm text-on-surface-variant">
+            {item.unit}
+          </span>
+        )}
+      </p>
+      <p className="font-body-sm text-body-sm text-on-surface-variant">
+        {item.change == null ? (
+          '沒有前一個收盤可以比'
+        ) : (
+          <>
+            {formatSigned(item.change, item.digits)}（{formatSignedPercent(item.change_percent)}）
+            {direction && <span className="text-on-surface font-semibold">　{direction}</span>}
+          </>
+        )}
+      </p>
+      <p className="font-body-sm text-body-sm text-outline">
+        {item.as_of ? item.as_of.slice(0, 16).replace('T', ' ') : '沒有時間資訊'}
+      </p>
+    </button>
   );
 }
