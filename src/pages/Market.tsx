@@ -1,8 +1,13 @@
-import { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { ReactNode, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
-import MacroCard from '../components/MacroIndicatorCard';
+import {
+  FALLBACK_SYMBOLS,
+  MACRO_DIGITS,
+  MACRO_META,
+  macroDirection,
+} from '../components/MacroIndicatorCard';
 import StatCard from '../components/StatCard';
 import { getMacroIndicators } from '../api/macroIndicators';
 import { getWorldIndices } from '../api/worldIndex';
@@ -14,13 +19,14 @@ import {
   getTWSEMarketTradings,
   getTWSEVolumeRanks,
 } from '../api/twse';
-import { MarketMarginSummary, TWSEVolumeRank, WorldIndex } from '../api/types';
+import { MarketMarginSummary, TWSEVolumeRank } from '../api/types';
 import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
 import {
   DASH,
   formatAmount,
   formatNumber,
+  formatPercent,
   formatPrice,
   formatShareToLot,
   formatSigned,
@@ -191,8 +197,7 @@ export default function Market() {
         {/* 國際區塊擺在台股前面：台股開盤前先看的是昨晚美股怎麼收、油價與 VIX
             動到哪裡，那才是決定今天怎麼開的東西。而且這兩區各自打不同的上游、
             自己失敗，不會被下面台股那幾區的載入狀態擋住。 */}
-        <WorldIndexSection />
-        <MacroSection />
+        <PremarketSection />
 
         {loading && !latestTwse && <PageState kind="loading" />}
         {error && !loading && <PageState kind="error" message={error} onRetry={reloadAll} />}
@@ -668,193 +673,235 @@ export default function Market() {
 }
 
 /** 市場別的中文與顯示順序。對不到的照原碼顯示，不要因為沒翻譯就藏起來。 */
-const WORLD_MARKETS: { code: string; label: string; note: string }[] = [
-  { code: 'US', label: '美股', note: '台股開盤前最先看的一組。收盤時台灣是清晨。' },
-  { code: 'JP', label: '日股', note: '跟台股同一個時區，盤中走勢常常同向。' },
-  { code: 'KR', label: '韓股', note: '半導體權重高，跟台股的產業結構最接近。' },
-];
+/** 各市場的一句話說明，展開卡片時顯示。對不到的市場照樣顯示，只是沒有說明。 */
+const WORLD_MARKET_NOTES: Record<string, string> = {
+  US: '台股開盤前最先看的一組。美股收盤時台灣是清晨，所以這裡永遠是昨晚的收盤。',
+  JP: '跟台股同一個時區，盤中走勢常常同向。',
+  KR: '半導體權重高，跟台股的產業結構最接近。',
+};
+
+/** 市場的顯示順序。沒列到的排在後面，不會消失。 */
+const WORLD_MARKET_ORDER = ['US', 'JP', 'KR'];
 
 /**
- * 世界股市指數：日股、韓股、美股。
- *
- * 擺在台股各區塊之後而不是最上面：這一頁的主角是台股，這一區是背景。
- * 但它是**開盤前**最常被問的一組，所以放在同一頁而不是另開一頁。
- *
- * ⚠️ 三個市場的資料日期本來就不同步（美股慢一天），所以日期標在每一張卡上，
- * 不做成整區一個「資料日期」——那會謊報其中兩個。
+ * 盤前參考的一張卡。世界指數與總經指標共用同一個結構，但**顏色規則不同**。
  */
-function WorldIndexSection() {
-  // 不輪詢：收的是每日排程落地的日 K，一天只變一次。
-  const { data, loading, error, reload } = useAsyncData(() => getWorldIndices(), []);
-  const items = data?.items ?? [];
-
-  return (
-    <section className="flex flex-col gap-stack-md">
-      <div className="flex flex-wrap items-baseline justify-between gap-stack-sm">
-        <h2 className="font-headline-md text-headline-md text-primary">世界股市</h2>
-        <button
-          type="button"
-          onClick={reload}
-          className="flex items-center justify-center gap-2 px-3 py-1.5 bg-surface border border-outline-variant rounded text-primary font-body-sm text-body-sm hover:bg-surface-container-low transition-colors"
-        >
-          <span className="material-symbols-outlined text-[18px]">refresh</span>
-          重新整理
-        </button>
-      </div>
-
-      <p className="font-body-sm text-body-sm text-on-surface-variant">
-        <span className="text-on-surface font-semibold">收盤值，不是即時報價</span>
-        ，而且三個市場的日期本來就不同步——台北週三下午看到的是日韓週三收盤、
-        <span className="text-on-surface font-semibold">美股週二收盤</span>
-        ，那是正確的不是漏收，所以日期標在每一張卡上。漲跌沿用台股慣例的漲紅跌綠。
-      </p>
-
-      {loading && <PageState kind="loading" />}
-      {error && !loading && <PageState kind="error" message={error} onRetry={reload} />}
-
-      {!loading && !error && items.length === 0 && (
-        <PageState
-          kind="empty"
-          message="還沒有世界指數的資料"
-          hint="這一份靠每日排程收，還沒跑過就會是空的。跟「今天沒有行情」是兩回事。"
-        />
-      )}
-
-      {items.length > 0 && (
-        <div className="flex flex-col gap-stack-md">
-          {WORLD_MARKETS.map((market) => {
-            const rows = items.filter((item) => item.market === market.code);
-            if (rows.length === 0) return null;
-            return (
-              <div key={market.code} className="flex flex-col gap-stack-sm">
-                <p className="font-label-caps text-label-caps text-on-surface-variant uppercase">
-                  {market.label}
-                  <span className="ml-2 normal-case font-body-sm text-body-sm text-outline">
-                    {market.note}
-                  </span>
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-stack-md">
-                  {rows.map((item) => (
-                    <WorldIndexCard key={item.symbol} item={item} />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-
-          {/* 後端多回一個沒對照到的市場時照樣顯示，不要讓它消失。 */}
-          {(() => {
-            const known = WORLD_MARKETS.map((m) => m.code);
-            const rest = items.filter((item) => !known.includes(item.market));
-            if (rest.length === 0) return null;
-            return (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-stack-md">
-                {rest.map((item) => (
-                  <WorldIndexCard key={item.symbol} item={item} />
-                ))}
-              </div>
-            );
-          })()}
-        </div>
-      )}
-    </section>
-  );
-}
-
-/** 一支指數。 */
-function WorldIndexCard({ item }: { item: WorldIndex }) {
-  return (
-    <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-4 shadow-sm flex flex-col gap-1">
-      <div className="flex items-baseline gap-2">
-        <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">
-          {item.name}
-        </span>
-        <span className="ml-auto font-data-md text-data-md text-outline">{item.symbol}</span>
-      </div>
-
-      <p className="font-data-lg text-data-lg text-on-surface">{formatNumber(item.close, 2)}</p>
-
-      {/* change 為 null 代表只收到一根日 K，算不出來——不是平盤，所以不顯示 0.00%。 */}
-      <p className={`font-body-md text-body-md ${quoteColor(item.change_percent)}`}>
-        {item.change == null ? (
-          <span className="text-on-surface-variant">沒有前一個收盤可以比</span>
-        ) : (
-          <>
-            {formatSigned(item.change, 2)}（{formatSignedPercent(item.change_percent)}）
-          </>
-        )}
-      </p>
-
-      <p className="font-body-sm text-body-sm text-outline">{item.date || DASH} 收盤</p>
-    </div>
-  );
+interface PremarketCard {
+  symbol: string;
+  name: string;
+  value: number | null;
+  change: number | null;
+  changePercent: number | null;
+  /** 資料日期或報價時刻，已經整理成可直接顯示的字串。 */
+  asOf: string;
+  /**
+   * quote：股價指數，漲跌套台股慣例的漲紅跌綠。
+   * neutral：VIX 與油價，**不能**套漲紅跌綠——它們的「上漲」不是好消息，
+   * 恐慌升高畫成紅色在台股語彙裡等於說反話。方向改用文字講。
+   */
+  tone: 'quote' | 'neutral';
+  /** neutral 專用的方向文字（恐慌升高、油價上漲）。 */
+  direction: string;
+  /** 展開時顯示的說明。 */
+  note: string;
+  /** 展開時顯示的補充行（52 週區間、備援來源警告）。 */
+  extra?: ReactNode;
 }
 
 /**
- * 國際指標：VIX 與布蘭特原油的當下報價。
+ * 盤前參考：世界股市與國際指標合成一排小卡。
  *
- * 獨立成一個元件而不是攤在頁面裡，是為了讓它**自己失敗**：這一區打的是跟其他區塊
- * 完全不同的上游（Yahoo、FRED），取不到的時候不該把整頁的台股資料一起拖下水。
+ * 為什麼合併：這兩區回答的是同一個問題——「今天台股大概會怎麼開」。分成兩個區塊、
+ * 各自帶標題與說明時，光是它們就吃掉整個第一屏，而台股才是這一頁的主角。
  *
- * 只有現值沒有走勢圖：後端的日 K 序列雖然有落地（連同美元指數、美國 10 年期、
- * 費半），但那份是給建模用的、沒有開查詢端點。畫得出走勢的只有升息機率，在 /macro。
+ * ⚠️ 合併的是版面不是語意。股價指數漲跌照台股慣例漲紅跌綠，VIX 與油價則走中性色
+ * 並用文字講方向——它們的「上漲」都不是好消息。這件事在同一排卡片裡最容易被寫錯，
+ * 所以 tone 是每張卡自己帶的，不是看它在第幾張。
+ *
+ * 兩支端點各自 useAsyncData：打的上游不同（後端的落地日 K vs Yahoo／FRED 即時），
+ * 一邊掛掉不該讓另一邊跟著空白。
  */
-function MacroSection() {
-  // 不輪詢，理由同這一頁其他區塊。這兩支的上游一天只更新一次收盤。
-  const { data, loading, error, reload } = useAsyncData(() => getMacroIndicators(), []);
-  const items = data?.items ?? [];
+function PremarketSection() {
+  const world = useAsyncData(() => getWorldIndices(), []);
+  const macro = useAsyncData(() => getMacroIndicators(), []);
+  const [openSymbol, setOpenSymbol] = useState('');
 
-  return (
-    <section className="flex flex-col gap-stack-md">
-      <div className="flex flex-wrap items-baseline justify-between gap-stack-sm">
-        <h2 className="font-headline-md text-headline-md text-primary">國際指標</h2>
-        <button
-          type="button"
-          onClick={reload}
-          className="flex items-center justify-center gap-2 px-3 py-1.5 bg-surface border border-outline-variant rounded text-primary font-body-sm text-body-sm hover:bg-surface-container-low transition-colors"
-        >
-          <span className="material-symbols-outlined text-[18px]">refresh</span>
-          重新整理
-        </button>
-      </div>
+  const cards = useMemo<PremarketCard[]>(() => {
+    const indices = [...(world.data?.items ?? [])].sort((a, b) => {
+      const rank = (market: string) => {
+        const index = WORLD_MARKET_ORDER.indexOf(market);
+        return index === -1 ? WORLD_MARKET_ORDER.length : index;
+      };
+      return rank(a.market) - rank(b.market);
+    });
 
-      <p className="font-body-sm text-body-sm text-on-surface-variant">
-        這兩個<span className="text-on-surface font-semibold">都不是台股資料</span>
-        ：交易時段、時區與休市日都跟台股不同。美股與紐約商品交易所收盤時台灣是清晨，
-        所以盤中看到的<span className="text-on-surface font-semibold">永遠是昨晚的收盤</span>
-        ，各自的時間標在卡片下方。
-        <span className="text-on-surface font-semibold">它們的「上漲」也都不是好消息</span>
-        ，所以這一區不用台股的漲紅跌綠——數值走中性色，方向用文字講。
-      </p>
+    const indexCards: PremarketCard[] = indices.map((item) => ({
+      symbol: item.symbol,
+      name: item.name,
+      value: item.close,
+      change: item.change,
+      changePercent: item.change_percent,
+      asOf: `${item.date || DASH} 收盤`,
+      tone: 'quote',
+      direction: '',
+      note: WORLD_MARKET_NOTES[item.market] ?? '',
+    }));
 
-      {loading && <PageState kind="loading" />}
-      {error && !loading && <PageState kind="error" message={error} onRetry={reload} />}
-
-      {!loading && !error && items.length === 0 && (
-        <PageState
-          kind="empty"
-          message="這次沒取到國際指標"
-          hint="這兩支直接打 Yahoo 與 FRED，上游限流或暫時掛掉時會是空的，按重新整理再試一次。跟「數值是 0」是兩回事——VIX 與油價的 0 都是不可能的值。"
-        />
-      )}
-
-      {items.length > 0 && (
+    const macroCards: PremarketCard[] = (macro.data?.items ?? []).map((item) => ({
+      symbol: item.symbol,
+      name: item.name,
+      value: item.price,
+      change: item.change,
+      changePercent: item.change_percent,
+      // 這兩支是即時報價，時刻比日期有意義（美股收盤時台灣是清晨）。
+      asOf: item.as_of ? item.as_of.slice(0, 16).replace('T', ' ') : '沒有時間資訊',
+      tone: 'neutral',
+      direction: macroDirection(item.symbol, item.change),
+      note: MACRO_META[item.symbol]?.note ?? '',
+      extra: (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-stack-md">
-            {items.map((item) => (
-              <MacroCard key={item.symbol} item={item} />
+          {FALLBACK_SYMBOLS[item.symbol] && (
+            <p className="font-body-sm text-body-sm text-error">
+              ⚠️ {FALLBACK_SYMBOLS[item.symbol]}
+            </p>
+          )}
+          {item.percentile_in_52_week != null &&
+            item.week_low_52 != null &&
+            item.week_high_52 != null && (
+              <p className="font-body-sm text-body-sm text-on-surface-variant">
+                52 週 {formatNumber(item.week_low_52, MACRO_DIGITS)} ～{' '}
+                {formatNumber(item.week_high_52, MACRO_DIGITS)}，現在落在{' '}
+                <span className="text-on-surface font-semibold">
+                  {formatPercent(item.percentile_in_52_week, 0)}
+                </span>{' '}
+                的位置
+              </p>
+            )}
+        </>
+      ),
+    }));
+
+    return [...indexCards, ...macroCards];
+  }, [world.data, macro.data]);
+
+  const opened = cards.find((card) => card.symbol === openSymbol);
+  const loading = world.loading || macro.loading;
+  // 兩支各自失敗：一邊掛掉另一邊照樣顯示，所以錯誤訊息也各報各的。
+  const errors = [world.error, macro.error].filter(Boolean);
+
+  const reloadAll = () => {
+    world.reload();
+    macro.reload();
+  };
+
+  return (
+    <section className="flex flex-col gap-stack-sm">
+      <div className="flex flex-wrap items-baseline justify-between gap-stack-sm">
+        <h2 className="font-headline-md text-headline-md text-primary">盤前參考</h2>
+        <button
+          type="button"
+          onClick={reloadAll}
+          className="flex items-center justify-center gap-2 px-3 py-1.5 bg-surface border border-outline-variant rounded text-primary font-body-sm text-body-sm hover:bg-surface-container-low transition-colors"
+        >
+          <span className="material-symbols-outlined text-[18px]">refresh</span>
+          重新整理
+        </button>
+      </div>
+
+      {loading && cards.length === 0 && <PageState kind="loading" />}
+
+      {errors.length > 0 && cards.length === 0 && (
+        <PageState kind="error" message={errors.join('；')} onRetry={reloadAll} />
+      )}
+
+      {cards.length > 0 && (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-stack-sm">
+            {cards.map((card) => (
+              <PremarketCardView
+                key={card.symbol}
+                card={card}
+                selected={card.symbol === openSymbol}
+                onSelect={() =>
+                  setOpenSymbol(card.symbol === openSymbol ? '' : card.symbol)
+                }
+              />
             ))}
           </div>
 
+          {/* 說明放在整排下面而不是卡片裡：卡片要夠小才排得下一整排，
+              而說明長度不一，放進去會讓每張卡高度不同。 */}
+          {opened && (
+            <div className="rounded-xl border border-outline-variant bg-surface-container-low/40 p-4 flex flex-col gap-1">
+              <p className="font-body-md text-body-md text-on-surface font-semibold">
+                {opened.name}
+                <span className="ml-2 font-data-md text-data-md text-outline">
+                  {opened.symbol}
+                </span>
+              </p>
+              {opened.note && (
+                <p className="font-body-sm text-body-sm text-on-surface-variant">{opened.note}</p>
+              )}
+              {opened.extra}
+              <p className="font-body-sm text-body-sm text-outline">{opened.asOf}</p>
+            </div>
+          )}
+
           <p className="font-body-sm text-body-sm text-on-surface-variant">
-            這兩張卡在
-            <Link to="/macro" className="mx-1 text-primary underline">
-              Fed 與總經
-            </Link>
-            那一頁也看得到，那裡另外有 Fed 升息機率、FOMC 會議日程與美國的通膨、失業率、GDP。
+            這一排<span className="text-on-surface font-semibold">都不是台股資料</span>
+            ，日期本來就不同步——台北週三下午看到的是日韓週三收盤、
+            <span className="text-on-surface font-semibold">美股週二收盤</span>
+            ，那是正確的不是漏收，點卡片看得到各自的時間。
+            <span className="text-on-surface font-semibold">VIX 與油價不套漲紅跌綠</span>
+            ：它們的「上漲」不是好消息，所以走中性色、方向用文字講。
+            {errors.length > 0 && (
+              <span className="text-error">　有一組這次沒取到：{errors.join('；')}</span>
+            )}
           </p>
         </>
       )}
     </section>
+  );
+}
+
+/** 一張小卡。要夠小才排得下一整排，所以只有名稱、數值、漲跌與方向。 */
+function PremarketCardView({
+  card,
+  selected,
+  onSelect,
+}: {
+  card: PremarketCard;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      title={card.note}
+      className={`text-left rounded-xl border p-3 shadow-sm transition-colors ${
+        selected
+          ? 'border-primary bg-primary-container/10'
+          : 'border-outline-variant bg-surface-container-lowest hover:bg-surface-container-low/50'
+      }`}
+    >
+      <p className="font-label-caps text-label-caps uppercase text-on-surface-variant truncate">
+        {card.name}
+      </p>
+      <p className="font-data-md text-data-md text-on-surface">
+        {formatNumber(card.value, MACRO_DIGITS)}
+      </p>
+      {/* tone 決定顏色：股價指數漲紅跌綠，VIX 與油價走中性色＋文字方向。 */}
+      <p
+        className={`font-body-sm text-body-sm ${
+          card.tone === 'quote' ? quoteColor(card.changePercent) : 'text-on-surface-variant'
+        }`}
+      >
+        {card.change == null ? DASH : formatSignedPercent(card.changePercent)}
+      </p>
+      {card.tone === 'neutral' && card.direction && (
+        <p className="font-body-sm text-body-sm text-on-surface">{card.direction}</p>
+      )}
+    </button>
   );
 }
