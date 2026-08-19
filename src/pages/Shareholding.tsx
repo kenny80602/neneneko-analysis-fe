@@ -8,7 +8,14 @@ import { getShareholdingHistory } from '../api/shareholding';
 import { ShareholdingWeek } from '../api/types';
 import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
-import { DASH, formatDate, formatNumber, formatSigned, quoteColor } from '../utils/format';
+import {
+  DASH,
+  formatDate,
+  formatNumber,
+  formatShareToLot,
+  formatSigned,
+  quoteColor,
+} from '../utils/format';
 
 // 大戶／散戶持股：集保股權分散表。
 //
@@ -87,10 +94,20 @@ function toPoints(items: ShareholdingWeek[], pick: (w: ShareholdingWeek) => numb
   }));
 }
 
+/** 增減張數那張圖要看哪一群。 */
+type ChangeTarget = 'big' | 'thousand' | 'retail';
+
+const CHANGE_TARGETS: { value: ChangeTarget; label: string }[] = [
+  { value: 'big', label: '大戶 ≥400 張' },
+  { value: 'thousand', label: '千張大戶' },
+  { value: 'retail', label: '散戶 ≤50 張' },
+];
+
 export default function Shareholding() {
   const { symbol } = useSymbol();
   const [weeks, setWeeks] = useState(52);
   const [showThousand, setShowThousand] = useState(false);
+  const [changeTarget, setChangeTarget] = useState<ChangeTarget>('big');
   const [showLevels, setShowLevels] = useState(false);
 
   // 不輪詢：一週才換一份。deps 放原始值（數字），不放物件。
@@ -137,6 +154,35 @@ export default function Shareholding() {
     }
     return series;
   }, [items, showThousand]);
+
+  /**
+   * 每週增減的張數。
+   *
+   * ⚠️ 這是**存量差不是成交量**：週末那個時點大戶手上多了幾張，中間可能來回買賣
+   * 過好幾次。集保只公布每週的持股分佈，台灣沒有免費的大戶逐筆買賣資料。
+   *
+   * 用 bar 而不是 line：它是有正負號的量（增減），以零軸為基準上下長比較讀得出
+   * 「這一週是進還是出」，跟三大法人買賣超那張圖同一個道理。
+   *
+   * 後端給的是股數，這裡除以 1000 換成張——台股講籌碼一律論張。
+   */
+  const changeSeries = useMemo(() => {
+    const pick = (w: ShareholdingWeek): number | null => {
+      const shares =
+        changeTarget === 'big'
+          ? w.big_holder_shares_change
+          : changeTarget === 'thousand'
+            ? w.thousand_lot_shares_change
+            : w.retail_shares_change;
+      return shares == null ? null : shares / 1000;
+    };
+    return [
+      {
+        label: CHANGE_TARGETS.find((t) => t.value === changeTarget)?.label ?? '',
+        points: toPoints(items, pick),
+      },
+    ];
+  }, [items, changeTarget]);
 
   const holderSeries = useMemo(
     () => [
@@ -228,7 +274,11 @@ export default function Shareholding() {
                 label="大戶 ≥400 張"
                 icon="account_balance"
                 value={formatRatio(latest.big_holder_ratio)}
-                hint={`較前一週 ${formatPoints(latest.big_holder_change)}`}
+                hint={`較前一週 ${formatPoints(latest.big_holder_change)}，${
+                  latest.big_holder_shares_change == null
+                    ? '張數未知'
+                    : `${formatShareToLot(latest.big_holder_shares_change)} 張`
+                }`}
                 valueClassName={quoteColor(latest.big_holder_change)}
               />
               <StatCard
@@ -331,6 +381,36 @@ export default function Shareholding() {
                     unit="%"
                     digits={2}
                     footnote="Y 軸不從 0 起算：這種比例的週變化通常在 1 個百分點以內，從 0 畫會看起來像一條直線。線在某一週斷開代表那一週沒有資料，不是掉到 0。"
+                  />
+                </section>
+
+                <section className="flex flex-col gap-stack-md">
+                  <div className="flex flex-wrap items-baseline justify-between gap-stack-sm">
+                    <h2 className="font-headline-md text-headline-md text-primary">
+                      每週增減張數
+                    </h2>
+                    <div className="flex flex-wrap gap-1.5">
+                      {CHANGE_TARGETS.map((target) => (
+                        <button
+                          key={target.value}
+                          type="button"
+                          onClick={() => setChangeTarget(target.value)}
+                          className={`px-3 py-1.5 rounded border font-body-sm text-body-sm transition-colors ${
+                            changeTarget === target.value
+                              ? 'border-primary bg-primary-container/20 text-primary font-semibold'
+                              : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-low'
+                          }`}
+                        >
+                          {target.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <TrendChart
+                    series={changeSeries}
+                    mode="bar"
+                    unit="張"
+                    footnote="⚠️ 這是持股的淨變化，不是成交量：長條代表週末那個時點這一群手上多了或少了幾張，中間可能來回買賣過好幾次，也看不出對手方是誰。集保只公布每週的持股分佈，台灣沒有免費的大戶逐筆買賣資料。看張數而不是只看比例，是因為比例的分母（集保庫存總股數）會變動——新股上市或實體股票匯入都會讓分母變大，那時大戶就算一張沒賣，比例也會往下。"
                   />
                 </section>
 

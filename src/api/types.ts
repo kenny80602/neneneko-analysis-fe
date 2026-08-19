@@ -1602,6 +1602,26 @@ export interface ShareholdingWeek {
   thousand_lot_change: number | null;
   retail_change: number | null;
 
+  // 大戶、千張大戶、散戶各自合計持有幾股。null 的意思同上面的比例欄位。
+  big_holder_shares: number | null;
+  thousand_lot_shares: number | null;
+  retail_shares: number | null;
+
+  // 跟前一週相比增減幾股。
+  //
+  // ⚠️ 這是**淨變化的存量差，不是成交量**。「大戶這週多了 300 張」的意思是週末
+  // 那個時點大戶手上多了 300 張，中間可能來回買賣過好幾次，也看不出賣方是誰。
+  // 集保只公布每週的持股分佈，台灣沒有免費的大戶逐筆買賣資料。
+  //
+  // 為什麼要看這一組而不是只看比例的百分點：比例的分母（集保庫存總股數）會變動
+  // ——新股上市、實體股票匯入都會讓分母變大，此時大戶就算一張沒賣，比例也會下降。
+  // 股數差沒有這個問題，「他們到底有沒有買」要看這一組。
+  //
+  // 最舊那一筆是 null 而不是 0（沒有前一週可比）。
+  big_holder_shares_change: number | null;
+  thousand_lot_shares_change: number | null;
+  retail_shares_change: number | null;
+
   // 股東總人數，以及跟前一週的增減（人）。change 為 null 的意思同上。
   total_holders: number;
   holders_change: number | null;
