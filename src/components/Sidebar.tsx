@@ -73,6 +73,7 @@ const NAV_GROUPS: NavGroup[] = [
       { icon: 'school', label: '模擬買賣', path: '/paper' },
       { icon: 'notifications_active', label: '多喵 Alert', path: '/alert' },
       { icon: 'menu_book', label: '研究報告', path: '/reports' },
+      { icon: 'schedule', label: '排程', path: '/schedules' },
       { icon: 'settings', label: '設定', path: '/settings' },
     ],
   },

@@ -1541,6 +1541,70 @@ export interface FOMCSchedule {
   source: string;
 }
 
+// ===== 排程清單（/schedules）=====
+//
+// 這個專案有哪些排程、幾點跑、在做什麼、有沒有真的掛上。
+//
+// ⚠️ 回的是「專案定義了哪些排程」，不是「launchd 現在的狀態」。後端讀的是
+// deploy/launchd 底下的 plist 樣板，所以新增一支排程就會自己出現在這裡。
+
+export interface ScheduleRun {
+  // 0 是星期日、6 是星期六，跟 JavaScript 的 Date.getDay() 一致。
+  weekday: number;
+  weekday_name: string;
+  hour: number;
+  minute: number;
+  // HH:MM，直接顯示用。
+  time: string;
+}
+
+export interface Schedule {
+  // launchd 的識別，例如 com.webook.exhibition-collect。
+  label: string;
+  // JOB（到點跑一次）或 DAEMON（常駐服務，沒有時刻表）。
+  kind: string;
+  // 一句話說明，取自 plist 樣板開頭註解的第一行。
+  summary: string;
+  // 完整的樣板註解。裡面通常寫著「為什麼是這個時間」與「漏跑會怎樣」——
+  // 那是判斷一支排程壞掉要不要緊的依據。
+  description: string;
+  // 人話版時刻表：「週一至週五 09:30」。
+  cadence: string;
+  runs: ScheduleRun[];
+  // 下一次觸發，RFC3339（台北時間）。常駐服務是空字串。
+  //
+  // ⚠️ 不管國定假日——launchd 也不管，那天照樣會跑，只是上游沒有新資料。
+  next_run_at: string;
+  // 這支排程實際帶的旗標。
+  args: string[];
+
+  // ~/Library/LaunchAgents 底下有沒有這一支。
+  //
+  // ⚠️ 是「檔案在不在」不是「真的會跑」。false 多半是刻意的（還在做，或還沒決定
+  // 要不要自動跑），所以沒掛上的不該在畫面上亮紅燈。
+  installed: boolean;
+  // launchd 現在認不認得這一支。installed 是 true 而這裡是 false，
+  // 代表 plist 放好了但沒註冊——那支排程一次都不會跑，而且從檔案上看不出來。
+  loaded: boolean;
+  // 正在跑的行程編號，沒在跑是 null。
+  running_pid: number | null;
+  // 上一次結束的離開碼：0 成功、非 0 那次有東西沒做完、
+  // null 是從沒跑過或剛重新註冊過。⚠️ 只有「上一次」沒有歷史。
+  last_exit_code: number | null;
+  // 掛上了、載入了、上一次不是失敗。
+  healthy: boolean;
+}
+
+export interface ScheduleList {
+  count: number;
+  // 其中已經掛上的有幾支。
+  installed: number;
+  // 其中看起來有問題的有幾支：掛上了但沒載入，或上一次是失敗的。
+  unhealthy: number;
+  // 排程，下一次觸發早的排前面；常駐服務排最後。
+  items: Schedule[];
+}
+
 // ===== 世界股市指數（/markets/indices）=====
 //
 // 日股、韓股、美股的收盤看板。台股開盤前最想知道的就是這一組。

@@ -18,6 +18,7 @@ import Market from './pages/Market';
 import PaperTrading from './pages/PaperTrading';
 import Portfolio from './pages/Portfolio';
 import Reports from './pages/Reports';
+import Schedules from './pages/Schedules';
 import Ranks from './pages/Ranks';
 import Revenue from './pages/Revenue';
 import Settings from './pages/Settings';
@@ -55,6 +56,7 @@ function App() {
               <Route path="/ledger/summary" element={<LedgerSummary />} />
               <Route path="/alert" element={<Alert />} />
               <Route path="/reports" element={<Reports />} />
+              <Route path="/schedules" element={<Schedules />} />
               <Route path="/settings" element={<Settings />} />
 
               {/* 個股：共用 SymbolContext 的代號 */}
