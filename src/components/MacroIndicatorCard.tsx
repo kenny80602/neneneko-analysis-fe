@@ -3,7 +3,7 @@ import { formatNumber, formatPercent, formatSigned, formatSignedPercent } from '
 
 // VIX 與布蘭特都習慣看兩位小數。後端沒有回 digits，由前端統一決定；
 // 之後多回一支不同精度的指標時再改成逐指標判斷。
-const MACRO_DIGITS = 2;
+export const MACRO_DIGITS = 2;
 
 // 一個總經指標的卡片：VIX 與布蘭特原油。市場概況與 Fed 與總經兩頁都用同一份。
 //
@@ -20,7 +20,10 @@ const MACRO_DIGITS = 2;
  * 後端之後多回一支指標時，這裡沒有對應的 meta 也照樣顯示（方向文字退成漲跌），
  * 不要因為沒寫說明就把那一列藏起來。
  */
-const MACRO_META: Record<string, { icon: string; up: string; down: string; note: string }> = {
+export const MACRO_META: Record<
+  string,
+  { icon: string; up: string; down: string; note: string }
+> = {
   '^VIX': {
     icon: 'crisis_alert',
     up: '恐慌升高',
@@ -45,21 +48,29 @@ const MACRO_META: Record<string, { icon: string; up: string; down: string; note:
  * 畫面一定要標出來：不標的話，使用者會把上週的油價當成現在的油價，
  * 而卡片上除了日期之外看起來跟平常一模一樣。
  */
-const FALLBACK_SYMBOLS: Record<string, string> = {
+export const FALLBACK_SYMBOLS: Record<string, string> = {
   DCOILBRENTEU: '即時報價來源暫時取不到，這是 FRED 的現貨價，通常落後兩三個工作天',
 };
+
+/**
+ * 漲跌的方向文字。
+ *
+ * 這幾個指標的方向一律用文字講不用顏色，所以兩種版面（Fed 與總經頁的完整卡、
+ * 市場概況的緊湊卡）都要用同一份措辭——各寫一份的話，同一個指標在站上會有兩種說法。
+ * 沒有 meta 的新指標退成中性的「上漲／下跌」，而不是不顯示。
+ */
+export function macroDirection(symbol: string, change: number | null): string {
+  if (change == null || change === 0) return '';
+  const meta = MACRO_META[symbol];
+  if (change > 0) return meta?.up ?? '上漲';
+  return meta?.down ?? '下跌';
+}
 
 /** 一個指標的卡片：現值、對前一收盤的變化，以及它落在 52 週區間的哪裡。 */
 export default function MacroCard({ item }: { item: MacroIndicator }) {
   const meta = MACRO_META[item.symbol];
   // 方向用文字講而不是用顏色：這幾個漲都不是好事，套漲紅跌綠會說反話。
-  // 沒有 meta 的新指標退成中性的「上漲／下跌」，而不是不顯示。
-  const direction =
-    item.change == null || item.change === 0
-      ? ''
-      : item.change > 0
-        ? (meta?.up ?? '上漲')
-        : (meta?.down ?? '下跌');
+  const direction = macroDirection(item.symbol, item.change);
 
   return (
     <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-4 shadow-sm flex flex-col gap-1">
