@@ -619,8 +619,14 @@ export default function Dashboard() {
                   設定
                 </Link>
                 裡改。
-                只比月營收：那是唯一涵蓋全市場的數字，成員不必在自選股裡（收盤價與法人只收自選股）。
-                金額單位為新台幣千元。
+                比的是<span className="text-on-surface">近五日漲跌幅與月營收</span>
+                ：成員不必在自選股裡，所以那兩欄各走一條路——
+                月營收是唯一涵蓋全市場的落地資料，
+                <span className="text-on-surface">近五日漲跌幅則是即時去問延遲約 20 分鐘的日 K</span>
+                （站上落地的收盤只收自選股，只靠它會有一半是破折號）。
+                「近五日」是滾動 5 個交易日，不是本週一到今天——後者在週一只涵蓋一天，
+                成員之間就沒得比。破折號代表這次沒取到（不滿五個交易日、代號查無、上游沒回），
+                不是 0%。金額單位為新台幣千元。
               </p>
 
               {groups.loading && (
@@ -659,6 +665,12 @@ export default function Dashboard() {
                           </th>
                           <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-left">
                             官方產業別
+                          </th>
+                          <th
+                            className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-right"
+                            title="最近 5 個交易日的漲跌幅，來源是延遲約 20 分鐘的日 K"
+                          >
+                            近五日
                           </th>
                           <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-right">
                             單月營收
@@ -708,6 +720,15 @@ export default function Dashboard() {
                               </td>
                               <td className="p-2 py-3 font-body-sm text-body-sm text-on-surface-variant whitespace-nowrap">
                                 {peer.industry || DASH}
+                              </td>
+                              {/* 這一欄跟營收那三欄的資料來源不同（Yahoo 日 K vs 觀測站），
+                                  所以 null 各自判斷：沒有營收不代表沒有股價。 */}
+                              <td
+                                className={`p-2 py-3 text-right font-data-md text-data-md ${quoteColor(
+                                  peer.week_change
+                                )}`}
+                              >
+                                {formatSignedPercent(peer.week_change)}
                               </td>
                               <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface">
                                 {formatNumber(peer.revenue)}
