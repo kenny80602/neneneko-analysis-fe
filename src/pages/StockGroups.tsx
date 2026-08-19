@@ -41,7 +41,21 @@ const numCell = 'p-2 py-3 text-right font-data-md text-data-md';
 const inputClass =
   'px-2 py-1.5 bg-surface-container border border-outline-variant rounded font-body-md text-body-md text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary';
 
+type Tab = 'edit' | 'heat';
+
+// 分頁而不是上下堆疊，理由同全市場排行那一頁：兩塊的性質差很遠，堆在一起會很長，
+// 而且會讓人以為熱度榜是「剛剛編的那個族群的」——它是全部族群的當日橫斷面。
+//
+//   族群維護  自己維護的清單，隨時可改，改完立刻生效
+//   今日熱度  收盤後才算得出來的橫斷面，唯讀，一天只變一次
+const TABS: { value: Tab; label: string; hint: string }[] = [
+  { value: 'edit', label: '族群維護', hint: '自己歸類，隨時可改' },
+  { value: 'heat', label: '今日熱度', hint: '收盤後才有，一天一次' },
+];
+
 export default function StockGroups() {
+  const [tab, setTab] = useState<Tab>('edit');
+
   return (
     <>
       <PageHeader
@@ -51,16 +65,36 @@ export default function StockGroups() {
       />
 
       <div className="flex flex-col gap-stack-lg">
+        <div className="flex flex-wrap gap-stack-sm border-b border-outline-variant">
+          {TABS.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => setTab(item.value)}
+              className={`px-4 py-2 -mb-px border-b-2 transition-colors ${
+                tab === item.value
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-on-surface-variant hover:text-on-surface'
+              }`}
+            >
+              <span className="font-body-md text-body-md font-semibold">{item.label}</span>
+              <span className="block font-body-sm text-body-sm text-on-surface-variant">
+                {item.hint}
+              </span>
+            </button>
+          ))}
+        </div>
+
         <p className="font-body-sm text-body-sm text-on-surface-variant">
           族群是人工維護的，<span className="text-on-surface font-semibold">官方產業別做不到</span>
           ：矽晶圓的中美晶、環球晶、台勝科官方全歸「半導體業」（一百多家，台積電也在裡面）；
           散熱的雙鴻、高力、奇鋐則分屬其他電子業、電機機械、電腦及週邊設備業，
-          官方分類永遠不會把它們放在一起。個股總覽的「主題族群」區塊與下方的熱度榜都吃這裡的設定。
+          官方分類永遠不會把它們放在一起。個股總覽的「主題族群」區塊與這裡的熱度榜都吃這份設定。
           破折號一律代表「沒有這個數字」而不是 0。
         </p>
 
-        <GroupPanel />
-        <HeatBoard />
+        {/* 兩塊都保持掛載會讓熱度榜在編族群時照樣去打一次收盤資料，所以切換時才載入。 */}
+        {tab === 'edit' ? <GroupPanel /> : <HeatBoard />}
       </div>
     </>
   );
