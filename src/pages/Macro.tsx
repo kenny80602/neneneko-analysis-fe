@@ -6,11 +6,12 @@ import TrendChart from '../components/TrendChart';
 import {
   getEconomy,
   getFOMCMeetings,
+  getFOMCStatements,
   getMacroIndicators,
   getMeetingTrend,
   getRateExpectations,
 } from '../api/macroIndicators';
-import { RateExpectation } from '../api/types';
+import { FOMCStatement, RateExpectation } from '../api/types';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { DASH, formatNumber, formatPercent, formatSigned } from '../utils/format';
 
@@ -51,6 +52,7 @@ export default function Macro() {
 
         <IndicatorsSection />
         <RatesSection />
+        <StatementsSection />
         <MeetingsSection />
         <EconomySection />
       </div>
@@ -376,6 +378,144 @@ function ExpectationRow({
         </button>
       </td>
     </tr>
+  );
+}
+
+/**
+ * 決策聲明（英文原文）。
+ *
+ * ⚠️ 不翻譯也不摘要，這是刻意的：市場在意的是「somewhat elevated」變成
+ * 「elevated」、「will be patient」被拿掉這種一兩個字的差異，翻譯或摘要一定會把
+ * 那個差異抹平，而抹平之後看起來仍然很像原文，沒有人會發現。要中文的人請自己
+ * 點原文連結去翻——那樣至少知道自己讀的是翻譯。
+ */
+function StatementsSection() {
+  const statements = useAsyncData(() => getFOMCStatements(), []);
+  const data = statements.data;
+  // 預設只展開最新一次：一則聲明六到八段，全部展開要捲很久，
+  // 而多數時候要看的就是最新那一次。
+  const [openDate, setOpenDate] = useState('');
+
+  return (
+    <section className="flex flex-col gap-stack-md">
+      <h2 className="font-headline-md text-headline-md text-primary">決策聲明</h2>
+
+      <p className="font-body-sm text-body-sm text-on-surface-variant">
+        會期最後一天美東 14:00 發布的官方聲明，
+        <span className="text-on-surface font-semibold">英文原文，未翻譯也未摘要</span>
+        ——市場在意的是「somewhat elevated」變成「elevated」這種一兩個字的差異，
+        翻譯會把那個差異抹平。這是會議當下唯一拿得到的官方說法：點陣圖只有四次會議有、
+        會議紀要要三週後才出、記者會沒有逐字稿。
+        <span className="text-on-surface font-semibold">跟上一次比措辭改了什麼</span>
+        才是這份文件的讀法，所以這裡一次列好幾次。
+      </p>
+
+      {statements.loading && <PageState kind="loading" />}
+      {statements.error && (
+        <PageState kind="error" message={statements.error} onRetry={statements.reload} />
+      )}
+
+      {!statements.loading && !statements.error && data && data.items.length === 0 && (
+        <PageState
+          kind="empty"
+          message="還沒有收到任何一次的聲明"
+          hint="這一份要後端先去 Fed 官網收一次才有（POST /macro/statements/collect 或等排程）。空的不代表 Fed 沒有開會。"
+        />
+      )}
+
+      {data && data.items.length > 0 && (
+        <>
+          <div className="flex flex-col gap-stack-sm">
+            {data.items.map((item, index) => (
+              <StatementCard
+                key={item.meeting_date}
+                item={item}
+                // 最新那一次預設展開，其餘要點才開。
+                open={openDate === item.meeting_date || (openDate === '' && index === 0)}
+                onToggle={() =>
+                  setOpenDate(
+                    openDate === item.meeting_date ? 'none' : item.meeting_date
+                  )
+                }
+              />
+            ))}
+          </div>
+          <p className="font-body-sm text-body-sm text-outline">{data.source}</p>
+        </>
+      )}
+    </section>
+  );
+}
+
+/** 一次會議的聲明。 */
+function StatementCard({
+  item,
+  open,
+  onToggle,
+}: {
+  item: FOMCStatement;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex flex-wrap items-baseline gap-2 p-4 text-left"
+      >
+        <span className="material-symbols-outlined text-[20px] text-on-surface-variant">
+          {open ? 'expand_more' : 'chevron_right'}
+        </span>
+        <span className="font-data-md text-data-md text-on-surface">{item.meeting_date}</span>
+        <span className="font-body-md text-body-md text-on-surface-variant">{item.title}</span>
+        <span className="ml-auto font-body-sm text-body-sm text-outline">
+          {/* 發布時刻是台北時間：台灣人看到的是凌晨兩三點，這才回答「什麼時候公布的」。 */}
+          {item.released_at
+            ? `台北 ${item.released_at.slice(0, 16).replace('T', ' ')} 公布`
+            : DASH}
+        </span>
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 flex flex-col gap-stack-sm border-t border-outline-variant pt-3">
+          {item.paragraphs.map((paragraph, index) => (
+            <p
+              key={index}
+              className="font-body-md text-body-md text-on-surface leading-relaxed"
+            >
+              {paragraph}
+            </p>
+          ))}
+
+          <div className="flex flex-wrap gap-stack-md pt-1">
+            <a
+              href={item.url}
+              target="_blank"
+              rel="noreferrer"
+              className="font-body-sm text-body-sm text-primary underline"
+            >
+              Fed 官網原文
+            </a>
+            {item.minutes_url ? (
+              <a
+                href={item.minutes_url}
+                target="_blank"
+                rel="noreferrer"
+                className="font-body-sm text-body-sm text-primary underline"
+              >
+                會議紀要全文
+              </a>
+            ) : (
+              // 空字串是常態不是漏抓：紀要在會後三週才公布。
+              <span className="font-body-sm text-body-sm text-outline">
+                會議紀要要會後三週才公布
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

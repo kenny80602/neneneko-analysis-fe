@@ -3,6 +3,7 @@ import {
   ApiResponse,
   Economy,
   FOMCSchedule,
+  FOMCStatementList,
   MacroIndicators,
   MeetingTrend,
   RateExpectationSnapshot,
@@ -56,6 +57,18 @@ export const getFOMCMeetings = (limit?: number) =>
 // 要顯示在機率旁邊，不要收進說明區。
 export const getRateExpectations = () =>
   request.get<ApiResponse<RateExpectationSnapshot>>('/macro/rates').then((res) => res.data.data);
+
+// 最近幾次 FOMC 會議的決策聲明（英文原文）。
+//
+// 沒帶 limit 時後端回最近 4 次（約半年），上限 20 次。
+//
+// 這一支只讀後端的資料庫、不打 Fed 官網：聲明公布後就不會再改，
+// 現抓等於每個訪客都去打一次上游。空清單代表後端還沒收集過
+// （跑 POST /macro/statements/collect 或等排程），不是「Fed 沒有發聲明」。
+export const getFOMCStatements = (limit?: number) =>
+  request
+    .get<ApiResponse<FOMCStatementList>>('/macro/statements', { params: { limit } })
+    .then((res) => res.data.data);
 
 // 某一次會議的機率走勢。meeting 省略時後端落到最近一次會議。
 //

@@ -1467,6 +1467,34 @@ export interface MeetingTrend {
   points: MeetingTrendPoint[];
 }
 
+/** 一次會議的決策聲明（英文原文）。 */
+export interface FOMCStatement {
+  // 決策公布日（美東），YYYY-MM-DD。對得上 FOMCMeeting.end 與 RateExpectation.meeting_date。
+  meeting_date: string;
+  // 新聞稿發布時刻，RFC3339（台北時區）。台灣人看到的是凌晨兩三點。
+  released_at: string;
+
+  // 新聞稿標題（英文原文）。
+  title: string;
+  // 聲明全文，一段一個元素，**英文原文**。
+  //
+  // ⚠️ 後端刻意不翻譯也不摘要，畫面也不要加：市場在意的是「somewhat elevated」
+  // 變成「elevated」這種一兩個字的差異，翻譯或摘要一定會把那個差異抹平，
+  // 而抹平之後看起來仍然很像原文，沒有人會發現。
+  paragraphs: string[];
+
+  // 官方原文網址。解析壞掉時使用者點得到原文，不必相信我們解出來的內容。
+  url: string;
+  // 會議紀要網址。紀要在會後三週才公布，所以最近一次一定是空字串——那不是漏抓。
+  minutes_url: string;
+}
+
+export interface FOMCStatementList {
+  count: number;
+  items: FOMCStatement[];
+  source: string;
+}
+
 /** 一次 FOMC 會議。 */
 export interface FOMCMeeting {
   // 會期首日與末日，都是**美東日期**，不轉台北——FOMC 的「9 月會議」指的是
