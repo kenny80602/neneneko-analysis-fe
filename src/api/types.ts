@@ -390,6 +390,92 @@ export interface RemoveGroupResult {
   removed: number;
 }
 
+// ===== 族群熱度榜（/stocks/groups/heat）=====
+//
+// 跟上面那組是兩回事：上面管的是「誰屬於散熱」（人工維護的成員清單），
+// 這一組管的是「散熱今天有沒有在動」。後端也是兩支 handler。
+
+export interface GroupHeatLeader {
+  symbol: string;
+  name: string;
+  // 當日報酬（%）。
+  return_pct: number;
+  // 當日成交值，單位元。
+  trade_value: number;
+}
+
+export interface GroupHeat {
+  // 族群名稱。這一支不回 id，要跟族群清單對起來只能靠名稱——
+  // 名稱本來就是後端的鍵（同名視為覆蓋），所以對得起來。
+  name: string;
+  // 族群有幾檔、其中幾檔今天算得出報酬。
+  //
+  // ⚠️ 兩個數字差很多時，下面每一個指標都只代表算得到的那幾檔。
+  member_count: number;
+  covered_count: number;
+  // 涵蓋到的檔數少於三檔，這一列的中位數幾乎由單一檔決定。
+  // 仍然可能是真的，但更可能是個股事件被誤讀成題材，後端排序時已經降級。
+  thin: boolean;
+
+  // 族群成交值（元）與占全市場成交值的比重（%）。
+  trade_value: number;
+  share_of_market: number;
+  // 比重相對前一個交易日的變化（百分點）。
+  //
+  // null 是「還沒有前一天的資料」，不是「沒有變化」。橫斷面那張表從落地那天起
+  // 才有，而且補不回來（上游問不到全市場的歷史）。
+  share_change: number | null;
+
+  // 族群中位數報酬（%）。用中位數不用平均：一檔漲停就能把平均拉起來。
+  median_return: number;
+  // 減掉全市場中位數之後的超額報酬（百分點）。族群強弱看這一欄。
+  excess_return: number;
+  // 上漲家數比（%）。擴散度——真正的題材是整群一起動。
+  advance_ratio: number;
+  // 平均單筆成交金額（元）與相對市場平均的倍數（1.0 代表跟市場一樣）。
+  avg_trade_size: number;
+  avg_trade_size_ratio: number;
+
+  // 成立了哪幾個訊號。signals 是機器讀的代號、signal_labels 是對應的中文。
+  // 中文由後端給而不是前端各寫一份，散在各處會跟定義走散。
+  signals: string[];
+  signal_labels: string[];
+  // 成立幾個。榜的排序鍵就是它，不是加權分數。
+  signal_count: number;
+
+  // 族群裡漲最多的幾檔，最多三檔。
+  leaders: GroupHeatLeader[];
+}
+
+export interface MarketBreadth {
+  // 全市場中位數報酬（%）。族群的超額報酬是跟它比出來的。
+  median_return: number;
+  trade_value: number;
+  avg_trade_size: number;
+  // 算進基準的檔數。
+  counted: number;
+}
+
+export interface GroupHeatBoard {
+  // 各市場的資料日期，key 是 twse / tpex。
+  //
+  // ⚠️ 兩邊常常差一天（上市收盤那包的上游慢一天），畫面要兩個日期都顯示，
+  // 不要挑一個當「今天」。
+  as_of: Record<string, string>;
+  // 這次用到幾個交易日。1 表示只有當天，此時 share_change 全是 null。
+  days_covered: number;
+
+  market: MarketBreadth;
+  count: number;
+  items: GroupHeat[];
+
+  // 指標是怎麼算的。後端給的字串，原樣顯示。
+  method: string;
+  // 讀這份榜之前必須知道的事。這一欄不是裝飾——「哪個題材在發酵」極容易被讀成
+  // 「買哪個會賺」，而兩者之間還隔著一個沒做過的檢定，所以畫面上一定要照著標。
+  caveats: string[];
+}
+
 // ===== 重大訊息（/stocks/announcement）=====
 
 export interface MaterialAnnouncement {

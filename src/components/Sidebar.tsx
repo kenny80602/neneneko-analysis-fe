@@ -11,6 +11,7 @@ const marketNavItems = [
   { icon: 'account_balance_wallet', label: '我的持股', path: '/holdings' },
   { icon: 'table_rows', label: '每日收盤', path: '/quotes' },
   { icon: 'leaderboard', label: '全市場排行', path: '/ranks' },
+  { icon: 'workspaces', label: '主題族群', path: '/groups' },
   { icon: 'school', label: '模擬買賣', path: '/paper' },
   { icon: 'event', label: '台股行事曆', path: '/calendar' },
   { icon: 'compare_arrows', label: '自訂沖銷帳', path: '/ledger' },

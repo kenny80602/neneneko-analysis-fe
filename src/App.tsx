@@ -21,6 +21,7 @@ import Ranks from './pages/Ranks';
 import Revenue from './pages/Revenue';
 import Settings from './pages/Settings';
 import Shareholding from './pages/Shareholding';
+import StockGroups from './pages/StockGroups';
 import Valuation from './pages/Valuation';
 import Warnings from './pages/Warnings';
 
@@ -47,6 +48,7 @@ function App() {
               <Route path="/paper" element={<PaperTrading />} />
               <Route path="/calendar" element={<Calendar />} />
               <Route path="/ranks" element={<Ranks />} />
+              <Route path="/groups" element={<StockGroups />} />
               <Route path="/ledger" element={<LotLedger />} />
               <Route path="/ledger/summary" element={<LedgerSummary />} />
               <Route path="/alert" element={<Alert />} />
