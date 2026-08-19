@@ -35,6 +35,20 @@ const MACRO_META: Record<string, { icon: string; up: string; down: string; note:
   },
 };
 
+/**
+ * 走備援來源的 ticker。
+ *
+ * 布蘭特的主要來源是 Yahoo 的 BZ=F 期貨（即時），Yahoo 掛掉時後端會退到 FRED 的
+ * 現貨離岸價 DCOILBRENTEU——那一支**落後兩三個工作天**，而且只有收盤價，
+ * 沒有前收就算不出漲跌、也沒有 52 週高低。
+ *
+ * 畫面一定要標出來：不標的話，使用者會把上週的油價當成現在的油價，
+ * 而卡片上除了日期之外看起來跟平常一模一樣。
+ */
+const FALLBACK_SYMBOLS: Record<string, string> = {
+  DCOILBRENTEU: '即時報價來源暫時取不到，這是 FRED 的現貨價，通常落後兩三個工作天',
+};
+
 /** 一個指標的卡片：現值、對前一收盤的變化，以及它落在 52 週區間的哪裡。 */
 export default function MacroCard({ item }: { item: MacroIndicator }) {
   const meta = MACRO_META[item.symbol];
@@ -74,6 +88,12 @@ export default function MacroCard({ item }: { item: MacroIndicator }) {
           </>
         )}
       </p>
+
+      {FALLBACK_SYMBOLS[item.symbol] && (
+        <p className="font-body-sm text-body-sm text-error">
+          ⚠️ {FALLBACK_SYMBOLS[item.symbol]}
+        </p>
+      )}
 
       <Range52Week item={item} />
 

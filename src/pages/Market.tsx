@@ -188,6 +188,12 @@ export default function Market() {
           會自動退回最近一個有資料的交易日；融資融券則是讀已經收集下來的資料，任何時候都看得到最近一天。
         </p>
 
+        {/* 國際區塊擺在台股前面：台股開盤前先看的是昨晚美股怎麼收、油價與 VIX
+            動到哪裡，那才是決定今天怎麼開的東西。而且這兩區各自打不同的上游、
+            自己失敗，不會被下面台股那幾區的載入狀態擋住。 */}
+        <WorldIndexSection />
+        <MacroSection />
+
         {loading && !latestTwse && <PageState kind="loading" />}
         {error && !loading && <PageState kind="error" message={error} onRetry={reloadAll} />}
 
@@ -656,8 +662,6 @@ export default function Market() {
           </div>
         </section>
 
-        <WorldIndexSection />
-        <MacroSection />
       </div>
     </>
   );
