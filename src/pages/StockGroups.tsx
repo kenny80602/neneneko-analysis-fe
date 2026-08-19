@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
 import { getGroupHeat } from '../api/groupHeat';
+import { getHoldings } from '../api/portfolio';
+import { getRealtimeQuote } from '../api/realtimeQuote';
 import { apiErrorMessage } from '../api/request';
 import {
   getGroupPeers,
@@ -9,7 +11,7 @@ import {
   removeStockGroup,
   saveStockGroup,
 } from '../api/stockGroup';
-import { GroupPeer, StockGroup } from '../api/types';
+import { GroupPeer, Holding, StockGroup } from '../api/types';
 import { useAsyncData } from '../hooks/useAsyncData';
 import {
   DASH,
@@ -64,42 +66,57 @@ export default function StockGroups() {
   );
 }
 
-/** 族群編輯中的原始字串。代號用一格文字輸入而不是逐個 chip：貼一整串是最常見的用法。 */
+/** 族群編輯中的草稿。 */
 interface GroupDraft {
   // 伺服器上的 id。空字串代表「還沒建的新族群」那一列。
   id: string;
   name: string;
-  symbolText: string;
+  // 成員代號，順序有意義（使用者可能刻意把龍頭放第一個），後端照原順序存。
+  symbols: string[];
   sortOrder: string;
 }
 
-const NEW_GROUP: GroupDraft = { id: '', name: '', symbolText: '', sortOrder: '' };
+const NEW_GROUP: GroupDraft = { id: '', name: '', symbols: [], sortOrder: '' };
 
 function toGroupDraft(group: StockGroup): GroupDraft {
   return {
     id: group.id,
     name: group.name,
-    symbolText: group.symbols.join(' '),
+    symbols: [...group.symbols],
     sortOrder: String(group.sort_order),
   };
 }
 
-/** 逗號、頓號、空白、換行都當分隔——貼上來的東西什麼格式都有。 */
+/**
+ * 逗號、頓號、空白、換行都當分隔。
+ *
+ * 成員改成一個一個挑之後仍然保留這個：從報告或聊天室貼一整串代號進來是最快的建群方式，
+ * 只支援單筆輸入等於把那個用法拿掉。
+ */
 function parseSymbols(text: string): string[] {
   const seen = new Set<string>();
   for (const raw of text.split(/[\s,，、;；]+/)) {
     const symbol = raw.trim().toUpperCase();
-    // 這裡不排序：使用者可能刻意把龍頭放第一個，後端也照原順序存。
     if (symbol) seen.add(symbol);
   }
   return Array.from(seen);
 }
 
+/** 一次貼太多檔時不要逐檔去問名稱：那是打 MIS 的，二十幾個請求會被限流。 */
+const NAME_LOOKUP_LIMIT = 8;
+
 /**
- * 族群的維護介面：新增、改成員、改排序、刪除，並可展開看成員到底是哪幾家公司。
+ * 族群的維護介面：新增、加減成員、改順序、改排序、刪除。
+ *
+ * 成員是一個一個的 chip 而不是一格文字：代號本身讀不出是哪一家公司，
+ * 「3324 8996 3017」要對著看盤軟體查三次才知道自己在編什麼。
  */
 function GroupPanel() {
   const groups = useAsyncData(() => getStockGroups(), []);
+  // 自選股清單只是拿來當代號→名稱的字典，順便給新增時的下拉建議。
+  // 族群成員不必在自選股裡，所以這份查不到的還要靠下面兩條路補。
+  const holdings = useAsyncData(() => getHoldings(), []);
+
   const [drafts, setDrafts] = useState<GroupDraft[]>([]);
   const [creating, setCreating] = useState<GroupDraft>(NEW_GROUP);
   const [busy, setBusy] = useState('');
@@ -107,6 +124,31 @@ function GroupPanel() {
   // 一次只展開一個族群。成員明細那一支會逐檔去問 Yahoo 的日 K（週漲跌幅那一欄），
   // 全部展開等於一次打好幾十檔，上游會回 429。
   const [openId, setOpenId] = useState('');
+
+  // 代號→名稱。三個來源疊上去，先到的不會被後到的蓋掉：
+  //   1. 自選股清單（一次請求，涵蓋清單內的檔）
+  //   2. 展開過的族群成員（peers 的名稱來自月營收，全市場都有）
+  //   3. 新加入一檔時去問一次即時報價
+  // 查不到就顯示代號本身，不擋任何操作——名稱只是幫忙確認，不是必要資料。
+  const [names, setNames] = useState<Record<string, string>>({});
+
+  const learnNames = useCallback((entries: { symbol: string; name: string }[]) => {
+    setNames((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const entry of entries) {
+        if (entry.name && !next[entry.symbol]) {
+          next[entry.symbol] = entry.name;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (holdings.data) learnNames(holdings.data);
+  }, [holdings.data, learnNames]);
 
   // 存檔後重抓，本地編輯一律以伺服器為準蓋回去。族群沒有「未儲存草稿」的需求，
   // 留著反而會出現「畫面上有但其實沒存到」。
@@ -117,11 +159,33 @@ function GroupPanel() {
   // 成員明細只問一檔：peers 那一支回的是「這一檔所屬的每一個族群，各自帶完整成員」，
   // 所以拿族群的第一個成員去問，就會拿回整個族群的名單，不必逐檔打。
   //
-  // 用伺服器上的成員而不是編輯中的草稿：草稿每打一個字都會變，那會變成邊打字邊打上游。
+  // 用伺服器上的成員而不是編輯中的草稿：草稿每加一檔都會變，那會變成邊編邊打上游。
   const openGroup = groups.data?.find((g) => g.id === openId);
   const seed = openGroup?.symbols[0] ?? '';
   const peers = useAsyncData(() => getGroupPeers(seed), [seed], { enabled: !!seed });
   const detail = peers.data?.find((entry) => entry.group.id === openId);
+
+  // 展開過的族群，名稱留在字典裡：收合之後 chip 上仍然看得到是哪幾家公司。
+  useEffect(() => {
+    for (const entry of peers.data ?? []) learnNames(entry.peers);
+  }, [peers.data, learnNames]);
+
+  /** 補查名稱。查不到（MIS 收盤後常掛）就維持只有代號，不視為錯誤。 */
+  const lookupNames = useCallback(
+    async (symbols: string[]) => {
+      const unknown = symbols.filter((symbol) => !names[symbol]).slice(0, NAME_LOOKUP_LIMIT);
+      for (const symbol of unknown) {
+        try {
+          const quote = await getRealtimeQuote(symbol);
+          // 後端沒查到會回 404（走 catch）；回了但沒有名稱就當作查不到。
+          if (quote?.name) learnNames([{ symbol: quote.symbol, name: quote.name }]);
+        } catch {
+          // 代號打錯、MIS 收盤後掛掉都會走到這裡。名稱是輔助資訊，不擋新增。
+        }
+      }
+    },
+    [names, learnNames]
+  );
 
   const patch = (id: string, next: Partial<GroupDraft>) =>
     setDrafts((prev) => prev.map((d) => (d.id === id ? { ...d, ...next } : d)));
@@ -142,7 +206,7 @@ function GroupPanel() {
     try {
       await saveStockGroup({
         name,
-        symbols: parseSymbols(draft.symbolText),
+        symbols: draft.symbols,
         sort_order: draft.sortOrder === '' ? 0 : Math.trunc(order),
       });
       if (isNew) setCreating(NEW_GROUP);
@@ -173,14 +237,35 @@ function GroupPanel() {
 
   /** 一個族群的編輯卡。新增用的那張除了按鈕文案與展開區之外長得一樣。 */
   const renderCard = (draft: GroupDraft, isNew: boolean) => {
-    const symbols = parseSymbols(draft.symbolText);
     const key = isNew ? '__new__' : draft.id;
     const isOpen = !isNew && openId === draft.id;
-    // 存檔前後的成員可能不一樣，展開區顯示的一律是伺服器上的那一份。
     const saved = groups.data?.find((g) => g.id === draft.id);
-    const dirty = !isNew && saved != null && saved.symbols.join(' ') !== symbols.join(' ');
+    // 存檔前後的成員可能不一樣，展開區顯示的一律是伺服器上的那一份。
+    const dirty = !isNew && saved != null && saved.symbols.join(' ') !== draft.symbols.join(' ');
+    // 名稱就是後端的鍵，改名會建出另一個族群而不是改名。在按下儲存之前就要講。
+    const renaming = !isNew && saved != null && saved.name !== draft.name.trim();
+
     const update = (next: Partial<GroupDraft>) =>
       isNew ? setCreating((prev) => ({ ...prev, ...next })) : patch(draft.id, next);
+
+    const addSymbols = (text: string) => {
+      const incoming = parseSymbols(text).filter((symbol) => !draft.symbols.includes(symbol));
+      if (incoming.length === 0) return;
+      update({ symbols: [...draft.symbols, ...incoming] });
+      void lookupNames(incoming);
+    };
+
+    const removeSymbol = (symbol: string) =>
+      update({ symbols: draft.symbols.filter((s) => s !== symbol) });
+
+    /** 往前或往後挪一格。順序有意義：使用者可能刻意把龍頭放第一個。 */
+    const moveSymbol = (index: number, delta: number) => {
+      const target = index + delta;
+      if (target < 0 || target >= draft.symbols.length) return;
+      const next = [...draft.symbols];
+      [next[index], next[target]] = [next[target], next[index]];
+      update({ symbols: next });
+    };
 
     return (
       <div
@@ -203,17 +288,6 @@ function GroupPanel() {
               className={`${inputClass} w-40`}
             />
           </label>
-          <label className="flex flex-col gap-1 flex-1 min-w-[16rem]">
-            <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">
-              成員代號
-            </span>
-            <input
-              value={draft.symbolText}
-              onChange={(event) => update({ symbolText: event.target.value })}
-              placeholder="3324 8996 3017"
-              className={`${inputClass} w-full font-data-md text-data-md`}
-            />
-          </label>
           <label className="flex flex-col gap-1">
             <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">
               排序
@@ -223,27 +297,28 @@ function GroupPanel() {
               onChange={(event) => update({ sortOrder: event.target.value })}
               inputMode="numeric"
               placeholder="0"
+              title="小的排前面"
               className={`${inputClass} w-20 font-data-md text-data-md text-right`}
             />
           </label>
-          <span className="inline-flex gap-2 pb-0.5">
+          <span className="inline-flex gap-2 pb-0.5 ml-auto">
             <button
               type="button"
               onClick={() => save(draft, isNew)}
               disabled={busy !== ''}
               className="px-3 py-1.5 bg-primary rounded text-on-primary font-body-sm text-body-sm hover:bg-primary-container transition-colors disabled:opacity-40"
             >
-              {busy === key ? '儲存中…' : isNew ? '新增' : '儲存'}
+              {busy === key ? '儲存中…' : isNew ? '新增族群' : '儲存'}
             </button>
             {!isNew && (
               <>
                 <button
                   type="button"
                   onClick={() => setOpenId(isOpen ? '' : draft.id)}
-                  disabled={symbols.length === 0}
+                  disabled={draft.symbols.length === 0}
                   className="px-3 py-1.5 bg-surface border border-outline-variant rounded text-primary font-body-sm text-body-sm hover:bg-surface-container-low transition-colors disabled:opacity-40"
                 >
-                  {isOpen ? '收合成員' : '看成員'}
+                  {isOpen ? '收合明細' : '看營收與漲跌'}
                 </button>
                 <button
                   type="button"
@@ -258,39 +333,55 @@ function GroupPanel() {
           </span>
         </div>
 
-        {/* 把解析結果攤開，才知道貼進去那一串真的被拆成幾檔。 */}
-        <p className="font-body-sm text-body-sm text-on-surface-variant flex flex-wrap items-center gap-1.5">
-          {symbols.length === 0 ? (
-            <span className="text-outline">
-              還沒有成員。逗號、空白、換行都可以當分隔，直接貼一整串進來就行。
-            </span>
+        {renaming && (
+          <p className="font-body-sm text-body-sm text-error">
+            名稱就是後端的鍵，改名會<span className="font-semibold">另外建一個族群</span>
+            （原本的「{saved?.name}」還會留著，要自己刪）。只是想改成員的話，把名稱改回去。
+          </p>
+        )}
+
+        <div className="flex flex-col gap-1.5">
+          <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">
+            成員（{draft.symbols.length} 檔，順序就是顯示順序）
+          </span>
+
+          {draft.symbols.length === 0 ? (
+            <p className="font-body-sm text-body-sm text-outline">
+              還沒有成員。用下面的搜尋框一檔一檔加，或直接把一整串代號貼進去。
+            </p>
           ) : (
-            <>
-              <span>{symbols.length} 檔：</span>
-              {symbols.map((symbol) => (
-                <span
+            <div className="flex flex-wrap gap-1.5">
+              {draft.symbols.map((symbol, index) => (
+                <MemberChip
                   key={symbol}
-                  className="px-2 py-0.5 rounded bg-surface-container-low border border-outline-variant font-data-md text-data-md text-on-surface"
-                >
-                  {symbol}
-                </span>
+                  symbol={symbol}
+                  name={names[symbol] ?? ''}
+                  first={index === 0}
+                  last={index === draft.symbols.length - 1}
+                  onMove={(delta) => moveSymbol(index, delta)}
+                  onRemove={() => removeSymbol(symbol)}
+                />
               ))}
-            </>
+            </div>
           )}
-        </p>
+
+          <MemberInput
+            exclude={draft.symbols}
+            options={holdings.data ?? []}
+            onAdd={addSymbols}
+          />
+        </div>
 
         {isOpen && (
           <div className="flex flex-col gap-stack-sm border-t border-outline-variant pt-3">
             {dirty && (
               <p className="font-body-sm text-body-sm text-error">
                 下面列的是<span className="font-semibold">已儲存</span>
-                的成員。剛剛改的還沒送出，按「儲存」之後才會反映。
+                的成員。剛剛加減的還沒送出，按「儲存」之後才會反映。
               </p>
             )}
             {peers.loading && <PageState kind="loading" message="查成員資料中…" />}
-            {peers.error && (
-              <PageState kind="error" message={peers.error} onRetry={peers.reload} />
-            )}
+            {peers.error && <PageState kind="error" message={peers.error} onRetry={peers.reload} />}
             {!peers.loading && !peers.error && !detail && (
               <PageState
                 kind="empty"
@@ -315,11 +406,12 @@ function GroupPanel() {
 
       <p className="font-body-sm text-body-sm text-on-surface-variant">
         <span className="text-on-surface font-semibold">成員不必在自選股裡</span>
-        ——台勝科不在清單也該出現在矽晶圓族群。這種成員只比得了月營收（那是唯一涵蓋全市場的數字，
-        1,900 多家），收盤價、法人、融資券只收自選股，展開後會標「非自選股」。
+        ——台勝科不在清單也該出現在矽晶圓族群，搜尋框裡打代號按 Enter 就能加。這種成員只比得了
+        月營收（那是唯一涵蓋全市場的數字，1,900 多家），收盤價、法人、融資券只收自選股，
+        展開明細後會標「非自選股」。
         <span className="text-on-surface font-semibold">一檔可以屬於多個族群</span>
-        ，中美晶同時是矽晶圓與太陽能，直接把它加進兩個族群就好。 排序小的排前面。名稱就是鍵，
-        <span className="text-on-surface">改名等於另外建一個</span>，舊的要自己刪掉。
+        ，中美晶同時是矽晶圓與太陽能，加進兩個族群就好。
+        成員的順序會照原樣存下來，龍頭想擺第一個就用箭頭挪。
       </p>
 
       {groups.loading && <PageState kind="loading" />}
@@ -331,12 +423,169 @@ function GroupPanel() {
             <PageState
               kind="empty"
               message="還沒建過任何族群"
-              hint="空的很正常，這一份完全靠自己維護。從下面那張卡開始，例如名稱填「散熱」、成員填 3324 8996 3017。"
+              hint="空的很正常，這一份完全靠自己維護。從下面那張卡開始，例如名稱填「散熱」，再把 3324、8996、3017 加進去。"
             />
           )}
           {drafts.map((draft) => renderCard(draft, false))}
           {renderCard(creating, true)}
         </>
+      )}
+    </div>
+  );
+}
+
+/** 一個成員。名稱查不到時只顯示代號——那多半代表代號打錯，或 MIS 收盤後掛了。 */
+function MemberChip({
+  symbol,
+  name,
+  first,
+  last,
+  onMove,
+  onRemove,
+}: {
+  symbol: string;
+  name: string;
+  first: boolean;
+  last: boolean;
+  onMove: (delta: number) => void;
+  onRemove: () => void;
+}) {
+  const arrowClass =
+    'p-0.5 rounded text-outline hover:text-primary hover:bg-surface-container transition-colors disabled:opacity-30 disabled:hover:text-outline disabled:hover:bg-transparent';
+
+  return (
+    <span className="inline-flex items-center gap-1 pl-2 pr-1 py-1 rounded-lg bg-surface-container-low border border-outline-variant">
+      <span className="font-data-md text-data-md text-on-surface">{symbol}</span>
+      <span className="font-body-sm text-body-sm text-on-surface-variant max-w-[8rem] truncate">
+        {name || '查不到名稱'}
+      </span>
+      <button
+        type="button"
+        onClick={() => onMove(-1)}
+        disabled={first}
+        title="往前挪"
+        className={arrowClass}
+      >
+        <span className="material-symbols-outlined text-[16px]">chevron_left</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => onMove(1)}
+        disabled={last}
+        title="往後挪"
+        className={arrowClass}
+      >
+        <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+      </button>
+      <button
+        type="button"
+        onClick={onRemove}
+        title={`移除 ${symbol}`}
+        className="p-0.5 rounded text-outline hover:text-error hover:bg-surface-container transition-colors"
+      >
+        <span className="material-symbols-outlined text-[16px]">close</span>
+      </button>
+    </span>
+  );
+}
+
+/**
+ * 加成員：從自選股挑，或直接打代號。
+ *
+ * 兩種並存的理由同 SymbolPicker：清單裡的用選的（有名稱可以確認），
+ * 不在清單裡的直接打——族群正是拿來找還沒買的同類股的，只讓選自選股等於做不了事。
+ */
+function MemberInput({
+  exclude,
+  options,
+  onAdd,
+}: {
+  exclude: string[];
+  options: Holding[];
+  onAdd: (text: string) => void;
+}) {
+  const [text, setText] = useState('');
+  const [open, setOpen] = useState(false);
+
+  const keyword = text.trim().toLowerCase();
+  // 代號與名稱都能比對：記得「聯發科」但想不起 2454 的情況比想像中常見。
+  const matches = options
+    .filter((row) => !exclude.includes(row.symbol))
+    .filter(
+      (row) =>
+        !keyword ||
+        row.symbol.toLowerCase().includes(keyword) ||
+        row.name.toLowerCase().includes(keyword)
+    )
+    .slice(0, 6);
+
+  const commit = (value: string) => {
+    if (!value.trim()) return;
+    onAdd(value);
+    setText('');
+    setOpen(false);
+  };
+
+  return (
+    <div className="relative">
+      <div className="flex items-center gap-stack-sm">
+        <div className="relative">
+          <span className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-outline text-[18px] pointer-events-none">
+            search
+          </span>
+          <input
+            value={text}
+            onChange={(event) => {
+              setText(event.target.value);
+              setOpen(true);
+            }}
+            onFocus={() => setOpen(true)}
+            // 失焦要晚一點關，否則點下拉那一列時會先關掉、點不到。
+            onBlur={() => window.setTimeout(() => setOpen(false), 150)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                commit(text);
+              }
+              if (event.key === 'Escape') setOpen(false);
+            }}
+            placeholder="加成員：打代號或名稱，也可以貼一整串"
+            className={`${inputClass} w-72 pl-8 font-data-md text-data-md`}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => commit(text)}
+          disabled={!text.trim()}
+          className="px-3 py-1.5 bg-surface border border-outline-variant rounded text-primary font-body-sm text-body-sm hover:bg-surface-container-low transition-colors disabled:opacity-40"
+        >
+          加入
+        </button>
+      </div>
+
+      {open && matches.length > 0 && (
+        <ul className="absolute left-0 top-full mt-1 z-40 w-72 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-lg overflow-hidden">
+          <li className="px-3 py-2 font-label-caps text-label-caps uppercase text-on-surface-variant bg-surface-container-low border-b border-outline-variant">
+            自選股
+          </li>
+          {matches.map((row) => (
+            <li key={row.symbol}>
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => commit(row.symbol)}
+                className="w-full flex items-baseline gap-2 px-3 py-2 text-left hover:bg-surface-container-low transition-colors"
+              >
+                <span className="font-data-md text-data-md text-primary font-bold">
+                  {row.symbol}
+                </span>
+                <span className="font-body-sm text-body-sm text-on-surface-variant truncate">
+                  {row.name}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
