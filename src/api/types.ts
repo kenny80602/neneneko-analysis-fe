@@ -1541,6 +1541,40 @@ export interface FOMCSchedule {
   source: string;
 }
 
+// ===== 世界股市指數（/markets/indices）=====
+//
+// 日股、韓股、美股的收盤看板。台股開盤前最想知道的就是這一組。
+//
+// ⚠️ 這是**收盤值不是即時報價**，而且三個市場的日期本來就不同步：台北時間週三下午
+// 看這個看板，日韓是週三收盤、美股是週二收盤——那是正確的，不是漏收。
+// 所以每一列的 date 一定要顯示出來。
+
+/** 市場別。美國有三支指數，所以這個值會重複出現。 */
+export type WorldMarket = 'JP' | 'KR' | 'US';
+
+export interface WorldIndex {
+  market: WorldMarket | string;
+  // 上游的 ticker，例如 ^N225。留著讓人能自己去對一次價。
+  symbol: string;
+  name: string;
+
+  close: number;
+  // 只收到一根日 K 時是 null。
+  //
+  // null 代表「算不出來」不是 0——顯示成 0.00% 會被讀成「今天平盤」。
+  previous_close: number | null;
+  change: number | null;
+  change_percent: number | null;
+
+  // 這一筆是哪一個交易日的收盤，YYYY-MM-DD。⚠️ 必須顯示，見上面的說明。
+  date: string;
+}
+
+export interface WorldIndices {
+  count: number;
+  items: WorldIndex[];
+}
+
 // ===== 展覽檔期（/stocks/exhibitions）=====
 //
 // 台灣的大型專業展：半導體、電腦、機器人、顯示。兩個上游合併（南港展覽館的展會 API

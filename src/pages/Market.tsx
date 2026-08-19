@@ -5,6 +5,7 @@ import PageState from '../components/PageState';
 import MacroCard from '../components/MacroIndicatorCard';
 import StatCard from '../components/StatCard';
 import { getMacroIndicators } from '../api/macroIndicators';
+import { getWorldIndices } from '../api/worldIndex';
 import { getMarketMarginSummaries } from '../api/margin';
 import { getTPExMarketHighlight, getTPExPriceAdvanced, getTPExPriceDeclined } from '../api/tpex';
 import {
@@ -13,7 +14,7 @@ import {
   getTWSEMarketTradings,
   getTWSEVolumeRanks,
 } from '../api/twse';
-import { MarketMarginSummary, TWSEVolumeRank } from '../api/types';
+import { MarketMarginSummary, TWSEVolumeRank, WorldIndex } from '../api/types';
 import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
 import {
@@ -655,9 +656,133 @@ export default function Market() {
           </div>
         </section>
 
+        <WorldIndexSection />
         <MacroSection />
       </div>
     </>
+  );
+}
+
+/** 市場別的中文與顯示順序。對不到的照原碼顯示，不要因為沒翻譯就藏起來。 */
+const WORLD_MARKETS: { code: string; label: string; note: string }[] = [
+  { code: 'US', label: '美股', note: '台股開盤前最先看的一組。收盤時台灣是清晨。' },
+  { code: 'JP', label: '日股', note: '跟台股同一個時區，盤中走勢常常同向。' },
+  { code: 'KR', label: '韓股', note: '半導體權重高，跟台股的產業結構最接近。' },
+];
+
+/**
+ * 世界股市指數：日股、韓股、美股。
+ *
+ * 擺在台股各區塊之後而不是最上面：這一頁的主角是台股，這一區是背景。
+ * 但它是**開盤前**最常被問的一組，所以放在同一頁而不是另開一頁。
+ *
+ * ⚠️ 三個市場的資料日期本來就不同步（美股慢一天），所以日期標在每一張卡上，
+ * 不做成整區一個「資料日期」——那會謊報其中兩個。
+ */
+function WorldIndexSection() {
+  // 不輪詢：收的是每日排程落地的日 K，一天只變一次。
+  const { data, loading, error, reload } = useAsyncData(() => getWorldIndices(), []);
+  const items = data?.items ?? [];
+
+  return (
+    <section className="flex flex-col gap-stack-md">
+      <div className="flex flex-wrap items-baseline justify-between gap-stack-sm">
+        <h2 className="font-headline-md text-headline-md text-primary">世界股市</h2>
+        <button
+          type="button"
+          onClick={reload}
+          className="flex items-center justify-center gap-2 px-3 py-1.5 bg-surface border border-outline-variant rounded text-primary font-body-sm text-body-sm hover:bg-surface-container-low transition-colors"
+        >
+          <span className="material-symbols-outlined text-[18px]">refresh</span>
+          重新整理
+        </button>
+      </div>
+
+      <p className="font-body-sm text-body-sm text-on-surface-variant">
+        <span className="text-on-surface font-semibold">收盤值，不是即時報價</span>
+        ，而且三個市場的日期本來就不同步——台北週三下午看到的是日韓週三收盤、
+        <span className="text-on-surface font-semibold">美股週二收盤</span>
+        ，那是正確的不是漏收，所以日期標在每一張卡上。漲跌沿用台股慣例的漲紅跌綠。
+      </p>
+
+      {loading && <PageState kind="loading" />}
+      {error && !loading && <PageState kind="error" message={error} onRetry={reload} />}
+
+      {!loading && !error && items.length === 0 && (
+        <PageState
+          kind="empty"
+          message="還沒有世界指數的資料"
+          hint="這一份靠每日排程收，還沒跑過就會是空的。跟「今天沒有行情」是兩回事。"
+        />
+      )}
+
+      {items.length > 0 && (
+        <div className="flex flex-col gap-stack-md">
+          {WORLD_MARKETS.map((market) => {
+            const rows = items.filter((item) => item.market === market.code);
+            if (rows.length === 0) return null;
+            return (
+              <div key={market.code} className="flex flex-col gap-stack-sm">
+                <p className="font-label-caps text-label-caps text-on-surface-variant uppercase">
+                  {market.label}
+                  <span className="ml-2 normal-case font-body-sm text-body-sm text-outline">
+                    {market.note}
+                  </span>
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-stack-md">
+                  {rows.map((item) => (
+                    <WorldIndexCard key={item.symbol} item={item} />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* 後端多回一個沒對照到的市場時照樣顯示，不要讓它消失。 */}
+          {(() => {
+            const known = WORLD_MARKETS.map((m) => m.code);
+            const rest = items.filter((item) => !known.includes(item.market));
+            if (rest.length === 0) return null;
+            return (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-stack-md">
+                {rest.map((item) => (
+                  <WorldIndexCard key={item.symbol} item={item} />
+                ))}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** 一支指數。 */
+function WorldIndexCard({ item }: { item: WorldIndex }) {
+  return (
+    <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-4 shadow-sm flex flex-col gap-1">
+      <div className="flex items-baseline gap-2">
+        <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">
+          {item.name}
+        </span>
+        <span className="ml-auto font-data-md text-data-md text-outline">{item.symbol}</span>
+      </div>
+
+      <p className="font-data-lg text-data-lg text-on-surface">{formatNumber(item.close, 2)}</p>
+
+      {/* change 為 null 代表只收到一根日 K，算不出來——不是平盤，所以不顯示 0.00%。 */}
+      <p className={`font-body-md text-body-md ${quoteColor(item.change_percent)}`}>
+        {item.change == null ? (
+          <span className="text-on-surface-variant">沒有前一個收盤可以比</span>
+        ) : (
+          <>
+            {formatSigned(item.change, 2)}（{formatSignedPercent(item.change_percent)}）
+          </>
+        )}
+      </p>
+
+      <p className="font-body-sm text-body-sm text-outline">{item.date || DASH} 收盤</p>
+    </div>
   );
 }
 
