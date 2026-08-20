@@ -1,4 +1,6 @@
 import { useMemo } from 'react';
+import ChartControls from './ChartControls';
+import { useChartViewport } from '../hooks/useChartViewport';
 import { DASH, formatNumber } from '../utils/format';
 
 /**
@@ -96,14 +98,32 @@ export default function TrendChart({
   invert = false,
   digits: fixedDigits,
 }: TrendChartProps) {
+  const total = series[0]?.points.length ?? 0;
+  const viewport = useChartViewport(total);
+  const { start, count } = viewport;
+
+  // 只把可視範圍丟進座標運算，Y 軸跟著重算。
+  //
+  // 不這樣做的話「放大」只是把同一條扁平的線橫向拉開：整段的最高最低仍然決定 Y 軸級距，
+  // 而使用者放大就是為了看那一段自己的起伏。代價是縱軸會隨著平移跳動，圖例的數字
+  // 也只算可視範圍——那正是「現在看的是這一段」該有的行為。
+  const visible = useMemo(
+    () => series.map((s) => ({ ...s, points: s.points.slice(start, start + count) })),
+    [series, start, count]
+  );
+  const visibleBars = useMemo(
+    () => (bars ? { ...bars, points: bars.points.slice(start, start + count) } : undefined),
+    [bars, start, count]
+  );
+
   const scale = useMemo(() => {
     const values: number[] = [];
-    series.forEach((s) =>
+    visible.forEach((s) =>
       s.points.forEach((p) => {
         if (p.value != null && Number.isFinite(p.value)) values.push(p.value);
       })
     );
-    bars?.points.forEach((p) => {
+    visibleBars?.points.forEach((p) => {
       if (p.value != null && Number.isFinite(p.value)) values.push(p.value);
     });
     references?.forEach((r) => {
@@ -114,7 +134,7 @@ export default function TrendChart({
     let min = Math.min(...values);
     let max = Math.max(...values);
     // 柱狀圖一定要含 0，否則「零軸」會落在圖外，柱子的長短失去意義。
-    if (mode === 'bar' || bars) {
+    if (mode === 'bar' || visibleBars) {
       min = Math.min(min, 0);
       max = Math.max(max, 0);
     }
@@ -130,24 +150,42 @@ export default function TrendChart({
         ? TOP + ((value - min) / span) * (BOTTOM - TOP)
         : BOTTOM - ((value - min) / span) * (BOTTOM - TOP);
     return { min, max, span, y, zero: y(0) };
-  }, [series, bars, references, mode, invert]);
+  }, [visible, visibleBars, references, mode, invert]);
 
-  const length = series[0]?.points.length ?? 0;
+  const length = visible[0]?.points.length ?? 0;
   // 有幾天真的有值。少於兩天畫不出走勢——一個點的折線圖只是一個孤立的圓，
   // 柱狀圖則是一根佔滿版面的柱子，兩種都會讓人誤以為「就是這樣」。
   const dated = useMemo(
-    () => new Set(series.flatMap((s) => s.points.filter((p) => p.value != null).map((p) => p.date))),
-    [series]
+    () =>
+      new Set(visible.flatMap((s) => s.points.filter((p) => p.value != null).map((p) => p.date))),
+    [visible]
   );
 
-  if (!scale || length === 0) return null;
+  if (total === 0) return null;
 
-  if (dated.size < 2) {
+  // x 軸標籤只到月／日：完整日期在這個字級下會互相疊到。
+  const axisDate = (date: string) => date.slice(5).replace('-', '/');
+  const rangeLabel =
+    length > 0
+      ? `${axisDate(visible[0].points[0].date)} ～ ${axisDate(
+          visible[0].points[length - 1].date
+        )}`
+      : undefined;
+
+  if (!scale || dated.size < 2) {
+    // 控制列照樣顯示。放大到一段全是 null 的區間時如果連按鈕都消失，
+    // 使用者就沒有路回到看得見資料的地方了。
     return (
-      <p className="font-body-sm text-body-sm text-on-surface-variant">
-        目前只有 {dated.size} 天的資料，畫不出走勢。這一類資料只能每天收集、無法回補歷史，
-        要等排程多跑幾天才會有線。
-      </p>
+      <div className="flex flex-col gap-stack-sm">
+        <div className="flex justify-end">
+          <ChartControls viewport={viewport} rangeLabel={rangeLabel} />
+        </div>
+        <p className="font-body-sm text-body-sm text-on-surface-variant">
+          {viewport.zoomed
+            ? '這一段裡有值的點不到兩個，畫不出走勢。按「重設範圍」回到全部，或往左右移看看。'
+            : `目前只有 ${dated.size} 天的資料，畫不出走勢。這一類資料只能每天收集、無法回補歷史，要等排程多跑幾天才會有線。`}
+        </p>
+      </div>
     );
   }
 
@@ -166,7 +204,7 @@ export default function TrendChart({
   return (
     <div className="flex flex-col gap-stack-sm">
       <div className="flex flex-wrap items-center gap-stack-md">
-        {series.map((s) => (
+        {visible.map((s) => (
           <span key={s.label} className="flex items-center gap-1.5">
             {mode === 'line' && (
               <svg width="20" height="6" aria-hidden="true">
@@ -191,30 +229,41 @@ export default function TrendChart({
             </span>
           </span>
         ))}
-        {bars && (
+        {visibleBars && (
           <span className="flex items-center gap-1.5">
             {/* 柱子是兩種顏色，圖例也畫兩塊，只畫一塊會被當成「柱子都是這個色」。 */}
             <svg width="20" height="8" aria-hidden="true">
               <rect x="0" y="0" width="9" height="8" className="fill-quote-up" />
               <rect x="11" y="0" width="9" height="8" className="fill-quote-down" />
             </svg>
-            <span className="font-body-sm text-body-sm text-on-surface-variant">{bars.label}</span>
+            <span className="font-body-sm text-body-sm text-on-surface-variant">
+              {visibleBars.label}
+            </span>
             <span className="font-data-md text-data-md text-on-surface">
               {(() => {
-                const last = [...bars.points].reverse().find((p) => p.value != null);
+                const last = [...visibleBars.points].reverse().find((p) => p.value != null);
                 return last?.value == null ? DASH : formatNumber(last.value, digits);
               })()}
             </span>
           </span>
         )}
         {unit && <span className="font-body-sm text-body-sm text-outline">單位：{unit}</span>}
+        <div className="ml-auto">
+          <ChartControls viewport={viewport} rangeLabel={rangeLabel} />
+        </div>
       </div>
 
+      <div
+        {...viewport.containerProps}
+        className={viewport.pannable ? 'cursor-grab active:cursor-grabbing' : undefined}
+      >
       <svg
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        className="w-full h-auto"
+        className="w-full h-auto select-none"
         role="img"
-        aria-label={series.map((s) => s.label).join('、') + '走勢圖'}
+        aria-label={`${visible.map((s) => s.label).join('、')}走勢圖${
+          rangeLabel ? `（${rangeLabel}）` : ''
+        }`}
       >
         {gridValues.map((value) => (
           <g key={value}>
@@ -264,7 +313,7 @@ export default function TrendChart({
         ))}
 
         {/* 疊在折線底下的柱狀圖。 */}
-        {bars?.points.map((point, index) => {
+        {visibleBars?.points.map((point, index) => {
           if (point.value == null) return null;
           const barWidth = Math.max(1.5, (PLOT_WIDTH / length) * 0.6);
           const top = Math.min(scale.y(point.value), scale.zero);
@@ -296,7 +345,7 @@ export default function TrendChart({
         )}
 
         {mode === 'bar'
-          ? series[0].points.map((point, index) => {
+          ? visible[0].points.map((point, index) => {
               if (point.value == null) return null;
               const barWidth = Math.max(1.5, (PLOT_WIDTH / length) * 0.6);
               const top = Math.min(scale.y(point.value), scale.zero);
@@ -313,7 +362,7 @@ export default function TrendChart({
                 />
               );
             })
-          : series.map((s) => {
+          : visible.map((s) => {
               // 遇到 null 就斷線，不要跨過去連成一條——那會憑空畫出不存在的走勢。
               const segments: string[] = [];
               let current: string[] = [];
@@ -338,7 +387,7 @@ export default function TrendChart({
               ));
             })}
 
-        {series[0].points.map((point, index) =>
+        {visible[0].points.map((point, index) =>
           index % labelStep === 0 || index === length - 1 ? (
             <text
               key={point.date}
@@ -348,11 +397,12 @@ export default function TrendChart({
               className="fill-outline"
               fontSize="12"
             >
-              {point.date.slice(5).replace('-', '/')}
+              {axisDate(point.date)}
             </text>
           ) : null
         )}
       </svg>
+      </div>
 
       {footnote && (
         <p className="font-body-sm text-body-sm text-on-surface-variant">{footnote}</p>

@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
+import ChartControls from './ChartControls';
 import { DailyQuote } from '../api/types';
+import { useChartViewport } from '../hooks/useChartViewport';
 import { CandleInterval, movingAverage, toCandles } from '../utils/chart';
 import { formatNumber, formatPrice, formatShareToLot } from '../utils/format';
 
@@ -23,8 +25,10 @@ const RIGHT_GUTTER = 80;
 const PLOT_WIDTH = WIDTH - LEFT - RIGHT_GUTTER;
 const GRID_LINES = 5;
 
-// 每個週期顯示幾根 K。再多會擠成一片黑，而落地的收盤行情本來就不長
+// 每個週期**預設**顯示幾根 K。再多會擠成一片黑，而落地的收盤行情本來就不長
 // （只有自選股、且從開始收集那天才有），設計稿的「年線」湊不出幾根，先不做。
+//
+// 這只是進來時的視窗，不是上限：縮小或拖曳看得到更早的資料，資料有多長就能看多長。
 const VISIBLE_CANDLES: Record<CandleInterval, number> = { day: 120, week: 104, month: 36 };
 
 const INTERVALS: { key: CandleInterval; label: string }[] = [
@@ -61,18 +65,22 @@ export default function PriceChart({ quotes }: PriceChartProps) {
 
   const candles = useMemo(() => toCandles(quotes, interval), [quotes, interval]);
 
+  const viewport = useChartViewport(candles.length, VISIBLE_CANDLES[interval]);
+  const { start, count } = viewport;
+
   // 均線先用全部資料算，再跟著 K 棒一起裁切；只算可見範圍的話，
-  // 左邊界那幾根會因為「前面沒有資料」而斷掉一截。
+  // 左邊界那幾根會因為「前面沒有資料」而斷掉一截——放大之後這件事更明顯，
+  // 所以裁切一定要在算完之後做。
   const series = useMemo(() => {
-    const start = Math.max(0, candles.length - VISIBLE_CANDLES[interval]);
+    const end = start + count;
     return {
-      view: candles.slice(start),
+      view: candles.slice(start, end),
       averages: MA_SERIES.map((ma) => ({
         ...ma,
-        values: movingAverage(candles, ma.period).slice(start),
+        values: movingAverage(candles, ma.period).slice(start, end),
       })),
     };
-  }, [candles, interval]);
+  }, [candles, start, count]);
 
   const { view, averages } = series;
 
@@ -140,7 +148,19 @@ export default function PriceChart({ quotes }: PriceChartProps) {
           <span className="material-symbols-outlined text-[20px]">show_chart</span>
           價格走勢
         </h3>
-        <div className="flex gap-1 bg-surface-container-low p-1 rounded-xl border border-outline-variant">
+        <div className="flex flex-wrap items-center gap-stack-sm">
+          <ChartControls
+            viewport={viewport}
+            rangeLabel={
+              view.length > 0
+                ? `${axisLabel(view[0].date, interval)} ～ ${axisLabel(
+                    view[view.length - 1].date,
+                    interval
+                  )}`
+                : undefined
+            }
+          />
+          <div className="flex gap-1 bg-surface-container-low p-1 rounded-xl border border-outline-variant">
           {INTERVALS.map((item) => (
             <button
               key={item.key}
@@ -152,6 +172,7 @@ export default function PriceChart({ quotes }: PriceChartProps) {
               {item.label}
             </button>
           ))}
+          </div>
         </div>
       </div>
 
@@ -178,11 +199,15 @@ export default function PriceChart({ quotes }: PriceChartProps) {
         })}
       </div>
 
+      <div
+        {...viewport.containerProps}
+        className={viewport.pannable ? 'cursor-grab active:cursor-grabbing' : undefined}
+      >
       <svg
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        className="w-full h-auto"
+        className="w-full h-auto select-none"
         role="img"
-        aria-label={`最近 ${view.length} 根${INTERVALS.find((i) => i.key === interval)?.label} K 棒與成交量`}
+        aria-label={`${view.length} 根${INTERVALS.find((i) => i.key === interval)?.label} K 棒與成交量，共 ${candles.length} 根`}
       >
         {gridValues.map((value) => (
           <g key={value}>
@@ -307,6 +332,7 @@ export default function PriceChart({ quotes }: PriceChartProps) {
           ) : null
         )}
       </svg>
+      </div>
 
       <p className="font-body-sm text-body-sm text-on-surface-variant">
         K 棒紅綠比的是收盤與開盤（漲紅跌綠），均線以目前顯示的週期計算——週線的 MA5 是五週均線。
