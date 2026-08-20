@@ -203,7 +203,7 @@ export default function Calendar() {
         subtitle={
           data
             ? `${formatDate(data.from)} ～ ${formatDate(data.to)}．休市、結算、除權息、法說會、Fed 決策`
-            : '休市與結算日、除權除息、法人說明會、財報申報期限、Fed 決策與展覽檔期'
+            : '休市與結算日、除權除息、法人說明會、財報申報期限、Fed 決策與半導體展檔期'
         }
         right={
           <>
@@ -354,7 +354,7 @@ export default function Calendar() {
             {/* ── 法人說明會 ── */}
             <ConferenceSection rows={data.conferences} watchlist={data.watchlist} />
 
-            {/* ── 展覽檔期 ── */}
+            {/* ── 半導體展檔期 ── */}
             <ExhibitionSection />
           </>
         )}
@@ -562,15 +562,6 @@ const EXHIBITION_CATEGORY_LABEL: Record<string, string> = {
   other: '其他',
 };
 
-/** 篩選鈕。value 為空字串代表不篩。 */
-const EXHIBITION_FILTERS = [
-  { label: '全部', value: '' },
-  { label: '半導體', value: 'semiconductor' },
-  { label: '機器人', value: 'robot' },
-  { label: '電腦', value: 'computer' },
-  { label: '顯示器', value: 'display' },
-];
-
 const EXHIBITION_STATUS: Record<Exhibition['status'], { label: string; className: string }> = {
   ONGOING: { label: '展期中', className: 'bg-error-container/40 text-error' },
   SCHEDULED: { label: '尚未開展', className: 'bg-primary-container/40 text-primary' },
@@ -578,53 +569,37 @@ const EXHIBITION_STATUS: Record<Exhibition['status'], { label: string; className
 };
 
 /**
- * 展覽檔期。
+ * 半導體展檔期。
  *
- * 為什麼一個看台股的站要列展覽：半導體展、自動化展、COMPUTEX 前後是相關族群最常
- * 被提起的時候，展前拉貨與展中發表都會反映在報價上。它回答的是「什麼時候會有題材」，
+ * 為什麼一個看台股的站要列展覽：半導體展前後是相關族群最常被提起的時候，
+ * 展前拉貨與展中發表都會反映在報價上。它回答的是「什麼時候會有題材」，
  * 跟上面那張「哪天不能交易」是兩件事，所以獨立一塊而不是併進時間軸。
  *
  * 也因此**刻意不吃頁面上方的區間**：大型展一年就那幾檔，卡在 30 天的區間裡多半
  * 一檔都看不到，而使用者問「今年半導體展什麼時候」時要的是下一檔，不是這個月有沒有。
+ *
+ * 端點吃得到 computer／robot／display／other，這裡**固定只要 semiconductor**：
+ * 這個站看的是台股題材，其餘幾類跟自選股的關聯遠得多，全列出來會把真正想看的那幾檔推下去。
+ * 要放寬就把 category 改成逗號分隔的多值，後端本來就支援。
  */
 function ExhibitionSection() {
-  const [category, setCategory] = useState('');
   const { data, loading, error, reload } = useAsyncData(
-    () => getExhibitions({ category: category || undefined }),
-    [category]
+    () => getExhibitions({ category: 'semiconductor' }),
+    []
   );
   const items = data?.items ?? [];
 
   return (
     <section className="flex flex-col gap-stack-md">
-      <div className="flex flex-wrap items-baseline justify-between gap-stack-sm">
-        <h2 className="font-headline-md text-headline-md text-primary">
-          展覽檔期（{items.length} 檔）
-        </h2>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {EXHIBITION_FILTERS.map((filter) => (
-            <button
-              key={filter.value}
-              type="button"
-              onClick={() => setCategory(filter.value)}
-              className={`px-3 py-1.5 rounded border font-body-sm text-body-sm transition-colors ${
-                category === filter.value
-                  ? 'border-primary bg-primary-container/20 text-primary font-semibold'
-                  : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-low'
-              }`}
-            >
-              {filter.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <h2 className="font-headline-md text-headline-md text-primary">
+        半導體展檔期（{items.length} 檔）
+      </h2>
 
       <p className="font-body-sm text-body-sm text-on-surface-variant">
         這一區<span className="text-on-surface font-semibold">不受上方的區間限制</span>
-        ，列的是全部還沒結束的檔期——大型展一年就那幾檔，卡在 30 天裡多半一檔都看不到。
+        ，列的是全部還沒結束的半導體展——大型展一年就那幾檔，卡在 30 天裡多半一檔都看不到。
         <span className="text-on-surface font-semibold">分類是照展覽名稱貼的標籤</span>
-        ，不是上游給的官方分類：台灣機器人與智慧自動化展（TAIROS）跟自動化工業大展同場同期，
-        上游只列後者，所以「機器人」那一類看到的會是「台北國際自動化工業大展」。
+        ，不是上游給的官方分類：名稱沒帶到關鍵字的展（例如同場舉行但另外命名的週邊展）會落在別類而不會出現在這裡。
         <span className="text-on-surface font-semibold">只有日期沒有時間</span>
         ，每天幾點開放請點各展的官網——上游給的時段是展館的制式 10:00~18:00，照抄會是假的精確。
       </p>
@@ -635,8 +610,8 @@ function ExhibitionSection() {
       {!loading && !error && items.length === 0 && (
         <PageState
           kind="empty"
-          message={category ? '這一類目前沒有還沒結束的展' : '目前沒有展覽檔期'}
-          hint="兩種可能而且畫面上分不出來：後端還沒收集過這份資料（要跑一次收集），或這一類接下來真的沒有展。先換成「全部」看看有沒有東西。"
+          message="目前沒有還沒結束的半導體展"
+          hint="兩種可能而且畫面上分不出來：後端還沒收集過這份資料（要跑一次收集），或半導體展接下來真的沒有——一年就那幾檔，剛結束完一檔時本來就會是空的。"
         />
       )}
 
