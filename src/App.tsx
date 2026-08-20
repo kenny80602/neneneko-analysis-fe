@@ -8,6 +8,7 @@ import Calendar from './pages/Calendar';
 import DailyQuotes from './pages/DailyQuotes';
 import Dashboard from './pages/Dashboard';
 import Holdings from './pages/Holdings';
+import Indicators from './pages/Indicators';
 import Institutional from './pages/Institutional';
 import LedgerSummary from './pages/LedgerSummary';
 import Login from './pages/Login';
@@ -61,6 +62,7 @@ function App() {
 
               {/* 個股：共用 SymbolContext 的代號 */}
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/indicators" element={<Indicators />} />
               <Route path="/institutional" element={<Institutional />} />
               <Route path="/margin" element={<Margin />} />
               <Route path="/valuation" element={<Valuation />} />

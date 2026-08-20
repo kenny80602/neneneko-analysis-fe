@@ -1870,3 +1870,126 @@ export interface FinancialPeers {
   // 這一檔所屬的每一個族群。一檔可以屬於多個（中美晶既是矽晶圓也是太陽能）。
   groups: FinancialGroupPeers[];
 }
+
+// ===== 個股技術指標（/stocks/indicators）=====
+//
+// ⚠️ 這一組跟其他歷史端點不一樣：它**不是落地的資料**，是「日 K + 一組參數」現算的。
+// 換一組參數就是換一次查詢，數字不會跟上一批混在一起，也沒有「回填」這回事。
+//
+// ⚠️ 序列一律**由舊到新**（收盤、法人、融資券那幾支都是由新到舊）。畫圖前不要再 reverse
+// 一次，那會把整條線左右顛倒而且看起來仍然「像一條線」，很難發現。
+
+// 一條線上的一個點。
+export interface IndicatorPoint {
+  date: string;
+  value: number;
+}
+
+// 一條均線。目前畫面只用 kd／rsi／macd／cci／dmi，均線類留著是為了型別完整。
+export interface IndicatorMASeries {
+  period: number;
+  points: IndicatorPoint[];
+}
+
+export interface IndicatorKDPoint {
+  date: string;
+  // 未成熟隨機值（0~100），K 的原料。
+  rsv: number;
+  k: number;
+  d: number;
+  // 這個點的回看視窗裡有沒有「沒成交、延用前一日收盤」的日子。
+  // 為 true 時 RSV 的分母不是真的盤中高低差，畫面上該標出來。
+  synthetic: boolean;
+}
+
+// 名稱沿用台股軟體的講法：DIF 是快慢線的差、MACD 是 DIF 的 EMA（訊號線）、OSC 是柱狀圖。
+export interface IndicatorMACDPoint {
+  date: string;
+  dif: number;
+  macd: number;
+  osc: number;
+}
+
+// plus_di 大於 minus_di 表示往上的動能較強；adx 只講「趨勢有多明確」，不講方向——
+// adx 走高而 minus_di 在上，那是明確的下跌趨勢，不是要漲了。
+export interface IndicatorDMIPoint {
+  date: string;
+  plus_di: number;
+  minus_di: number;
+  // 當日的方向指數，adx 的原料。
+  dx: number;
+  adx: number;
+}
+
+export interface IndicatorBollingerPoint {
+  date: string;
+  middle: number;
+  upper: number;
+  lower: number;
+  // 通道寬度占中軌的比例（%）。
+  bandwidth: number;
+  // 收盤價在通道裡的位置：0 是下軌、1 是上軌，可以超出這個範圍。
+  percent_b: number;
+}
+
+// 這次實際用的參數。原樣回一份是為了讓圖表標得出來——
+// 只有數字沒有參數的話，兩張 KD 圖擺在一起分不出誰是 (9,3,3)。
+export interface IndicatorParams {
+  kd_period: number;
+  kd_k_smooth: number;
+  kd_d_smooth: number;
+  rsi_period: number;
+  macd_fast: number;
+  macd_slow: number;
+  macd_signal: number;
+  ma_periods: number[];
+  ema_periods: number[];
+  bollinger_period: number;
+  bollinger_multiplier: number;
+  bias_period: number;
+  cci_period: number;
+  dmi_period: number;
+}
+
+export interface StockIndicators {
+  symbol: string;
+  name: string;
+  // 最新一根日 K 的日期。一筆資料都沒有時是空字串。
+  as_of: string;
+
+  // 這次算用到幾根日 K，含前置期那一段。0 代表這一檔沒收集過——
+  // daily_quotes 只落地自選股清單裡的檔，不是查無此股。
+  bars: number;
+  // 落在查詢區間之前、只拿來暖機的有幾根；wanted 是這組參數想要幾根。
+  warmup_bars: number;
+  warmup_bars_wanted: number;
+  // 前置期不夠。
+  //
+  // ⚠️ 為 true 時序列前段還帶著起始值的影響（KD 從 50 起算、EMA 從前 N 根的簡單平均
+  // 起算），那幾個點看起來跟正常值一模一樣，不該拿來當訊號。收集得夠久之後會自己變 false。
+  warmup_short: boolean;
+  // 用到的日 K 裡有幾根是當天沒成交、延用前一日收盤頂替的。
+  carried_bars: number;
+  // 查詢區間裡的除權息日。
+  //
+  // ⚠️ 價格沒有做還原，這幾天的跳空會被指標當成真的下跌。
+  ex_dividend_dates: string[];
+
+  params: IndicatorParams;
+
+  // 沒有被要求算的那幾種是 null，不是空陣列——「沒算」跟「算出來是空的」是兩件事：
+  // 後者代表資料不夠長（例如只有 10 根日 K 卻要 20 日 CCI）。
+  kd: IndicatorKDPoint[] | null;
+  ma: IndicatorMASeries[] | null;
+  ema: IndicatorMASeries[] | null;
+  rsi: IndicatorPoint[] | null;
+  macd: IndicatorMACDPoint[] | null;
+  bollinger: IndicatorBollingerPoint[] | null;
+  bias: IndicatorPoint[] | null;
+  cci: IndicatorPoint[] | null;
+  dmi: IndicatorDMIPoint[] | null;
+
+  // 讀這些數字之前必須知道的事。由後端定義並原樣顯示，不要在前端另抄一份——
+  // 抄了之後後端改了說法，畫面上會是舊的。
+  caveats: string[];
+}

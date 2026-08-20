@@ -19,6 +19,19 @@ export interface TrendSeries {
   dash?: string;
 }
 
+/**
+ * 一條水平參考線。技術指標的超買超賣線（KD 80/20、RSI 70/30、CCI ±100）用它。
+ *
+ * value 會一起納入 Y 軸範圍：不納入的話，資料還沒碰到那個水準時線會落在圖外，
+ * 看起來就跟「沒有這條線」一樣，而那正是最需要知道「離門檻還很遠」的時候。
+ */
+export interface TrendReference {
+  value: number;
+  /** 線旁邊的說明，例如「80 超買」。不給就只畫線。 */
+  label?: string;
+  className?: string;
+}
+
 interface TrendChartProps {
   series: TrendSeries[];
   /**
@@ -26,6 +39,16 @@ interface TrendChartProps {
    * line 用在「只有大小」的量（餘額、比率），單純看走勢。
    */
   mode?: 'line' | 'bar';
+  /**
+   * 疊在折線底下的柱狀圖，以零軸為基準上下長、紅漲綠跌。MACD 的 OSC 用它——
+   * DIF／訊號線／OSC 是同一個單位同一個量級，拆成兩張圖就看不出「柱子翻正的
+   * 那一天正好是兩線交叉」，而那是這個指標唯一在講的事。
+   *
+   * 只對 mode='line' 有意義，points 要跟 series 是同一組日期。
+   */
+  bars?: TrendSeries;
+  /** 水平參考線。 */
+  references?: TrendReference[];
   /** Y 軸單位說明，例如「張」「%」。 */
   unit?: string;
   /** 圖表下方的說明，講清楚這張圖的陷阱。 */
@@ -66,6 +89,8 @@ function axisDigits(span: number): number {
 export default function TrendChart({
   series,
   mode = 'line',
+  bars,
+  references,
   unit,
   footnote,
   invert = false,
@@ -78,12 +103,18 @@ export default function TrendChart({
         if (p.value != null && Number.isFinite(p.value)) values.push(p.value);
       })
     );
+    bars?.points.forEach((p) => {
+      if (p.value != null && Number.isFinite(p.value)) values.push(p.value);
+    });
+    references?.forEach((r) => {
+      if (Number.isFinite(r.value)) values.push(r.value);
+    });
     if (values.length === 0) return null;
 
     let min = Math.min(...values);
     let max = Math.max(...values);
     // 柱狀圖一定要含 0，否則「零軸」會落在圖外，柱子的長短失去意義。
-    if (mode === 'bar') {
+    if (mode === 'bar' || bars) {
       min = Math.min(min, 0);
       max = Math.max(max, 0);
     }
@@ -99,7 +130,7 @@ export default function TrendChart({
         ? TOP + ((value - min) / span) * (BOTTOM - TOP)
         : BOTTOM - ((value - min) / span) * (BOTTOM - TOP);
     return { min, max, span, y, zero: y(0) };
-  }, [series, mode, invert]);
+  }, [series, bars, references, mode, invert]);
 
   const length = series[0]?.points.length ?? 0;
   // 有幾天真的有值。少於兩天畫不出走勢——一個點的折線圖只是一個孤立的圓，
@@ -160,6 +191,22 @@ export default function TrendChart({
             </span>
           </span>
         ))}
+        {bars && (
+          <span className="flex items-center gap-1.5">
+            {/* 柱子是兩種顏色，圖例也畫兩塊，只畫一塊會被當成「柱子都是這個色」。 */}
+            <svg width="20" height="8" aria-hidden="true">
+              <rect x="0" y="0" width="9" height="8" className="fill-quote-up" />
+              <rect x="11" y="0" width="9" height="8" className="fill-quote-down" />
+            </svg>
+            <span className="font-body-sm text-body-sm text-on-surface-variant">{bars.label}</span>
+            <span className="font-data-md text-data-md text-on-surface">
+              {(() => {
+                const last = [...bars.points].reverse().find((p) => p.value != null);
+                return last?.value == null ? DASH : formatNumber(last.value, digits);
+              })()}
+            </span>
+          </span>
+        )}
         {unit && <span className="font-body-sm text-body-sm text-outline">單位：{unit}</span>}
       </div>
 
@@ -191,8 +238,53 @@ export default function TrendChart({
           </g>
         ))}
 
+        {/* 參考線畫在資料底下，蓋不住線。 */}
+        {references?.map((reference) => (
+          <g key={reference.value}>
+            <line
+              x1={LEFT}
+              y1={scale.y(reference.value)}
+              x2={LEFT + PLOT_WIDTH}
+              y2={scale.y(reference.value)}
+              strokeWidth="1.5"
+              strokeDasharray="4 4"
+              className={reference.className ?? 'stroke-outline'}
+            />
+            {reference.label && (
+              <text
+                x={LEFT + 6}
+                y={scale.y(reference.value) - 5}
+                className="fill-outline"
+                fontSize="12"
+              >
+                {reference.label}
+              </text>
+            )}
+          </g>
+        ))}
+
+        {/* 疊在折線底下的柱狀圖。 */}
+        {bars?.points.map((point, index) => {
+          if (point.value == null) return null;
+          const barWidth = Math.max(1.5, (PLOT_WIDTH / length) * 0.6);
+          const top = Math.min(scale.y(point.value), scale.zero);
+          const height = Math.abs(scale.y(point.value) - scale.zero);
+          return (
+            <rect
+              key={point.date}
+              x={x(index) - barWidth / 2}
+              y={top}
+              width={barWidth}
+              height={Math.max(height, 0.5)}
+              // 半透明：柱子跟折線疊在一起，實心的話會把交叉點蓋掉。
+              opacity="0.45"
+              className={point.value >= 0 ? 'fill-quote-up' : 'fill-quote-down'}
+            />
+          );
+        })}
+
         {/* 柱狀圖的零軸畫粗一點：正負的分界比其他格線重要。 */}
-        {mode === 'bar' && scale.min < 0 && (
+        {(mode === 'bar' || bars) && scale.min < 0 && (
           <line
             x1={LEFT}
             y1={scale.zero}

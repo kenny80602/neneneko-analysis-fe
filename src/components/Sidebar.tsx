@@ -24,7 +24,7 @@ interface NavGroup {
 //
 //   市場      不綁代號，看的是整個盤
 //   我的投資  只跟自己的部位有關，換一個人看到的完全不同
-//   個股      吃 SymbolContext 的代號，八頁看的都是同一檔
+//   個股      吃 SymbolContext 的代號，這一組看的都是同一檔
 //   工具      不看行情：練習、推播、報告與設定
 //
 // 模擬買賣刻意放在「工具」而不是「我的投資」：它整包存在 localStorage、
@@ -57,6 +57,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: '個股',
     items: [
       { icon: 'candlestick_chart', label: '個股總覽', path: '/dashboard' },
+      { icon: 'show_chart', label: '技術指標', path: '/indicators' },
       { icon: 'groups', label: '三大法人', path: '/institutional' },
       { icon: 'account_balance', label: '融資融券', path: '/margin' },
       { icon: 'groups_2', label: '大戶散戶', path: '/shareholding' },
@@ -131,7 +132,7 @@ export default function Sidebar() {
           const hasActive = group.items.some((item) => item.path === location.pathname);
           // 目前所在的那一組一律展開：收起來的話畫面上會找不到自己在哪一頁。
           const isCollapsed = collapsed.includes(group.key) && !hasActive;
-          // 個股那八頁看的都是同一個代號，把它標在組名旁邊，省得逐頁打開才知道在看哪一檔。
+          // 個股那一組看的都是同一個代號，把它標在組名旁邊，省得逐頁打開才知道在看哪一檔。
           const badge =
             group.key === 'symbol' ? symbol || '未選取' : String(group.items.length);
 
