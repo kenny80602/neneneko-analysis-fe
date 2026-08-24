@@ -4,13 +4,18 @@ import { logout } from '../api/auth';
 import { Theme, resolveTheme, setTheme } from '../utils/theme';
 import SymbolPicker from './SymbolPicker';
 
+interface TopbarProps {
+  /** 打開行動版導覽抽屜。md 以上側邊欄常駐，這顆鈕不出現。 */
+  onOpenNav: () => void;
+}
+
 /**
- * 全站頁首：品牌（行動版）、標的搜尋、通知 / 設定與登出。
+ * 全站頁首：導覽鈕（行動版）、品牌（行動版）、標的搜尋、通知 / 設定與登出。
  *
  * 搜尋框直接寫回 SymbolContext——個股各頁共用同一個代號，所以這裡搜完，
  * 切到任何個股頁看到的都是同一檔。
  */
-export default function Topbar() {
+export default function Topbar({ onOpenNav }: TopbarProps) {
   const navigate = useNavigate();
   // 初值直接讀已解析好的主題：index.tsx 在掛載前就套上去了，
   // 這裡再讀一次只是為了讓按鈕圖示對得上，不會造成閃爍。
@@ -29,8 +34,18 @@ export default function Topbar() {
   };
 
   return (
-    <header className="bg-surface border-b border-outline-variant flex justify-between items-center w-full px-6 h-16 shrink-0 z-30">
-      <div className="md:hidden flex items-center gap-4">
+    <header className="bg-surface border-b border-outline-variant flex justify-between items-center w-full px-4 sm:px-6 h-16 shrink-0 z-30">
+      <div className="md:hidden flex items-center gap-2">
+        {/* 手機唯一的換頁入口。沒有它的話側邊欄在小螢幕等於不存在，
+            除了直接改網址之外到不了其他頁。 */}
+        <button
+          type="button"
+          onClick={onOpenNav}
+          title="開啟選單"
+          className="-ml-2 p-2 text-on-surface-variant hover:text-primary transition-colors"
+        >
+          <span className="material-symbols-outlined text-[24px]">menu</span>
+        </button>
         <Link
           to="/market"
           className="font-display text-headline-md font-bold text-primary tracking-tight whitespace-nowrap"
@@ -65,7 +80,7 @@ export default function Topbar() {
           type="button"
           disabled
           title="尚未實作"
-          className="text-outline-variant cursor-not-allowed"
+          className="hidden sm:block text-outline-variant cursor-not-allowed"
         >
           <span className="material-symbols-outlined text-[20px]">notifications</span>
         </button>

@@ -508,48 +508,50 @@ export default function Dashboard() {
 
                   {latestFlow && (
                     <>
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="border-b border-outline-variant">
-                            <th className="pb-2 font-label-caps text-label-caps text-on-surface-variant uppercase">
-                              法人
-                            </th>
-                            <th className="pb-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase">
-                              買進
-                            </th>
-                            <th className="pb-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase">
-                              賣出
-                            </th>
-                            <th className="pb-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase">
-                              買賣超
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-outline-variant/50">
-                          {flowRows.map((item) => (
-                            <tr key={item.label}>
-                              <td className="py-2 font-body-sm text-body-sm text-on-surface">
-                                {item.label}
-                              </td>
-                              <td className="py-2 text-right font-data-md text-data-md text-on-surface-variant">
-                                {formatShareToLot(item.flow.buy)}
-                              </td>
-                              <td className="py-2 text-right font-data-md text-data-md text-on-surface-variant">
-                                {formatShareToLot(item.flow.sell)}
-                              </td>
-                              <td className="py-2 text-right">
-                                <span
-                                  className={`font-data-md text-data-md px-2 py-0.5 rounded ${quoteBadge(
-                                    item.flow.net
-                                  )}`}
-                                >
-                                  {formatShareToLot(item.flow.net)}
-                                </span>
-                              </td>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="border-b border-outline-variant">
+                              <th className="pb-2 font-label-caps text-label-caps text-on-surface-variant uppercase">
+                                法人
+                              </th>
+                              <th className="pb-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase">
+                                買進
+                              </th>
+                              <th className="pb-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase">
+                                賣出
+                              </th>
+                              <th className="pb-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase">
+                                買賣超
+                              </th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody className="divide-y divide-outline-variant/50">
+                            {flowRows.map((item) => (
+                              <tr key={item.label}>
+                                <td className="py-2 font-body-sm text-body-sm text-on-surface">
+                                  {item.label}
+                                </td>
+                                <td className="py-2 text-right font-data-md text-data-md text-on-surface-variant">
+                                  {formatShareToLot(item.flow.buy)}
+                                </td>
+                                <td className="py-2 text-right font-data-md text-data-md text-on-surface-variant">
+                                  {formatShareToLot(item.flow.sell)}
+                                </td>
+                                <td className="py-2 text-right">
+                                  <span
+                                    className={`font-data-md text-data-md px-2 py-0.5 rounded ${quoteBadge(
+                                      item.flow.net
+                                    )}`}
+                                  >
+                                    {formatShareToLot(item.flow.net)}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
 
                       <p className="font-body-sm text-body-sm text-on-surface-variant">
                         {latestFlow.date} · 單位張。合計買賣超{' '}

@@ -357,10 +357,10 @@ export default function Portfolio() {
                       </span>
                     </div>
                   </th>
-                  <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-right hidden md:table-cell">
+                  <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-right">
                     成交量
                   </th>
-                  <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-right hidden lg:table-cell">
+                  <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-right">
                     損益
                   </th>
                   <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-center">
@@ -384,7 +384,7 @@ export default function Portfolio() {
                         <span className="font-data-md text-data-md text-primary font-bold">
                           {row.symbol}
                         </span>
-                        <span className="font-body-sm text-body-sm text-on-surface-variant truncate w-24 sm:w-auto">
+                        <span className="font-body-sm text-body-sm text-on-surface-variant whitespace-nowrap">
                           {row.name}
                         </span>
                         {/* 一檔只佔一列，分散在多帳戶時在這裡提示，逐筆明細看「我的持股」。 */}
@@ -419,12 +419,12 @@ export default function Portfolio() {
                         </span>
                       )}
                     </td>
-                    <td className="p-2 py-3 text-right hidden md:table-cell">
+                    <td className="p-2 py-3 text-right">
                       <span className="font-data-md text-data-md text-on-surface-variant">
                         {formatShareToLot(row.volume)}
                       </span>
                     </td>
-                    <td className="p-2 py-3 text-right hidden lg:table-cell">
+                    <td className="p-2 py-3 text-right">
                       <span
                         className={`font-data-md text-data-md ${
                           quoteBadge(row.profit_percent).split(' ')[0]

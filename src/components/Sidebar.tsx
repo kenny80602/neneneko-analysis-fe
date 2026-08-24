@@ -103,7 +103,14 @@ function writeCollapsed(keys: string[]): void {
   }
 }
 
-export default function Sidebar() {
+interface SidebarProps {
+  /** 行動版抽屜是否展開。桌機（md 以上）永遠常駐，這個值不影響它。 */
+  open: boolean;
+  /** 關閉行動版抽屜。點連結或點遮罩都會呼叫。 */
+  onClose: () => void;
+}
+
+export default function Sidebar({ open, onClose }: SidebarProps) {
   const location = useLocation();
   const { symbol } = useSymbol();
   const [collapsed, setCollapsed] = useState<string[]>(readCollapsed);
@@ -117,73 +124,103 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="w-64 bg-nav text-on-nav flex-col hidden md:flex h-full z-40 shrink-0 shadow-lg">
-      <div className="h-16 flex items-center px-6 shrink-0 border-b border-nav-active">
-        <Link
-          to="/market"
-          className="font-display text-headline-md font-bold tracking-tight whitespace-nowrap"
-        >
-          精準資本
-        </Link>
-      </div>
+    <>
+      {/* 抽屜展開時的遮罩。手機沒有這一層的話，點旁邊關不掉，只能再按一次漢堡鈕。
+          用 nav 而不是另開一個 scrim 色票：nav 這組本來就刻意兩個主題都維持深底，
+          正好是遮罩要的行為，換成會隨主題翻轉的角色在深色模式下會變成一層亮膜。 */}
+      {open && (
+        <div
+          onClick={onClose}
+          className="fixed inset-0 z-40 bg-nav/60 md:hidden"
+          aria-hidden="true"
+        />
+      )}
 
-      <nav className="flex-1 py-3 px-3 flex flex-col overflow-y-auto scrollbar-on-primary">
-        {NAV_GROUPS.map((group) => {
-          const hasActive = group.items.some((item) => item.path === location.pathname);
-          // 目前所在的那一組一律展開：收起來的話畫面上會找不到自己在哪一頁。
-          const isCollapsed = collapsed.includes(group.key) && !hasActive;
-          // 個股那一組看的都是同一個代號，把它標在組名旁邊，省得逐頁打開才知道在看哪一檔。
-          const badge =
-            group.key === 'symbol' ? symbol || '未選取' : String(group.items.length);
+      {/* 手機是 fixed 抽屜（預設滑出畫面外），md 以上回到常駐的版面欄位。
+          刻意不用 hidden md:flex：那樣在手機上等於整個導覽都不存在，
+          除了直接改網址之外沒有任何方式換頁。 */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-nav text-on-nav flex flex-col h-full shrink-0 shadow-lg transition-transform md:static md:z-40 md:translate-x-0 ${
+          open ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        <div className="h-16 flex items-center px-6 shrink-0 border-b border-nav-active">
+          <Link
+            to="/market"
+            onClick={onClose}
+            className="font-display text-headline-md font-bold tracking-tight whitespace-nowrap"
+          >
+            精準資本
+          </Link>
+          <button
+            type="button"
+            onClick={onClose}
+            title="關閉選單"
+            className="ml-auto -mr-2 p-1 text-on-nav-muted hover:text-on-nav transition-colors md:hidden"
+          >
+            <span className="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        </div>
 
-          return (
-            <div key={group.key} className="flex flex-col">
-              <button
-                type="button"
-                onClick={() => toggle(group.key)}
-                title={isCollapsed ? `展開${group.title}` : `收合${group.title}`}
-                className="flex items-center gap-1 px-2 pt-4 pb-1 font-label-caps text-label-caps uppercase text-on-nav-muted hover:text-on-nav transition-colors"
-              >
-                <span className="material-symbols-outlined text-[16px]">
-                  {isCollapsed ? 'chevron_right' : 'expand_more'}
-                </span>
-                {group.title}
-                <span
-                  className={`ml-auto px-1.5 rounded bg-nav-active normal-case ${
-                    group.key === 'symbol' && symbol
-                      ? 'font-data-md text-data-md text-on-nav'
-                      : 'font-body-sm text-body-sm text-on-nav-muted'
-                  }`}
+        <nav className="flex-1 py-3 px-3 flex flex-col overflow-y-auto scrollbar-on-primary">
+          {NAV_GROUPS.map((group) => {
+            const hasActive = group.items.some((item) => item.path === location.pathname);
+            // 目前所在的那一組一律展開：收起來的話畫面上會找不到自己在哪一頁。
+            const isCollapsed = collapsed.includes(group.key) && !hasActive;
+            // 個股那一組看的都是同一個代號，把它標在組名旁邊，省得逐頁打開才知道在看哪一檔。
+            const badge =
+              group.key === 'symbol' ? symbol || '未選取' : String(group.items.length);
+
+            return (
+              <div key={group.key} className="flex flex-col">
+                <button
+                  type="button"
+                  onClick={() => toggle(group.key)}
+                  title={isCollapsed ? `展開${group.title}` : `收合${group.title}`}
+                  className="flex items-center gap-1 px-2 pt-4 pb-1 font-label-caps text-label-caps uppercase text-on-nav-muted hover:text-on-nav transition-colors"
                 >
-                  {badge}
-                </span>
-              </button>
+                  <span className="material-symbols-outlined text-[16px]">
+                    {isCollapsed ? 'chevron_right' : 'expand_more'}
+                  </span>
+                  {group.title}
+                  <span
+                    className={`ml-auto px-1.5 rounded bg-nav-active normal-case ${
+                      group.key === 'symbol' && symbol
+                        ? 'font-data-md text-data-md text-on-nav'
+                        : 'font-body-sm text-body-sm text-on-nav-muted'
+                    }`}
+                  >
+                    {badge}
+                  </span>
+                </button>
 
-              {!isCollapsed && (
-                <div className="flex flex-col gap-1">
-                  {group.items.map((item) => {
-                    const isActive = location.pathname === item.path;
-                    return (
-                      <Link
-                        key={item.path}
-                        to={item.path}
-                        className={`flex items-center gap-3 px-3 py-2 rounded-lg font-body-md text-body-md transition-colors ${
-                          isActive
-                            ? 'text-on-nav bg-nav-active font-semibold'
-                            : 'text-on-nav-muted hover:text-on-nav hover:bg-nav-active font-medium'
-                        }`}
-                      >
-                        <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
-                        {item.label}
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </nav>
-    </aside>
+                {!isCollapsed && (
+                  <div className="flex flex-col gap-1">
+                    {group.items.map((item) => {
+                      const isActive = location.pathname === item.path;
+                      return (
+                        <Link
+                          key={item.path}
+                          to={item.path}
+                          onClick={onClose}
+                          className={`flex items-center gap-3 px-3 py-2 rounded-lg font-body-md text-body-md transition-colors ${
+                            isActive
+                              ? 'text-on-nav bg-nav-active font-semibold'
+                              : 'text-on-nav-muted hover:text-on-nav hover:bg-nav-active font-medium'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
+                          {item.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </nav>
+      </aside>
+    </>
   );
 }
