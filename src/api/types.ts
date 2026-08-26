@@ -421,7 +421,7 @@ export interface RemoveGroupResult {
 // 跟上面那組是兩回事：上面管的是「誰屬於散熱」（人工維護的成員清單），
 // 這一組管的是「散熱今天有沒有在動」。後端也是兩支 handler。
 
-export interface GroupHeatLeader {
+export interface GroupHeatMember {
   symbol: string;
   name: string;
   // 當日報酬（%）。
@@ -469,8 +469,14 @@ export interface GroupHeat {
   // 成立幾個。榜的排序鍵就是它，不是加權分數。
   signal_count: number;
 
-  // 族群裡漲最多的幾檔，最多三檔。
-  leaders: GroupHeatLeader[];
+  // 族群裡漲最多的幾檔，最多三檔。表格一列放得下的就這麼多。
+  leaders: GroupHeatMember[];
+  // 今天算得出報酬的**全部**成員，報酬由高到低（leaders 是它的前三名）。
+  //
+  // ⚠️ 長度是 covered_count 不是 member_count：當天沒成交、除權息、或不在
+  // 橫斷面裡（ETF、權證、代號打錯）的那幾檔算不出報酬，不會出現在這裡。
+  // 所以展開的清單可能比族群實際成員少，畫面上要說明差幾檔與為什麼。
+  members: GroupHeatMember[];
 }
 
 export interface MarketBreadth {

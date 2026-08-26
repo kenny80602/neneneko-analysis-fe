@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
 import { getGroupHeat } from '../api/groupHeat';
@@ -734,6 +734,9 @@ function HeatBoard() {
   const members = useAsyncData(() => getGroupMembers(), []);
 
   const [query, setQuery] = useState('');
+  // 一次只展開一個族群。展開的內容是整群的逐檔，同時攤開十幾群的話這張表會長到
+  // 捲不完，而且「我現在在看哪一群」會消失——那正是點開的人想確認的事。
+  const [openGroup, setOpenGroup] = useState('');
 
   // 後端沒有「這份榜是幾點算出來的」欄位，as_of 只到日期。
   // 這裡記的是**畫面上這份是幾點抓回來的**，兩者語意不同所以分成兩個標籤顯示：
@@ -940,6 +943,8 @@ function HeatBoard() {
         　名次是後端這份榜的順序：<span className="text-on-surface">涵蓋 3 檔以上的優先</span>，
         其次訊號數，平手才看超額報酬。所以名次高不等於漲得多，而是「今天最像整群在動」；
         標了樣本過少的一律排在後段，那個名次講的是不可信不是比較弱。搜尋過濾不會重編名次。
+        　「領漲」只列漲最多的三檔，要看整群逐檔的漲跌就按族群名稱底下的
+        <span className="text-on-surface">展開全部</span>。
         {board != null && <>　用到 {board.days_covered} 個交易日。</>}
         　搜尋比對的是族群名稱與<span className="text-on-surface">全部成員</span>的股號、名稱，
         不只表上的領漲三檔。
@@ -981,15 +986,15 @@ function HeatBoard() {
                   <th className={`${headCell} text-right`}>占大盤</th>
                   <th className={`${headCell} text-right`}>占比變化</th>
                   <th className={`${headCell} text-right`}>單筆／市場</th>
-                  <th className={`${headCell} pr-4 text-left`}>領漲</th>
+                  <th className={`${headCell} pr-4 text-left`}>領漲前 3</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/50">
-                {rows.map(({ item, rank, hits }) => (
-                  <tr
-                    key={item.name}
-                    className="hover:bg-surface-container-low/50 transition-colors align-top"
-                  >
+                {rows.map(({ item, rank, hits }) => {
+                  const open = openGroup === item.name;
+                  return (
+                    <Fragment key={item.name}>
+                  <tr className="hover:bg-surface-container-low/50 transition-colors align-top">
                     {/* 樣本過少的一律被排到後段，那個名次講的是「不可信」而不是「比較弱」，
                         所以用淡色，跟前段班的名次區分開。 */}
                     <td
@@ -1018,6 +1023,18 @@ function HeatBoard() {
                             .map((hit) => (hit.name ? `${hit.symbol} ${hit.name}` : hit.symbol))
                             .join('、')}
                         </span>
+                      )}
+                      {item.members.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setOpenGroup(open ? '' : item.name)}
+                          className="mt-1 inline-flex items-center gap-1 font-body-sm text-body-sm text-primary hover:underline"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">
+                            {open ? 'expand_less' : 'expand_more'}
+                          </span>
+                          {open ? '收合' : `展開全部 ${item.members.length} 檔`}
+                        </button>
                       )}
                     </td>
                     <td className="p-2 py-3">
@@ -1081,7 +1098,66 @@ function HeatBoard() {
                       )}
                     </td>
                   </tr>
-                ))}
+
+                  {open && (
+                    <tr className="bg-surface-container-low/40">
+                      <td colSpan={11} className="p-4">
+                        <div className="flex flex-col gap-stack-sm">
+                          <p className="font-body-sm text-body-sm text-on-surface-variant">
+                            <span className="text-on-surface font-semibold">{item.name}</span>
+                            　今天算得出報酬的 {item.members.length} 檔，報酬由高到低。
+                            {/* 算不出報酬的那幾檔不在這份裡，不說明的話會被讀成
+                                「這個族群只有這幾檔」。 */}
+                            {item.member_count > item.members.length && (
+                              <>
+                                　另外 {item.member_count - item.members.length}{' '}
+                                檔今天算不出報酬（當天沒成交、除權息當天，或不是普通股），
+                                完整名單在「族群維護」那一頁。
+                              </>
+                            )}
+                          </p>
+                          <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
+                            {item.members.map((member) => {
+                              const matched =
+                                !!keyword &&
+                                (member.symbol.toLowerCase().includes(keyword) ||
+                                  member.name.toLowerCase().includes(keyword));
+                              return (
+                                <div
+                                  key={member.symbol}
+                                  className={`flex items-baseline gap-2 rounded border px-2 py-1.5 ${
+                                    matched
+                                      ? 'border-primary bg-primary/10'
+                                      : 'border-outline-variant bg-surface-container-lowest'
+                                  }`}
+                                >
+                                  <span className="font-data-md text-data-md text-on-surface-variant">
+                                    {member.symbol}
+                                  </span>
+                                  <span className="font-body-sm text-body-sm text-on-surface">
+                                    {member.name}
+                                  </span>
+                                  <span
+                                    className={`ml-auto font-data-md text-data-md ${quoteColor(
+                                      member.return_pct
+                                    )}`}
+                                  >
+                                    {formatSignedPercent(member.return_pct)}
+                                  </span>
+                                  <span className="font-data-md text-data-md text-outline">
+                                    {formatAmount(member.trade_value)}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
