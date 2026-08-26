@@ -3,6 +3,7 @@ import DashboardLayout from './components/DashboardLayout';
 import RequireAuth from './components/RequireAuth';
 import { SymbolProvider } from './context/SymbolContext';
 import Alert from './pages/Alert';
+import LinePreview from './pages/LinePreview';
 import Announcements from './pages/Announcements';
 import Calendar from './pages/Calendar';
 import DailyQuotes from './pages/DailyQuotes';
@@ -56,6 +57,7 @@ function App() {
               <Route path="/ledger" element={<LotLedger />} />
               <Route path="/ledger/summary" element={<LedgerSummary />} />
               <Route path="/alert" element={<Alert />} />
+              <Route path="/line-preview" element={<LinePreview />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/schedules" element={<Schedules />} />
               <Route path="/settings" element={<Settings />} />

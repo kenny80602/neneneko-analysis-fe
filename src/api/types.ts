@@ -337,6 +337,63 @@ export interface IndustryPeers {
   peers: IndustryPeer[];
 }
 
+// ===== LINE 推播樣板預覽（/line/previews）=====
+//
+// 回的是**原封不動的 LINE 訊息物件**：flex 帶 altText 與 contents（bubble 的樹），
+// text 帶 text。前端照這棵樹畫，畫出來的就是 LINE 上會看到的東西。
+// 後端刻意不轉成別的形狀——轉一次就多一個會跟 LINE 規格分岔的地方。
+
+export interface LinePreviewTemplate {
+  // 網址上用的鍵，同時也是 notify 的旗標名。
+  key: string;
+  title: string;
+  // 什麼時候會推（launchd 排程的實際時間）。
+  trigger: string;
+  // 手動推同一則時跑的指令。
+  command: string;
+  // 預覽與實際推播之間已知的差異。沒有差異時是空字串。
+  //
+  // 這一欄一定要顯示：一個「看起來一模一樣」的預覽最危險的就是那些看不出來的
+  // 差異（時間戳是現在、有沒有拆頁、資料還沒到齊時整則不推）。
+  note: string;
+}
+
+// LINE 的 Flex 元件。形狀隨 type 而異且巢狀很深，後端也是用 any 承載的
+// （見 line.FlexMessage.Contents），所以這裡同樣不逐一建模——
+// 建模的維護成本遠高於效益，而且 LINE 加欄位時會整個對不上。
+export interface FlexComponent {
+  type: string;
+  [key: string]: unknown;
+}
+
+export interface LinePreviewMessage {
+  // 'flex' 或 'text'。
+  type: string;
+  // flex 專用：通知列與不支援 Flex 的環境顯示的替代文字。
+  altText?: string;
+  // flex 專用：bubble 的樹。
+  contents?: FlexComponent;
+  // text 專用。
+  text?: string;
+}
+
+export interface LinePreview extends LinePreviewTemplate {
+  // 這次會送出去的每一則，順序就是送出順序。
+  messages: LinePreviewMessage[];
+  // 這一則現在推不推得出去。false 不是錯誤，原因看 reason。
+  available: boolean;
+  reason: string;
+  // 組這一則花了多久（毫秒）。持股試算要逐檔取行情，一兩秒是正常的。
+  elapsed_ms: number;
+}
+
+export interface LinePreviewList {
+  count: number;
+  items: LinePreviewTemplate[];
+  // 讀這份預覽之前要知道的事，後端給的字串，原樣顯示。
+  notice: string[];
+}
+
 // ===== 主題族群（/stocks/groups）=====
 
 export interface StockGroup {

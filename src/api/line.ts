@@ -1,5 +1,11 @@
 import request from './request';
-import { ApiResponse, LineQuota, LineTarget } from './types';
+import {
+  ApiResponse,
+  LinePreview,
+  LinePreviewList,
+  LineQuota,
+  LineTarget,
+} from './types';
 
 // 後端 errcode.ErrLineNotConfigured。少了 channel access token 屬於部署設定問題，
 // 不是執行期錯誤——沒設定的環境（例如 .env.test.json）每一次都會回這個碼。
@@ -27,3 +33,15 @@ export const getLineTargets = () =>
 // 查詢本身不計費也不佔額度，後端 LINE_ENABLED 關掉時照樣問得到真實數字。
 export const getLineQuota = () =>
   request.get<ApiResponse<LineQuota>>('/line/quota').then((res) => res.data.data);
+
+// 推播樣板的目錄。純靜態，不碰資料，所以很快。
+export const getLinePreviews = () =>
+  request.get<ApiResponse<LinePreviewList>>('/line/previews').then((res) => res.data.data);
+
+// 組出某一個樣板現在的樣子。**不會送出，也不吃推播額度。**
+//
+// 一次只組一個：持股試算那一支要逐檔取行情（正常一兩秒，上游退到 Yahoo 時十幾秒），
+// 六個一起組會讓整頁卡在最慢的那一支。逾時沿用預設，這裡不放寬——
+// 真的慢到超時，那件事本身就該看見。
+export const getLinePreview = (key: string) =>
+  request.get<ApiResponse<LinePreview>>(`/line/previews/${key}`).then((res) => res.data.data);
