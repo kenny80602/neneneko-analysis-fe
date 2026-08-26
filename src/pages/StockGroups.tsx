@@ -708,9 +708,12 @@ function MemberTable({ month, peers }: { month: string; peers: GroupPeer[] }) {
   );
 }
 
-/** 熱度榜的一列加上「是被哪幾檔命中的」。沒在搜尋時 hits 一律是空的。 */
+/** 熱度榜的一列加上名次與「是被哪幾檔命中的」。沒在搜尋時 hits 一律是空的。 */
 interface HeatRow {
   item: GroupHeat;
+  // 在**整份榜**上的名次，1 起算。搜尋過濾之後不重編——重編的話「第 1 名」
+  // 會變成「符合搜尋條件的裡面最前面那個」，那跟熱度完全無關。
+  rank: number;
   hits: GroupMember[];
 }
 
@@ -761,11 +764,14 @@ function HeatBoard() {
   // 拿它當搜尋範圍的話「我手上這檔今天在哪一群裡」多數時候會查不到，
   // 而那正是這個搜尋要回答的問題。族群名稱也一起比，打「散熱」要找得到。
   const rows: HeatRow[] = useMemo(() => {
-    const items = board?.items ?? [];
-    if (!keyword) return items.map((item) => ({ item, hits: [] }));
+    // 名次直接用後端回的順序，前端不重排：排序鍵是三層（樣本足夠優先 → 訊號數 →
+    // 超額報酬），只看回應裡的欄位重算會漏掉第一層，而那一層正是用來擋掉
+    // 「兩檔的族群因為其中一檔漲停就登頂」的。
+    const items = (board?.items ?? []).map((item, index) => ({ item, rank: index + 1 }));
+    if (!keyword) return items.map((entry) => ({ ...entry, hits: [] }));
 
     const result: HeatRow[] = [];
-    for (const item of items) {
+    for (const { item, rank } of items) {
       const roster = memberIndex[item.name];
       // 成員清單還沒回來（或那一支掛了）時退到領漲，至少不是完全搜不到。
       const pool: GroupMember[] =
@@ -782,7 +788,7 @@ function HeatBoard() {
           (!!member.name && member.name.toLowerCase().includes(keyword))
       );
       if (hits.length > 0 || item.name.toLowerCase().includes(keyword)) {
-        result.push({ item, hits });
+        result.push({ item, rank, hits });
       }
     }
     return result;
@@ -872,6 +878,9 @@ function HeatBoard() {
         <span className="text-error font-semibold">這是今天的現況描述，不是預測。</span>
         訊號數是四個獨立條件的計數，不是加權分數——沒做過樣本外檢定的權重會長得像有依據，其實沒有。
         族群內一律用中位數不用平均（一檔漲停就能把平均拉起來），指標一律用比率不用絕對金額。
+        　名次是後端這份榜的順序：<span className="text-on-surface">涵蓋 3 檔以上的優先</span>，
+        其次訊號數，平手才看超額報酬。所以名次高不等於漲得多，而是「今天最像整群在動」；
+        標了樣本過少的一律排在後段，那個名次講的是不可信不是比較弱。搜尋過濾不會重編名次。
         {board != null && <>　用到 {board.days_covered} 個交易日。</>}
         　搜尋比對的是族群名稱與<span className="text-on-surface">全部成員</span>的股號、名稱，
         不只表上的領漲三檔。
@@ -903,7 +912,8 @@ function HeatBoard() {
             <table className="w-full border-collapse">
               <thead className="bg-surface-container-low border-b border-outline-variant">
                 <tr>
-                  <th className={`${headCell} pl-4 text-left`}>族群</th>
+                  <th className={`${headCell} pl-4 text-right`}>名次</th>
+                  <th className={`${headCell} text-left`}>族群</th>
                   <th className={`${headCell} text-left`}>成立訊號</th>
                   <th className={`${headCell} text-right`}>中位數報酬</th>
                   <th className={`${headCell} text-right`}>超額報酬</th>
@@ -916,12 +926,19 @@ function HeatBoard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/50">
-                {rows.map(({ item, hits }) => (
+                {rows.map(({ item, rank, hits }) => (
                   <tr
                     key={item.name}
                     className="hover:bg-surface-container-low/50 transition-colors align-top"
                   >
-                    <td className="p-2 py-3 pl-4">
+                    {/* 樣本過少的一律被排到後段，那個名次講的是「不可信」而不是「比較弱」，
+                        所以用淡色，跟前段班的名次區分開。 */}
+                    <td
+                      className={`${numCell} pl-4 ${item.thin ? 'text-outline' : 'text-on-surface'}`}
+                    >
+                      {rank}
+                    </td>
+                    <td className="p-2 py-3">
                       <span className="font-body-md text-body-md text-on-surface font-semibold">
                         {item.name}
                       </span>
