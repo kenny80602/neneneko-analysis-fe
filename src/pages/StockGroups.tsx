@@ -760,6 +760,19 @@ function HeatBoard() {
 
   const keyword = query.trim().toLowerCase();
 
+  // 搜尋的涵蓋範圍：族群成員去重之後的檔數。
+  //
+  // 這個數字一定要寫在畫面上。族群是人工維護的，成員合起來大約只有全市場的一半，
+  // 沒被歸類的那一半（例如晶圓代工那幾檔）搜起來一樣是「沒有結果」，
+  // 跟「這一檔今天沒在動」長得一模一樣——不標的話會被當成資料漏了。
+  const coveredSymbols = useMemo(() => {
+    const symbols = new Set<string>();
+    for (const roster of Object.values(memberIndex)) {
+      for (const member of roster) symbols.add(member.symbol);
+    }
+    return symbols.size;
+  }, [memberIndex]);
+
   // 比對範圍是**族群成員**而不是領漲那三檔：領漲只列今天漲最多的前三名，
   // 拿它當搜尋範圍的話「我手上這檔今天在哪一群裡」多數時候會查不到，
   // 而那正是這個搜尋要回答的問題。族群名稱也一起比，打「散熱」要找得到。
@@ -874,6 +887,31 @@ function HeatBoard() {
         )}
       </div>
 
+      {coveredSymbols > 0 && (
+        <p className="font-body-sm text-body-sm text-on-surface-variant">
+          搜尋範圍是{' '}
+          <span className="font-data-md text-data-md text-on-surface">
+            {formatNumber(Object.keys(memberIndex).length)}
+          </span>{' '}
+          個族群、去重後{' '}
+          <span className="font-data-md text-data-md text-on-surface">
+            {formatNumber(coveredSymbols)}
+          </span>{' '}
+          檔
+          {board != null && (
+            <>
+              ，全市場今天有{' '}
+              <span className="font-data-md text-data-md text-on-surface">
+                {formatNumber(board.market.counted)}
+              </span>{' '}
+              檔算進基準
+            </>
+          )}
+          。<span className="text-on-surface">族群是人工歸類的，沒被歸進去的檔搜不到</span>
+          ——那不是資料漏收，是還沒有人把它放進任何一群，到「族群維護」加進去就會出現。
+        </p>
+      )}
+
       <p className="font-body-sm text-body-sm text-on-surface-variant">
         <span className="text-error font-semibold">這是今天的現況描述，不是預測。</span>
         訊號數是四個獨立條件的計數，不是加權分數——沒做過樣本外檢定的權重會長得像有依據，其實沒有。
@@ -902,7 +940,7 @@ function HeatBoard() {
         <PageState
           kind="empty"
           message={`沒有族群含「${query.trim()}」`}
-          hint="族群是人工維護的，這一檔還沒被歸到任何一群——到「族群維護」把它加進去，這裡就會出現。也可能是股號或名稱打錯了。"
+          hint={`族群是人工維護的，目前只涵蓋 ${formatNumber(coveredSymbols)} 檔。這一檔還沒被歸到任何一群——到「族群維護」把它加進去，這裡就會出現。也可能是股號或名稱打錯了。`}
         />
       )}
 
