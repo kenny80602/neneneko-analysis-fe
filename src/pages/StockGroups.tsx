@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
 import { getGroupHeat } from '../api/groupHeat';
@@ -11,7 +11,7 @@ import {
   removeStockGroup,
   saveStockGroup,
 } from '../api/stockGroup';
-import { GroupPeer, Holding, StockGroup } from '../api/types';
+import { GroupHeat, GroupMember, GroupPeer, Holding, StockGroup } from '../api/types';
 import { useAsyncData } from '../hooks/useAsyncData';
 import {
   DASH,
@@ -708,6 +708,12 @@ function MemberTable({ month, peers }: { month: string; peers: GroupPeer[] }) {
   );
 }
 
+/** 熱度榜的一列加上「是被哪幾檔命中的」。沒在搜尋時 hits 一律是空的。 */
+interface HeatRow {
+  item: GroupHeat;
+  hits: GroupMember[];
+}
+
 /**
  * 每日題材熱度榜。
  *
@@ -719,17 +725,104 @@ function HeatBoard() {
   const heat = useAsyncData(() => getGroupHeat(), []);
   const board = heat.data;
 
+  // 搜尋要比對的是完整成員名單，而熱度榜只回族群層級的數字與最多三檔領漲，所以另外拿一份。
+  // 這一支不打上游（只讀族群表、月營收與自選股三張表），跟熱度榜本身比成本可以忽略。
+  // 它掛掉不擋熱度榜：搜尋會退化成只比對族群名稱與領漲那幾檔，下面的提示會講明。
+  const members = useAsyncData(() => getGroupMembers(), []);
+
+  const [query, setQuery] = useState('');
+
+  // 後端沒有「這份榜是幾點算出來的」欄位，as_of 只到日期。
+  // 這裡記的是**畫面上這份是幾點抓回來的**，兩者語意不同所以分成兩個標籤顯示：
+  // 只寫一個「更新時間」會讓人以為按了重新整理就會拿到更新的收盤資料。
+  const [fetchedAt, setFetchedAt] = useState<Date | null>(null);
+  useEffect(() => {
+    if (board) setFetchedAt(new Date());
+  }, [board]);
+
   // 上市與上櫃的資料日期常常差一天（上市那包的上游慢一天），兩個都列出來，
   // 不要挑一個當「今天」。
-  const asOf = Object.entries(board?.as_of ?? {})
-    .map(([market, date]) => `${market === 'twse' ? '上市' : market === 'tpex' ? '上櫃' : market} ${date}`)
-    .join('、');
+  const asOf = Object.entries(board?.as_of ?? {}).map(([market, date]) => ({
+    label: market === 'twse' ? '上市' : market === 'tpex' ? '上櫃' : market,
+    date,
+  }));
+
+  // 族群名稱→成員。熱度榜與成員清單只能靠名稱對起來（熱度那一支不回 id），
+  // 名稱本來就是後端的鍵（同名視為覆蓋），所以對得起來。
+  const memberIndex = useMemo(() => {
+    const index: Record<string, GroupMember[]> = {};
+    for (const entry of members.data?.items ?? []) index[entry.group.name] = entry.members;
+    return index;
+  }, [members.data]);
+
+  const keyword = query.trim().toLowerCase();
+
+  // 比對範圍是**族群成員**而不是領漲那三檔：領漲只列今天漲最多的前三名，
+  // 拿它當搜尋範圍的話「我手上這檔今天在哪一群裡」多數時候會查不到，
+  // 而那正是這個搜尋要回答的問題。族群名稱也一起比，打「散熱」要找得到。
+  const rows: HeatRow[] = useMemo(() => {
+    const items = board?.items ?? [];
+    if (!keyword) return items.map((item) => ({ item, hits: [] }));
+
+    const result: HeatRow[] = [];
+    for (const item of items) {
+      const roster = memberIndex[item.name];
+      // 成員清單還沒回來（或那一支掛了）時退到領漲，至少不是完全搜不到。
+      const pool: GroupMember[] =
+        roster ??
+        item.leaders.map((leader) => ({
+          symbol: leader.symbol,
+          name: leader.name,
+          industry: '',
+          in_watchlist: false,
+        }));
+      const hits = pool.filter(
+        (member) =>
+          member.symbol.toLowerCase().includes(keyword) ||
+          (!!member.name && member.name.toLowerCase().includes(keyword))
+      );
+      if (hits.length > 0 || item.name.toLowerCase().includes(keyword)) {
+        result.push({ item, hits });
+      }
+    }
+    return result;
+  }, [board, keyword, memberIndex]);
 
   return (
     <div className="flex flex-col gap-stack-md">
-      <h3 className="font-headline-md text-headline-md text-primary flex items-center gap-2">
-        <span className="material-symbols-outlined text-[20px]">local_fire_department</span>
-        今日族群熱度
+      <div className="flex flex-wrap items-center gap-stack-sm">
+        <h3 className="font-headline-md text-headline-md text-primary flex items-center gap-2">
+          <span className="material-symbols-outlined text-[20px]">local_fire_department</span>
+          今日族群熱度
+        </h3>
+
+        {/* 資料日期與載入時間擺在標題旁邊而不是說明文字裡：這一頁一天只變一次，
+            「我看到的是不是今天的」是每次進來第一個要回答的問題。 */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          {asOf.map((entry) => (
+            <span
+              key={entry.label}
+              className="px-2 py-0.5 rounded bg-surface-container border border-outline-variant font-body-sm text-body-sm text-on-surface-variant"
+            >
+              {entry.label}資料日期{' '}
+              <span className="font-data-md text-data-md text-on-surface">{entry.date}</span>
+            </span>
+          ))}
+          {fetchedAt && (
+            <span className="font-body-sm text-body-sm text-outline">
+              載入時間{' '}
+              <span className="font-data-md text-data-md">
+                {fetchedAt.toLocaleTimeString('zh-TW', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                  hour12: false,
+                })}
+              </span>
+            </span>
+          )}
+        </div>
+
         <button
           type="button"
           onClick={heat.reload}
@@ -737,14 +830,51 @@ function HeatBoard() {
         >
           重新整理
         </button>
-      </h3>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-stack-sm">
+        <label className="flex items-center gap-2">
+          <span className="material-symbols-outlined text-[20px] text-on-surface-variant">
+            search
+          </span>
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="股號或名稱，例如 3324、雙鴻"
+            className={`${inputClass} w-64`}
+          />
+        </label>
+        {keyword && (
+          <>
+            <span className="font-body-sm text-body-sm text-on-surface-variant">
+              {rows.length} / {board?.items.length ?? 0} 個族群含這一檔
+            </span>
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              className="font-body-sm text-body-sm text-primary hover:underline"
+            >
+              清除
+            </button>
+          </>
+        )}
+        {/* 成員清單沒回來時搜尋範圍只剩領漲三檔，這件事一定要講，否則使用者會把
+            「搜不到」讀成「這一檔不在任何族群裡」。 */}
+        {keyword && !members.loading && Object.keys(memberIndex).length === 0 && (
+          <span className="font-body-sm text-body-sm text-error">
+            成員清單沒載入成功，目前只搜得到領漲那幾檔
+          </span>
+        )}
+      </div>
 
       <p className="font-body-sm text-body-sm text-on-surface-variant">
         <span className="text-error font-semibold">這是今天的現況描述，不是預測。</span>
         訊號數是四個獨立條件的計數，不是加權分數——沒做過樣本外檢定的權重會長得像有依據，其實沒有。
         族群內一律用中位數不用平均（一檔漲停就能把平均拉起來），指標一律用比率不用絕對金額。
-        {asOf && <>　資料日期：{asOf}。</>}
         {board != null && <>　用到 {board.days_covered} 個交易日。</>}
+        　搜尋比對的是族群名稱與<span className="text-on-surface">全部成員</span>的股號、名稱，
+        不只表上的領漲三檔。
       </p>
 
       {heat.loading && <PageState kind="loading" />}
@@ -758,7 +888,16 @@ function HeatBoard() {
         />
       )}
 
-      {board && board.items.length > 0 && (
+      {/* 搜不到跟「今天沒有橫斷面」是兩件事，訊息要分開：前者只代表這一檔不在任何族群裡。 */}
+      {!heat.loading && !heat.error && board && board.items.length > 0 && rows.length === 0 && (
+        <PageState
+          kind="empty"
+          message={`沒有族群含「${query.trim()}」`}
+          hint="族群是人工維護的，這一檔還沒被歸到任何一群——到「族群維護」把它加進去，這裡就會出現。也可能是股號或名稱打錯了。"
+        />
+      )}
+
+      {board && rows.length > 0 && (
         <>
           <div className="overflow-x-auto rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm">
             <table className="w-full border-collapse">
@@ -777,7 +916,7 @@ function HeatBoard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/50">
-                {board.items.map((item) => (
+                {rows.map(({ item, hits }) => (
                   <tr
                     key={item.name}
                     className="hover:bg-surface-container-low/50 transition-colors align-top"
@@ -793,6 +932,15 @@ function HeatBoard() {
                       {item.thin && (
                         <span className="inline-block mt-1 px-1.5 py-0.5 rounded bg-error/10 font-body-sm text-body-sm text-error">
                           樣本過少
+                        </span>
+                      )}
+                      {/* 命中的那一檔多半不在領漲欄裡，不標的話這一列看起來像沒理由被留下。 */}
+                      {hits.length > 0 && (
+                        <span className="block mt-1 font-body-sm text-body-sm text-primary">
+                          命中{' '}
+                          {hits
+                            .map((hit) => (hit.name ? `${hit.symbol} ${hit.name}` : hit.symbol))
+                            .join('、')}
                         </span>
                       )}
                     </td>
