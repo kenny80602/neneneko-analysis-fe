@@ -760,6 +760,14 @@ function HeatBoard() {
 
   const keyword = query.trim().toLowerCase();
 
+  // 成員清單那一支目前要跑三十幾秒（後端對每個代號各查一次月營收，958 檔就是 958 趟），
+  // 在它回來之前搜尋只比對得到領漲那三檔。
+  //
+  // ⚠️ 這段期間絕對不能說「沒有族群含這一檔」：多數檔本來就不是領漲，那句話會把
+  // 「還沒載完」講成「你沒把它歸類」，而那是完全相反的結論——實測搜「環球晶」
+  // （已經在矽晶圓與磊晶群裡）就會撞到。
+  const rosterPending = members.loading || (!members.data && !members.error);
+
   // 搜尋的涵蓋範圍：族群成員去重之後的檔數。
   //
   // 這個數字一定要寫在畫面上。族群是人工維護的，成員合起來大約只有全市場的一半，
@@ -880,12 +888,25 @@ function HeatBoard() {
         )}
         {/* 成員清單沒回來時搜尋範圍只剩領漲三檔，這件事一定要講，否則使用者會把
             「搜不到」讀成「這一檔不在任何族群裡」。 */}
-        {keyword && !members.loading && Object.keys(memberIndex).length === 0 && (
+        {rosterPending && (
+          <span className="font-body-sm text-body-sm text-on-surface-variant">
+            成員清單載入中（約 30 秒），現在只搜得到表上的領漲三檔
+          </span>
+        )}
+        {!rosterPending && Object.keys(memberIndex).length === 0 && (
           <span className="font-body-sm text-body-sm text-error">
             成員清單沒載入成功，目前只搜得到領漲那幾檔
           </span>
         )}
       </div>
+
+      {rosterPending && (
+        <p className="font-body-sm text-body-sm text-on-surface-variant">
+          搜尋範圍還在載入。族群成員清單跟熱度榜是兩支端點，熱度榜一秒多就回來了，
+          成員清單要三十幾秒——載完之前搜尋只比對得到表上的領漲三檔，
+          <span className="text-on-surface">搜不到不代表那一檔不在族群裡</span>。
+        </p>
+      )}
 
       {coveredSymbols > 0 && (
         <p className="font-body-sm text-body-sm text-on-surface-variant">
@@ -936,7 +957,7 @@ function HeatBoard() {
       )}
 
       {/* 搜不到跟「今天沒有橫斷面」是兩件事，訊息要分開：前者只代表這一檔不在任何族群裡。 */}
-      {!heat.loading && !heat.error && board && board.items.length > 0 && rows.length === 0 && (
+      {!heat.loading && !heat.error && !rosterPending && board && board.items.length > 0 && rows.length === 0 && (
         <PageState
           kind="empty"
           message={`沒有族群含「${query.trim()}」`}
