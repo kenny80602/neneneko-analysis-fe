@@ -41,7 +41,14 @@ export const getLinePreviews = () =>
 // 組出某一個樣板現在的樣子。**不會送出，也不吃推播額度。**
 //
 // 一次只組一個：持股試算那一支要逐檔取行情（正常一兩秒，上游退到 Yahoo 時十幾秒），
-// 六個一起組會讓整頁卡在最慢的那一支。逾時沿用預設，這裡不放寬——
-// 真的慢到超時，那件事本身就該看見。
+// 全部一起組會讓整頁卡在最慢的那一支。
+//
+// 逾時比照 /portfolio/valuation 放寬到 60 秒。持股試算那一支現在跟排程走完全同一條路
+// （逐檔行情＋技術指標＋三大法人籌碼），冷啟動時本來就會超過 request.ts 的預設 20 秒，
+// 而那時畫面會顯示「無法連線到伺服器」——把「慢」誤報成「壞了」比慢本身更糟。
+const PREVIEW_TIMEOUT_MS = 60000;
+
 export const getLinePreview = (key: string) =>
-  request.get<ApiResponse<LinePreview>>(`/line/previews/${key}`).then((res) => res.data.data);
+  request
+    .get<ApiResponse<LinePreview>>(`/line/previews/${key}`, { timeout: PREVIEW_TIMEOUT_MS })
+    .then((res) => res.data.data);
