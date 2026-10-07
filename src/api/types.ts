@@ -2239,7 +2239,8 @@ export interface StockScore {
   symbol: string;
   // 月營收年增率趨勢；虧損或本益比 ≥ 90 時偏多降為中性。全市場都有營收，所以幾乎不會缺。
   fundamental: ScoreFacet;
-  // 三大法人近 5 日累計買賣超。只收自選股，上櫃沒有逐檔歷史，榜上多數檔是 INSUFFICIENT。
+  // 三大法人近 5 日累計買賣超，加融資餘額近 5 日變化配同期股價；兩邊同向才給方向。
+  // 兩者都只收自選股，上櫃沒有逐檔法人歷史，榜上多數檔是 INSUFFICIENT。
   chip: ScoreFacet;
   // 收盤、月線、季線的排列與月線斜率。要 60 個交易日的收盤行情，同樣只收自選股。
   technical: ScoreFacet;
