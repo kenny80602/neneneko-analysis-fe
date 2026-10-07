@@ -127,7 +127,7 @@ export default function DailyQuotes() {
                     </td>
                     <td className="p-2 py-3 font-body-md text-body-md text-on-surface whitespace-nowrap">{row.name}</td>
                     <td className="p-2 py-3 font-body-sm text-body-sm text-on-surface-variant whitespace-nowrap">
-                      {groups.get(row.symbol)?.join('、') ?? '—'}
+                      {groups.get(row.symbol)?.map((name) => <div key={name}>{name}</div>) ?? '—'}
                     </td>
                     {row.traded ? (
                       <>
