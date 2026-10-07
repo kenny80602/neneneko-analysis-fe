@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
+import { BrokerTargetProvider } from '../context/BrokerTargetContext';
 import AppFooter from './AppFooter';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
@@ -23,7 +24,9 @@ export default function DashboardLayout() {
         <Topbar onOpenNav={() => setNavOpen(true)} />
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto flex flex-col gap-stack-lg">
           <div className="max-w-[1200px] w-full mx-auto flex flex-col gap-stack-lg flex-1">
-            <Outlet />
+            <BrokerTargetProvider>
+              <Outlet />
+            </BrokerTargetProvider>
             <AppFooter />
           </div>
         </main>

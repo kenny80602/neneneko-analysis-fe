@@ -4,6 +4,7 @@ import { GroupHeat, GroupMembers } from '../api/types';
 import { buildChainGraph, ChainSource } from '../utils/groupChain';
 import { TargetStore } from '../hooks/useTargets';
 import { DASH, formatSignedPercent, quoteColor } from '../utils/format';
+import BrokerTargetCell from './BrokerTargetCell';
 import TargetPriceEditor from './TargetPriceEditor';
 
 // 節點與版面尺寸（px）。名稱最長的族群約 14 個字，寬度給到兩行放得下。
@@ -401,6 +402,7 @@ function StockPanel({
               <th className={TH}>名稱</th>
               <th className={TH}>標示</th>
               {showReturn && <th className={`${TH} text-right`}>漲跌</th>}
+              <th className={`${TH} text-right`} title="各家券商目標價的中位數與家數（未驗證）">券商目標</th>
               {targets && <th className={`${TH} pr-1 text-right`}>目標價</th>}
             </tr>
           </thead>
@@ -426,6 +428,9 @@ function StockPanel({
                     {formatSignedPercent(stock.returnPct)}
                   </td>
                 )}
+                <td className="py-1 pr-2 text-right whitespace-nowrap">
+                  <BrokerTargetCell symbol={stock.symbol} />
+                </td>
                 {targets && (
                   <td className="py-1 pr-1 text-right whitespace-nowrap">
                     <TargetPriceEditor symbol={stock.symbol} store={targets} compact />

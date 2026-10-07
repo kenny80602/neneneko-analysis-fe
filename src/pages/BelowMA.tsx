@@ -1,5 +1,6 @@
 import { Fragment, useMemo, useState } from 'react';
 import GroupChainButton, { chainStocksOf } from '../components/GroupChainButton';
+import BrokerTargetCell from '../components/BrokerTargetCell';
 import PageHeader from '../components/PageHeader';
 import TargetPriceEditor from '../components/TargetPriceEditor';
 import PageState from '../components/PageState';
@@ -176,6 +177,7 @@ export default function BelowMA() {
                   <th className={`${TH} text-right`}>漲跌%</th>
                   <th className={`${TH} text-right`} title="自己設定的目標價，點格子修改，清空刪除">目標價</th>
                   <th className={`${TH} text-right`} title="還要漲多少才到目標價；負數是已經超過">距目標</th>
+                  <th className={`${TH} text-right`} title="各家券商目標價的中位數與家數，網路公開資訊整理、未驗證，點一下看每家與出處">券商目標</th>
                   <th className={`${TH} text-right`}>成交量(張)</th>
                   <th className={`${TH} text-right`}>成交金額</th>
                   <th className={`${TH} text-right`}>季線</th>
@@ -260,6 +262,9 @@ export default function BelowMA() {
                         <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface whitespace-nowrap">
                           {formatSignedPercent(gapToTarget(row.close, targets.get(row.symbol)?.target_price))}
                         </td>
+                        <td className="p-2 py-3 text-right">
+                          <BrokerTargetCell symbol={row.symbol} />
+                        </td>
                         <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface-variant whitespace-nowrap">
                           {formatShareToLot(row.volume)}
                         </td>
@@ -312,7 +317,7 @@ export default function BelowMA() {
                       </tr>
                       {open && (
                         <tr className="bg-surface-container-low/40">
-                          <td colSpan={18} className="p-4">
+                          <td colSpan={19} className="p-4">
                             <GroupPeersPanel
                               row={row}
                               groups={groups}

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import GroupChainButton, { chainStocksOf } from '../components/GroupChainButton';
+import BrokerTargetCell from '../components/BrokerTargetCell';
 import PageHeader from '../components/PageHeader';
 import TargetPriceEditor from '../components/TargetPriceEditor';
 import PageState from '../components/PageState';
@@ -125,6 +126,7 @@ export default function DailyQuotes() {
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">收盤</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap" title="自己設定的目標價，點格子修改，清空刪除">目標價</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap" title="還要漲多少才到目標價；負數是已經超過">距目標</th>
+                  <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap" title="各家券商目標價的中位數與家數，網路公開資訊整理、未驗證，點一下看每家與出處">券商目標</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">漲跌</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">本益比</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">成交量</th>
@@ -176,6 +178,9 @@ export default function DailyQuotes() {
                         <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface whitespace-nowrap">
                           {formatSignedPercent(gapToTarget(row.close, targets.get(row.symbol)?.target_price))}
                         </td>
+                        <td className="p-2 py-3 text-right">
+                          <BrokerTargetCell symbol={row.symbol} />
+                        </td>
                         <td className={`p-2 py-3 text-right font-data-md text-data-md ${quoteColor(row.change)}`}>
                           {row.ex_dividend ? '除權息' : formatSigned(row.change)}
                         </td>
@@ -196,7 +201,7 @@ export default function DailyQuotes() {
                         </td>
                       </>
                     ) : (
-                      <td colSpan={12} className="p-2 py-3 text-right font-body-sm text-body-sm text-outline">
+                      <td colSpan={13} className="p-2 py-3 text-right font-body-sm text-body-sm text-outline">
                         當日無成交
                       </td>
                     )}

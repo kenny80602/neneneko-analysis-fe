@@ -2199,3 +2199,26 @@ export interface RemoveStockTargetResult {
   // 刪掉幾列（0 或 1）。0 代表本來就沒設定，不是錯誤。
   removed: number;
 }
+
+// ===== 券商目標價（/stocks/broker-targets）=====
+
+// 某家券商替某一檔給的目標價。資料是網路公開資訊整理來的，不是官方資料，可能搜錯或過期：
+// 每一筆都帶出處網址與發布日，verified 為 false 代表沒人對照過出處。
+// 沒出現在清單裡的檔代表「沒查到」，不是「券商沒有給目標價」。
+export interface BrokerTarget {
+  id: string;
+  symbol: string;
+  broker: string;
+  // 目標價，單位元，一定大於 0。
+  target_price: number;
+  // 發布日 YYYY-MM-DD。多半是新聞日，不一定是報告日。
+  report_date: string;
+  source_url: string;
+  note: string;
+  verified: boolean;
+}
+
+export interface BrokerTargetList {
+  count: number;
+  items: BrokerTarget[];
+}

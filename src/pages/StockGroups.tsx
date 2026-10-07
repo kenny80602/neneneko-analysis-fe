@@ -12,6 +12,7 @@ import {
   saveStockGroup,
 } from '../api/stockGroup';
 import GroupChainButton, { chainStocksOf } from '../components/GroupChainButton';
+import BrokerTargetCell from '../components/BrokerTargetCell';
 import TargetPriceEditor from '../components/TargetPriceEditor';
 import { TargetStore, useTargets } from '../hooks/useTargets';
 import { GroupHeat, GroupHeatCore, GroupHeatMember, GroupLink, GroupMember, GroupPeer, Holding, StockGroup } from '../api/types';
@@ -896,6 +897,9 @@ function HeatMemberTable({ members, keyword, targets, core = [], leaders = [], c
         <td className="p-2 text-right font-data-md text-data-md text-outline whitespace-nowrap">
           {row.tradeValue == null ? DASH : formatAmount(row.tradeValue)}
         </td>
+        <td className="p-2 text-right">
+          <BrokerTargetCell symbol={row.symbol} />
+        </td>
         {hasTarget && (
           <td className="p-2 pr-3 text-right">
             <TargetPriceEditor symbol={row.symbol} store={targets as TargetStore} />
@@ -916,6 +920,9 @@ function HeatMemberTable({ members, keyword, targets, core = [], leaders = [], c
               <th className={`${headCell} text-left`}>標示</th>
               <th className={`${headCell} text-right`}>漲跌</th>
               <th className={`${headCell} text-right`}>成交金額</th>
+              <th className={`${headCell} text-right`} title="各家券商目標價的中位數與家數，網路公開資訊整理、未驗證，點一下看每家與出處">
+                券商目標
+              </th>
               {hasTarget && (
                 <th className={`${headCell} pr-3 text-right`} title="自己設定的目標價，點格子修改，清空刪除">
                   目標價
