@@ -896,7 +896,7 @@ function HeatBoard() {
             「搜不到」讀成「這一檔不在任何族群裡」。 */}
         {rosterPending && (
           <span className="font-body-sm text-body-sm text-on-surface-variant">
-            成員清單載入中（約 30 秒），現在只搜得到表上的領漲三檔
+            成員清單載入中（約 30 秒），現在只搜得到各族群領漲的三檔
           </span>
         )}
         {!rosterPending && Object.keys(memberIndex).length === 0 && (
@@ -909,7 +909,7 @@ function HeatBoard() {
       {rosterPending && (
         <p className="font-body-sm text-body-sm text-on-surface-variant">
           搜尋範圍還在載入。族群成員清單跟熱度榜是兩支端點，熱度榜一秒多就回來了，
-          成員清單要三十幾秒——載完之前搜尋只比對得到表上的領漲三檔，
+          成員清單要三十幾秒——載完之前搜尋只比對得到各族群領漲的三檔，
           <span className="text-on-surface">搜不到不代表那一檔不在族群裡</span>。
         </p>
       )}
@@ -946,11 +946,11 @@ function HeatBoard() {
         　名次是後端這份榜的順序：<span className="text-on-surface">涵蓋 3 檔以上的優先</span>，
         其次訊號數，平手才看超額報酬。所以名次高不等於漲得多，而是「今天最像整群在動」；
         標了樣本過少的一律排在後段，那個名次講的是不可信不是比較弱。搜尋過濾不會重編名次。
-        　「龍頭／老二／老三」是依最新月營收排的族群最大三檔（營收大不一定是產業龍頭），漲跌是今天的，破折號代表今天算不出來（停牌、除權息）；「領漲」只列漲最多的三檔，要看整群逐檔的漲跌就按族群名稱底下的
-        <span className="text-on-surface">展開全部</span>。
+        　表格只列族群層級的數字，股票都收在每個族群的
+        <span className="text-on-surface">展開</span>裡：龍頭／老二／老三是依最新月營收排的族群最大三檔（營收大不一定是產業龍頭），領漲是今天漲最多的三檔，再往下是整群逐檔的漲跌；破折號代表今天算不出來（停牌、除權息）。
         {board != null && <>　用到 {board.days_covered} 個交易日。</>}
         　搜尋比對的是族群名稱與<span className="text-on-surface">全部成員</span>的股號、名稱，
-        不只表上的領漲三檔。
+        不只領漲三檔。
       </p>
 
       {heat.loading && <PageState kind="loading" />}
@@ -989,10 +989,6 @@ function HeatBoard() {
                   <th className={`${headCell} text-right`}>占大盤</th>
                   <th className={`${headCell} text-right`}>占比變化</th>
                   <th className={`${headCell} text-right`}>單筆／市場</th>
-                  <th className={`${headCell} text-left`} title="依最新月營收由大到小，不是今天漲最多的">
-                    龍頭／老二／老三
-                  </th>
-                  <th className={`${headCell} pr-4 text-left`}>領漲前 3</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/50">
@@ -1081,53 +1077,11 @@ function HeatBoard() {
                     <td className={`${numCell} text-on-surface`}>
                       {formatNumber(item.avg_trade_size_ratio, 2)} 倍
                     </td>
-                    <td className="p-2 py-3">
-                      {item.core.length === 0 ? (
-                        <span className="font-body-sm text-body-sm text-outline">{DASH}</span>
-                      ) : (
-                        <span className="flex flex-col gap-0.5" title={`依 ${item.core_month} 月營收排序`}>
-                          {item.core.map((member) => (
-                            <span key={member.symbol} className="font-data-md text-data-md whitespace-nowrap">
-                              <span className="font-body-sm text-body-sm text-outline">
-                                {CORE_LABEL[member.rank] ?? `第${member.rank}`}
-                              </span>{' '}
-                              <span className="text-on-surface-variant">{member.symbol}</span>{' '}
-                              <span className="font-body-sm text-body-sm text-on-surface">{member.name}</span>{' '}
-                              <span className={quoteColor(member.return_pct)}>
-                                {formatSignedPercent(member.return_pct)}
-                              </span>
-                            </span>
-                          ))}
-                        </span>
-                      )}
-                    </td>
-                    <td className="p-2 py-3 pr-4">
-                      {item.leaders.length === 0 ? (
-                        <span className="font-body-sm text-body-sm text-outline">{DASH}</span>
-                      ) : (
-                        <span className="flex flex-col gap-0.5">
-                          {item.leaders.map((leader) => (
-                            <span
-                              key={leader.symbol}
-                              className="font-data-md text-data-md whitespace-nowrap"
-                            >
-                              <span className="text-on-surface-variant">{leader.symbol}</span>{' '}
-                              <span className="font-body-sm text-body-sm text-on-surface">
-                                {leader.name}
-                              </span>{' '}
-                              <span className={quoteColor(leader.return_pct)}>
-                                {formatSignedPercent(leader.return_pct)}
-                              </span>
-                            </span>
-                          ))}
-                        </span>
-                      )}
-                    </td>
                   </tr>
 
                   {open && (
                     <tr className="bg-surface-container-low/40">
-                      <td colSpan={12} className="p-4">
+                      <td colSpan={10} className="p-4">
                         <div className="flex flex-col gap-stack-sm">
                           <p className="font-body-sm text-body-sm text-on-surface-variant">
                             <span className="text-on-surface font-semibold">{item.name}</span>
@@ -1142,6 +1096,43 @@ function HeatBoard() {
                               </>
                             )}
                           </p>
+                          {item.core.length > 0 && (
+                            <p className="font-body-sm text-body-sm text-on-surface-variant">
+                              {item.core.map((member) => (
+                                <span key={member.symbol} className="mr-4 whitespace-nowrap">
+                                  <span className="text-outline">
+                                    {CORE_LABEL[member.rank] ?? `第${member.rank}`}
+                                  </span>{' '}
+                                  <span className="font-data-md text-data-md text-on-surface-variant">
+                                    {member.symbol}
+                                  </span>{' '}
+                                  <span className="text-on-surface">{member.name}</span>{' '}
+                                  <span className={`font-data-md text-data-md ${quoteColor(member.return_pct)}`}>
+                                    {formatSignedPercent(member.return_pct)}
+                                  </span>
+                                </span>
+                              ))}
+                              <span className="text-outline">
+                                （依 {item.core_month} 月營收，不是今天漲最多的）
+                              </span>
+                            </p>
+                          )}
+                          {item.leaders.length > 0 && (
+                            <p className="font-body-sm text-body-sm text-on-surface-variant">
+                              <span className="mr-2 text-outline">領漲</span>
+                              {item.leaders.map((leader) => (
+                                <span key={leader.symbol} className="mr-4 whitespace-nowrap">
+                                  <span className="font-data-md text-data-md text-on-surface-variant">
+                                    {leader.symbol}
+                                  </span>{' '}
+                                  <span className="text-on-surface">{leader.name}</span>{' '}
+                                  <span className={`font-data-md text-data-md ${quoteColor(leader.return_pct)}`}>
+                                    {formatSignedPercent(leader.return_pct)}
+                                  </span>
+                                </span>
+                              ))}
+                            </p>
+                          )}
                           <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
                             {item.members.map((member) => {
                               const matched =
