@@ -1,4 +1,4 @@
-import { ScoreFacet, StockScore } from '../api/types';
+import { ChipMessy, ScoreFacet, StockScore } from '../api/types';
 import { DASH } from '../utils/format';
 import { LEVEL_LABEL, levelClass } from './ScoreBadges';
 
@@ -13,18 +13,37 @@ const FACETS: {
   { key: 'technical', name: '技術面', icon: 'show_chart', question: '價格走勢現在往哪走' },
 ];
 
+// 三態：true 是亂、false 是沒有跡象、null 是資料不足。null 不能畫成 false，
+// 那會把「集保還沒累積夠週數」讀成「籌碼穩定」。
+function MessyRow({ messy }: { messy: ChipMessy }) {
+  const label = messy.messy === true ? '籌碼亂' : messy.messy === false ? '沒有籌碼亂的跡象' : `${DASH} 籌碼亂：資料不足`;
+  const tone = messy.messy === true ? 'bg-error/10 text-error' : 'text-outline';
+  return (
+    <div className="flex flex-col gap-1 border-t border-outline-variant/50 pt-2">
+      <span className={`self-start rounded px-2 py-0.5 font-data-md text-[12px] ${tone}`}>{label}</span>
+      <ul className="flex flex-col gap-1 font-body-sm text-body-sm text-on-surface-variant list-disc pl-4">
+        {messy.reasons.map((reason) => (
+          <li key={reason}>{reason}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function FacetColumn({
   name,
   icon,
   question,
   facet,
   loading,
+  messy,
 }: {
   name: string;
   icon: string;
   question: string;
   facet: ScoreFacet | undefined;
   loading: boolean;
+  messy?: ChipMessy;
 }) {
   // 還在載入時不能顯示「資料不足」：那是一個結論，載入中只是還沒有結論。
   const pending = !facet && loading;
@@ -52,6 +71,7 @@ function FacetColumn({
         ))}
         {!facet && !loading && <li>沒有取得評分</li>}
       </ul>
+      {messy && <MessyRow messy={messy} />}
     </div>
   );
 }
@@ -86,7 +106,13 @@ export default function ScoreCard({
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-stack-md">
         {FACETS.map(({ key, ...rest }) => (
-          <FacetColumn key={key} {...rest} facet={score?.[key]} loading={loading} />
+          <FacetColumn
+            key={key}
+            {...rest}
+            facet={score?.[key]}
+            loading={loading}
+            messy={key === 'chip' ? score?.chip_messy : undefined}
+          />
         ))}
       </div>
 
@@ -95,6 +121,8 @@ export default function ScoreCard({
         不是中性：收盤行情、三大法人與融資融券只收自選股，不在自選股的檔籌碼面與技術面多半評不出來；
         技術面要 60 個交易日的收盤行情。基本面看月營收年增率與本益比，籌碼面看三大法人與融資餘額的變化，
         技術面看月線、季線的排列與斜率。
+        「籌碼亂」是獨立的參考標記，看集保近 4 週大戶是否在減、散戶是否在增，再用法人賣超或融資增加佐證；
+        集保只有週資料，累積不到 2 週時是資料不足，門檻是經驗值，之後會依實際分佈調整。
       </p>
     </section>
   );

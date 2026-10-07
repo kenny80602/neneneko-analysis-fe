@@ -34,6 +34,12 @@ function facetTitle(name: string, facet: ScoreFacet): string {
   return [head, ...facet.reasons.map((reason) => `・${reason}`)].join('\n');
 }
 
+// 籌碼亂只在 true 時多一顆徽章：false 與 null 都不畫，榜單才不會每一列都多一格。
+// null（資料不足）與 false 的差別留在單檔卡片裡講，這裡滑鼠移上去看依據就夠。
+function messyTitle(score: StockScore): string {
+  return ['籌碼亂', ...score.chip_messy.reasons.map((reason) => `・${reason}`)].join('\n');
+}
+
 /**
  * 一檔的基本面／籌碼面／技術面三個小徽章，滑鼠移上去看判斷依據。
  *
@@ -57,6 +63,14 @@ export default function ScoreBadges({ score, title }: { score?: StockScore; titl
           </span>
         );
       })}
+      {score?.chip_messy?.messy === true && (
+        <span
+          title={messyTitle(score)}
+          className="rounded px-1 py-0.5 font-data-md text-[11px] leading-none bg-error/10 text-error"
+        >
+          籌亂
+        </span>
+      )}
     </span>
   );
 }

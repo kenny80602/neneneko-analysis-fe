@@ -2235,6 +2235,14 @@ export interface ScoreFacet {
   reasons: string[];
 }
 
+// 「籌碼亂」標記：集保近幾週大戶減、散戶增，且法人賣超或融資增加至少一項佐證。
+export interface ChipMessy {
+  // null 是資料不足、算不出來（集保不到 2 週，或佐證的法人與融資都沒資料），
+  // 不是 false——畫成「籌碼穩定」會把沒資料讀成沒問題。
+  messy: boolean | null;
+  reasons: string[];
+}
+
 export interface StockScore {
   symbol: string;
   // 月營收年增率趨勢；虧損或本益比 ≥ 90 時偏多降為中性。全市場都有營收，所以幾乎不會缺。
@@ -2244,6 +2252,8 @@ export interface StockScore {
   chip: ScoreFacet;
   // 收盤、月線、季線的排列與月線斜率。要 60 個交易日的收盤行情，同樣只收自選股。
   technical: ScoreFacet;
+  // 獨立於 chip 之外，不影響偏多／偏空。依週資料與經驗門檻（0.3%）算的參考標記，不是預測。
+  chip_messy: ChipMessy;
 }
 
 export interface StockScores {
