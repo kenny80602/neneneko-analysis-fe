@@ -159,3 +159,14 @@ export function formatRank(rank: number | null | undefined, total: number | null
   if (isBlank(rank)) return DASH;
   return isBlank(total) ? formatNumber(rank) : `${formatNumber(rank)} / ${formatNumber(total)}`;
 }
+
+/**
+ * 當日漲跌幅（%）：漲跌價差除以前一日收盤（收盤減漲跌）。
+ * 沒成交、除權息日（漲跌價差不是真的漲跌，見 DailyQuote.ex_dividend）與算不出前收的回 null，
+ * 不是 0——0 代表剛好平盤。
+ */
+export function changePercent(quote: { traded: boolean; ex_dividend: boolean; close: number; change: number }): number | null {
+  if (!quote.traded || quote.ex_dividend) return null;
+  const previous = quote.close - quote.change;
+  return previous > 0 ? (quote.change / previous) * 100 : null;
+}
