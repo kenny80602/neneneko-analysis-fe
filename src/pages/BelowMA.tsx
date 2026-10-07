@@ -27,6 +27,10 @@ const SHORT_HISTORY_DAYS = 100;
 // 族群熱度榜前幾名要上色。榜上的族群數量不固定，用固定名次而不是比例。
 const HOT_GROUP_TOP = 20;
 
+// 回檔超過這個幅度（%）整格標紅。刻意跟推播的紅字門檻（25%，見 Alert.tsx）分開：
+// 這一頁是找跌深的，門檻是使用者指定的 30。
+const PULLBACK_ALERT_PCT = 30;
+
 const TH = 'p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap';
 
 export default function BelowMA() {
@@ -82,7 +86,7 @@ export default function BelowMA() {
         <p className="font-body-sm text-body-sm text-on-surface-variant">
           季線 = 最近 60 個成交日收盤價的簡單平均（未還原，除權息會有偏差）；乖離 = 收盤相對季線的百分比，
           越負離季線越遠。範圍只有已落地收盤行情的那批（自選股加半導體族群），不是全市場。
-          收盤在季線以下是現況描述，不是買賣訊號。族群是自己在「主題族群」建的，破折號代表沒歸進任何族群。成交金額名次是最新一天在同市場普通股裡的名次，沒有名次（ETF、回補進來的日期）顯示破折號。族群熱度前 20 名用藍色底標出（刻意不用紅綠：那是漲跌的顏色）（族群欄的 #名次，是熱度榜的現況排序、不是預測）。回檔 =（半年最高 − 收盤）÷ 半年最高，公式同持股試算；半年最高取已落地的收盤行情，不是去問 Yahoo，歷史不到約 100 個成交日的檔標紅色星號（回檔被低估）。本益比與殖利率取每一檔最新一筆估值，本益比「虧損」是上游給空值（虧損或尚無盈餘）；破折號是沒配息沒有殖利率，或估值還沒收集。
+          收盤在季線以下是現況描述，不是買賣訊號。族群是自己在「主題族群」建的，破折號代表沒歸進任何族群。成交金額名次是最新一天在同市場普通股裡的名次，沒有名次（ETF、回補進來的日期）顯示破折號。族群熱度前 20 名用藍色底標出（刻意不用紅綠：那是漲跌的顏色）（族群欄的 #名次，是熱度榜的現況排序、不是預測）。回檔 =（半年最高 − 收盤）÷ 半年最高，公式同持股試算，超過 30% 整格標紅；半年最高取已落地的收盤行情，不是去問 Yahoo，歷史不到約 100 個成交日的檔標紅色星號（回檔被低估）。本益比與殖利率取每一檔最新一筆估值，本益比「虧損」是上游給空值（虧損或尚無盈餘）；破折號是沒配息沒有殖利率，或估值還沒收集。
         </p>
 
         {data && (
@@ -195,7 +199,18 @@ export default function BelowMA() {
                             </span>
                           )}
                         </td>
-                        <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface">
+                        <td
+                          className={`p-2 py-3 text-right font-data-md text-data-md ${
+                            row.pullback_pct != null && row.pullback_pct > PULLBACK_ALERT_PCT
+                              ? 'bg-error/15 text-error font-bold'
+                              : 'text-on-surface'
+                          }`}
+                          title={
+                            row.pullback_pct != null && row.pullback_pct > PULLBACK_ALERT_PCT
+                              ? `回檔超過 ${PULLBACK_ALERT_PCT}%`
+                              : undefined
+                          }
+                        >
                           {formatPercent(row.pullback_pct)}
                         </td>
                         <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface">
