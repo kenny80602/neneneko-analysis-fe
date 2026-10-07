@@ -70,6 +70,35 @@ export interface DailyQuoteByDate {
   quotes: DailyQuote[];
 }
 
+// ===== 季線以下（/stocks/daily/below-ma）=====
+
+// 一檔收盤在季線以下的股票。
+export interface BelowMAStock {
+  symbol: string;
+  name: string;
+  market: string;
+  // 這一檔最新一筆收盤的交易日。
+  date: string;
+  close: number;
+  // 最近 60 個成交日的收盤均價（季線），沒成交的日子不計。
+  ma60: number;
+  // 收盤相對季線的乖離（%），負數；越負離季線越遠。
+  gap_pct: number;
+}
+
+export interface BelowMA {
+  // 各市場最新的資料日期。上市與上櫃常差一天，不要挑一個當「今天」。
+  as_of: Record<string, string>;
+  // 算得出季線的檔數，是 count 的分母。
+  scanned: number;
+  // 成交日不到 60 天、算不出季線而沒納入的檔數。
+  // 歷史回補沒補完時這個數字會很大，此時 count 偏少不代表市場沒有弱勢股。
+  insufficient: number;
+  count: number;
+  items: BelowMAStock[];
+  caveats: string[];
+}
+
 // ===== 即時報價（/stocks/realtime/:symbol）=====
 
 // 現價的來源。不是 TRADE 就代表這不是本次快照的成交價，顯示時應標示出來。

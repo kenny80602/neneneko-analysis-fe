@@ -1,6 +1,7 @@
 import request from './request';
 import {
   ApiResponse,
+  BelowMA,
   CollectResult,
   DailyQuoteByDate,
   DailyQuoteHistory,
@@ -30,3 +31,8 @@ export const collectDailyQuotes = () =>
   request
     .post<ApiResponse<CollectResult>>('/stocks/daily/collect')
     .then((res) => res.data.data);
+
+// 收盤在季線（60 日均）以下的股票，離季線最遠的排最前面。
+// 後端逐檔讀最近 60 個成交日，回應時間跟 daily_quotes 的檔數成正比，不要輪詢。
+export const getBelowMA = () =>
+  request.get<ApiResponse<BelowMA>>('/stocks/daily/below-ma').then((res) => res.data.data);

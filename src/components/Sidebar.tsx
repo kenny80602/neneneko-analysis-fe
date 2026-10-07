@@ -36,6 +36,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { icon: 'monitoring', label: '市場概況', path: '/market' },
       { icon: 'table_rows', label: '每日收盤', path: '/quotes' },
+      { icon: 'trending_down', label: '季線以下', path: '/below-ma' },
       { icon: 'leaderboard', label: '全市場排行', path: '/ranks' },
       { icon: 'workspaces', label: '主題族群', path: '/groups' },
       { icon: 'event', label: '台股行事曆', path: '/calendar' },

@@ -5,6 +5,7 @@ import { SymbolProvider } from './context/SymbolContext';
 import Alert from './pages/Alert';
 import LinePreview from './pages/LinePreview';
 import Announcements from './pages/Announcements';
+import BelowMA from './pages/BelowMA';
 import Calendar from './pages/Calendar';
 import DailyQuotes from './pages/DailyQuotes';
 import Dashboard from './pages/Dashboard';
@@ -51,6 +52,7 @@ function App() {
               <Route path="/quotes" element={<DailyQuotes />} />
               <Route path="/paper" element={<PaperTrading />} />
               <Route path="/calendar" element={<Calendar />} />
+              <Route path="/below-ma" element={<BelowMA />} />
               <Route path="/ranks" element={<Ranks />} />
               <Route path="/groups" element={<StockGroups />} />
               <Route path="/macro" element={<Macro />} />
