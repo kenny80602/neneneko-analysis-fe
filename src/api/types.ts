@@ -97,6 +97,9 @@ export interface BelowMAStock {
   pullback_pct: number | null;
   // 最新一天對前一個交易日的漲跌幅（%）。null 是算不出來（除權息日、沒有前收），不是平盤。
   change_pct: number | null;
+  // 最新一天的成交股數（不是張）與成交金額（元）。
+  volume: number;
+  trade_value: number;
 }
 
 export interface BelowMA {

@@ -7,7 +7,7 @@ import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { useSymbolGroups } from '../hooks/useSymbolGroups';
 import { useSymbolValuations } from '../hooks/useSymbolValuations';
-import { formatNumber, formatPe, formatPrice, formatRank, formatSigned, marketLabel, quoteColor, today } from '../utils/format';
+import { formatAmount, formatNumber, formatPe, formatPrice, formatRank, formatSigned, marketLabel, quoteColor, today } from '../utils/format';
 
 export default function DailyQuotes() {
   const { setSymbol } = useSymbol();
@@ -107,6 +107,7 @@ export default function DailyQuotes() {
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">漲跌</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">本益比</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">成交量</th>
+                  <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">成交金額</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">成交筆數</th>
                   <th className="p-2 pr-4 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">成交金額名次</th>
                 </tr>
@@ -152,6 +153,9 @@ export default function DailyQuotes() {
                         <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface-variant">
                           {formatNumber(row.volume)}
                         </td>
+                        <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface-variant whitespace-nowrap">
+                          {formatAmount(row.trade_value)}
+                        </td>
                         <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface-variant">
                           {formatNumber(row.transaction_count)}
                         </td>
@@ -160,7 +164,7 @@ export default function DailyQuotes() {
                         </td>
                       </>
                     ) : (
-                      <td colSpan={9} className="p-2 py-3 text-right font-body-sm text-body-sm text-outline">
+                      <td colSpan={10} className="p-2 py-3 text-right font-body-sm text-body-sm text-outline">
                         當日無成交
                       </td>
                     )}
