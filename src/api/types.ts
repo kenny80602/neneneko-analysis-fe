@@ -277,6 +277,18 @@ export interface ValuationHistory {
   items: Valuation[];
 }
 
+// 整批估值（/stocks/valuation）的一列：個股那支的 Valuation 加上代號與名稱。
+export interface ValuationBySymbol extends Valuation {
+  symbol: string;
+  name: string;
+  market: Market | '';
+}
+
+export interface ValuationByDate {
+  count: number;
+  items: ValuationBySymbol[];
+}
+
 // ===== 月營收（/stocks/revenue）=====
 
 // 金額單位一律新台幣千元，跟上游一致；百分比欄位單位為 %。
