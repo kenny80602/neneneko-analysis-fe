@@ -2222,3 +2222,32 @@ export interface BrokerTargetList {
   count: number;
   items: BrokerTarget[];
 }
+
+// ===== 個股三面向評分（/stocks/scores）=====
+
+// INSUFFICIENT 是「沒有資料可評」，不是中性：中性是有資料、看過了、沒有方向。
+// 畫面上要畫成破折號，混成同一格的話使用者會把「沒資料」讀成「沒問題」。
+export type ScoreLevel = 'BULLISH' | 'NEUTRAL' | 'BEARISH' | 'INSUFFICIENT';
+
+export interface ScoreFacet {
+  level: ScoreLevel;
+  // 判斷依據，一句一條。INSUFFICIENT 時說明缺的是什麼。
+  reasons: string[];
+}
+
+export interface StockScore {
+  symbol: string;
+  // 月營收年增率趨勢；虧損或本益比 ≥ 90 時偏多降為中性。全市場都有營收，所以幾乎不會缺。
+  fundamental: ScoreFacet;
+  // 三大法人近 5 日累計買賣超。只收自選股，上櫃沒有逐檔歷史，榜上多數檔是 INSUFFICIENT。
+  chip: ScoreFacet;
+  // 收盤、月線、季線的排列與月線斜率。要 60 個交易日的收盤行情，同樣只收自選股。
+  technical: ScoreFacet;
+}
+
+export interface StockScores {
+  count: number;
+  items: StockScore[];
+  method: string;
+  caveats: string[];
+}

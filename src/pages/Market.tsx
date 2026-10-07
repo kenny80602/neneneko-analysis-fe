@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import BrokerTargetCell from '../components/BrokerTargetCell';
 import PageState from '../components/PageState';
+import ScoreBadges from '../components/ScoreBadges';
 import {
   FALLBACK_SYMBOLS,
   MACRO_DIGITS,
@@ -29,6 +30,7 @@ import {
 import { MarketMarginSummary, TWSEVolumeRank } from '../api/types';
 import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
+import { useStockScores } from '../hooks/useStockScores';
 import {
   DASH,
   formatAmount,
@@ -198,6 +200,13 @@ export default function Market() {
   }, [volumeRanks.data, tradeValueRanks.data, twseSort]);
 
   const twseSource = twseSort === 'value' ? tradeValueRanks : volumeRanks;
+
+  // 三面向評分。上市與上櫃各發一次（各自最多 20 檔），而不是每列各問一次。
+  // 評分失敗不擋榜單：那一欄退成破折號，榜單照常可讀。
+  const twseScores = useStockScores(rankedTwse.map((row) => row.symbol));
+  const tpexScores = useStockScores(
+    (tpexSide === 'amount' ? rankedAmounts : rankedMovers).map((row) => row.symbol)
+  );
 
   // 同時在成交量前 20 與成交金額前 20 的代號。兩份榜單都載入成功才算：只有一份有資料時，
   // 「交集是空的」跟「還不知道」不一樣，不能讓使用者以為今天沒有這種股票。
@@ -588,6 +597,7 @@ export default function Market() {
                       <tr>
                         <th className={`${thClass} pl-4 text-left`}>名次</th>
                         <th className={`${thClass} text-left`}>代號 / 名稱</th>
+                        <th className={`${thClass} text-right`} title="基本面、籌碼面、技術面各自偏多、中性或偏空；破折號是沒有資料可評，不是中性。滑鼠移到徽章上看判斷依據">三面向</th>
                         <th className={`${thClass} text-right`} title="各家券商目標價的中位數與家數，網路公開資訊整理、未驗證，點一下看每家與出處">券商目標</th>
                         <th className={`${thClass} text-right`}>收盤</th>
                         <th className={`${thClass} text-right`}>漲跌幅</th>
@@ -629,6 +639,12 @@ export default function Market() {
                             </span>
                           </td>
                           <td className="p-2 py-3 text-right">
+                            <ScoreBadges
+                              score={twseScores.bySymbol.get(row.symbol)}
+                              title={twseScores.failed ? '評分載入失敗，榜單不受影響' : undefined}
+                            />
+                          </td>
+                          <td className="p-2 py-3 text-right">
                             <BrokerTargetCell symbol={row.symbol} />
                           </td>
                           <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface">
@@ -655,7 +671,7 @@ export default function Market() {
                 {bothTopReady
                   ? `標色的是成交量與成交金額都在前 20 名的股票（今天 ${bothTop.size} 檔），表示量大、金額也大，不是漲跌訊號。`
                   : '成交量或成交金額其中一份榜單還沒載入成功，所以暫時無法標出「兩個榜都在前 20 名」的股票（這不代表今天沒有）。'}
-                上櫃沒有成交量榜，所以上櫃那一欄不標。「券商目標」是各家券商目標價的中位數與家數，點一下列出每一家與出處；資料是網路公開資訊整理、未驗證，而且只涵蓋查得到的少數檔，破折號是沒查到，不是券商沒給。
+                上櫃沒有成交量榜，所以上櫃那一欄不標。「三面向」是依規則算的現況描述，不是買賣建議：基本面看月營收年增率與本益比，籌碼面看三大法人近 5 日買賣超，技術面看月線、季線的排列與斜率；收盤行情與法人只收自選股，榜上其他檔的籌碼面、技術面會是破折號，那是「沒有資料可評」，不是中性。「券商目標」是各家券商目標價的中位數與家數，點一下列出每一家與出處；資料是網路公開資訊整理、未驗證，而且只涵蓋查得到的少數檔，破折號是沒查到，不是券商沒給。
               </p>
               <p className="p-4 pt-2 font-body-sm text-body-sm text-on-surface-variant">
                 {twseSort === 'value'
@@ -720,6 +736,7 @@ export default function Market() {
                       <tr>
                         <th className={`${thClass} pl-4 text-left`}>名次</th>
                         <th className={`${thClass} text-left`}>代號 / 名稱</th>
+                        <th className={`${thClass} text-right`} title="基本面、籌碼面、技術面各自偏多、中性或偏空；破折號是沒有資料可評，不是中性。滑鼠移到徽章上看判斷依據">三面向</th>
                         <th className={`${thClass} text-right`} title="各家券商目標價的中位數與家數，網路公開資訊整理、未驗證，點一下看每家與出處">券商目標</th>
                         <th className={`${thClass} text-right`}>成交價</th>
                         <th className={`${thClass} text-right`}>漲跌</th>
@@ -744,6 +761,12 @@ export default function Market() {
                             <span className="block font-body-sm text-body-sm text-on-surface-variant">
                               {row.name}
                             </span>
+                          </td>
+                          <td className="p-2 py-3 text-right">
+                            <ScoreBadges
+                              score={tpexScores.bySymbol.get(row.symbol)}
+                              title={tpexScores.failed ? '評分載入失敗，榜單不受影響' : undefined}
+                            />
                           </td>
                           <td className="p-2 py-3 text-right">
                             <BrokerTargetCell symbol={row.symbol} />
@@ -794,6 +817,7 @@ export default function Market() {
                       <tr>
                         <th className={`${thClass} pl-4 text-left`}>名次</th>
                         <th className={`${thClass} text-left`}>代號 / 名稱</th>
+                        <th className={`${thClass} text-right`} title="基本面、籌碼面、技術面各自偏多、中性或偏空；破折號是沒有資料可評，不是中性。滑鼠移到徽章上看判斷依據">三面向</th>
                         <th className={`${thClass} text-right`} title="各家券商目標價的中位數與家數，網路公開資訊整理、未驗證，點一下看每家與出處">券商目標</th>
                         <th className={`${thClass} pr-4 text-right`}>成交值</th>
                       </tr>
@@ -816,6 +840,12 @@ export default function Market() {
                             <span className="block font-body-sm text-body-sm text-on-surface-variant">
                               {row.name}
                             </span>
+                          </td>
+                          <td className="p-2 py-3 text-right">
+                            <ScoreBadges
+                              score={tpexScores.bySymbol.get(row.symbol)}
+                              title={tpexScores.failed ? '評分載入失敗，榜單不受影響' : undefined}
+                            />
                           </td>
                           <td className="p-2 py-3 text-right">
                             <BrokerTargetCell symbol={row.symbol} />
@@ -841,6 +871,7 @@ export default function Market() {
                     盤中即時榜單，收盤後不再變動。這一組只有上櫃有，上游沒有給成交量。
                     上游是把整個榜單一次回來（共 {movers.data?.length ?? 0} 檔），這裡只顯示前{' '}
                     {TOP_N} 名。
+                    「三面向」的規則與破折號的意思見上市那張榜的註腳；上櫃沒有逐檔法人歷史，籌碼面一律是破折號。
                   </>
                 )}
               </p>
