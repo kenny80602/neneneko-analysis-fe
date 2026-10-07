@@ -33,6 +33,9 @@ const HOT_GROUP_TOP = 20;
 // 這一頁是找跌深的，門檻是使用者指定的 30。
 const PULLBACK_ALERT_PCT = 30;
 
+// 龍頭排名的稱呼。後端只給名次 1～3，稱呼是畫面的事。
+const CORE_LABEL: Record<number, string> = { 1: '龍頭', 2: '老二', 3: '老三' };
+
 const TH = 'p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap';
 
 export default function BelowMA() {
@@ -102,7 +105,7 @@ export default function BelowMA() {
         <p className="font-body-sm text-body-sm text-on-surface-variant">
           季線 = 最近 60 個成交日收盤價的簡單平均（未還原，除權息會有偏差）；成交量以張計（1 張 = 1,000 股）、成交金額為新台幣，都是最新一天的。漲跌% 是最新一天對前一交易日（除權息日不算，顯示破折號）；乖離 = 收盤相對季線的百分比，
           越負離季線越遠。表格依族群熱度排序：取這檔所屬族群裡最熱的名次，沒歸族群或族群不在熱度榜上的排最後，同名次維持乖離由負得最多排起。範圍只有已落地收盤行情的那批（自選股加半導體族群），不是全市場。
-          收盤在季線以下是現況描述，不是買賣訊號。族群是自己在「主題族群」建的，破折號代表沒歸進任何族群。成交金額名次是最新一天在同市場普通股裡的名次，沒有名次（ETF、回補進來的日期）顯示破折號。族群熱度前 20 名用藍色底標出（刻意不用紅綠：那是漲跌的顏色）（族群欄的 #名次，是熱度榜的現況排序、不是預測）。回檔 =（半年最高 − 收盤）÷ 半年最高，公式同持股試算，超過 30% 整格標紅；半年最高取已落地的收盤行情，不是去問 Yahoo，歷史不到約 100 個成交日的檔標紅色星號（回檔被低估）。本益比與殖利率取每一檔最新一筆估值，本益比「虧損」是上游給空值（虧損或尚無盈餘）；破折號是沒配息沒有殖利率，或估值還沒收集。
+          收盤在季線以下是現況描述，不是買賣訊號。族群是自己在「主題族群」建的，破折號代表沒歸進任何族群。成交金額名次是最新一天在同市場普通股裡的名次，沒有名次（ETF、回補進來的日期）顯示破折號。龍頭／老二／老三是族群裡月營收最大的三檔（營收大不一定是產業龍頭），這檔自己是的話族群欄會標出，展開可看三檔今天的漲跌；族群熱度前 20 名用藍色底標出（刻意不用紅綠：那是漲跌的顏色）（族群欄的 #名次，是熱度榜的現況排序、不是預測）。回檔 =（半年最高 − 收盤）÷ 半年最高，公式同持股試算，超過 30% 整格標紅；半年最高取已落地的收盤行情，不是去問 Yahoo，歷史不到約 100 個成交日的檔標紅色星號（回檔被低估）。本益比與殖利率取每一檔最新一筆估值，本益比「虧損」是上游給空值（虧損或尚無盈餘）；破折號是沒配息沒有殖利率，或估值還沒收集。
         </p>
 
         {data && (
@@ -190,6 +193,8 @@ export default function BelowMA() {
                                     }
                                   >
                                     {h ? `${name} #${h.rank}` : name}
+                                    {coreRank(h?.item, row.symbol) != null &&
+                                      `・${CORE_LABEL[coreRank(h?.item, row.symbol) as number]}`}
                                   </span>
                                 );
                               })}
@@ -289,6 +294,11 @@ export default function BelowMA() {
   );
 }
 
+// 這一檔在族群裡的龍頭排名（1～3），不在龍頭三檔裡回 null。
+function coreRank(item: GroupHeat | undefined, symbol: string): number | null {
+  return item?.core.find((c) => c.symbol === symbol)?.rank ?? null;
+}
+
 interface GroupPeersPanelProps {
   row: BelowMAStock;
   groups: ReturnType<typeof useGroupIndex>['groups'];
@@ -332,6 +342,22 @@ function GroupPeersPanel({ row, groups, quotes, heat, quotesDate, quotesLoading,
                 </span>
               )}
             </h3>
+            {h && h.item.core.length > 0 && (
+              <p className="font-body-sm text-body-sm text-on-surface-variant">
+                {h.item.core.map((c) => (
+                  <span key={c.symbol} className="mr-4 whitespace-nowrap">
+                    <span className="text-outline">{CORE_LABEL[c.rank] ?? `第${c.rank}`}</span>{' '}
+                    <span className={c.symbol === row.symbol ? 'font-bold text-primary' : 'text-on-surface'}>
+                      {c.symbol} {c.name}
+                    </span>{' '}
+                    <span className={`font-data-md ${quoteColor(c.return_pct)}`}>
+                      {formatSignedPercent(c.return_pct)}
+                    </span>
+                  </span>
+                ))}
+                <span className="text-outline">（依 {h.item.core_month} 月營收，不是今天漲最多的）</span>
+              </p>
+            )}
             {peers.length === 0 ? (
               <p className="font-body-sm text-body-sm text-on-surface-variant">這個族群只有這一檔。</p>
             ) : (
