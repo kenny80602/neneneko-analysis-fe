@@ -1,6 +1,7 @@
 import { ReactNode, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
+import BrokerTargetCell from '../components/BrokerTargetCell';
 import PageState from '../components/PageState';
 import {
   FALLBACK_SYMBOLS,
@@ -587,6 +588,7 @@ export default function Market() {
                       <tr>
                         <th className={`${thClass} pl-4 text-left`}>名次</th>
                         <th className={`${thClass} text-left`}>代號 / 名稱</th>
+                        <th className={`${thClass} text-right`} title="各家券商目標價的中位數與家數，網路公開資訊整理、未驗證，點一下看每家與出處">券商目標</th>
                         <th className={`${thClass} text-right`}>收盤</th>
                         <th className={`${thClass} text-right`}>漲跌幅</th>
                         <th className={`${thClass} pr-4 text-right`}>
@@ -626,6 +628,9 @@ export default function Market() {
                               {row.name}
                             </span>
                           </td>
+                          <td className="p-2 py-3 text-right">
+                            <BrokerTargetCell symbol={row.symbol} />
+                          </td>
                           <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface">
                             {formatPrice(row.close)}
                           </td>
@@ -650,7 +655,7 @@ export default function Market() {
                 {bothTopReady
                   ? `標色的是成交量與成交金額都在前 20 名的股票（今天 ${bothTop.size} 檔），表示量大、金額也大，不是漲跌訊號。`
                   : '成交量或成交金額其中一份榜單還沒載入成功，所以暫時無法標出「兩個榜都在前 20 名」的股票（這不代表今天沒有）。'}
-                上櫃沒有成交量榜，所以上櫃那一欄不標。
+                上櫃沒有成交量榜，所以上櫃那一欄不標。「券商目標」是各家券商目標價的中位數與家數，點一下列出每一家與出處；資料是網路公開資訊整理、未驗證，而且只涵蓋查得到的少數檔，破折號是沒查到，不是券商沒給。
               </p>
               <p className="p-4 pt-2 font-body-sm text-body-sm text-on-surface-variant">
                 {twseSort === 'value'
@@ -715,6 +720,7 @@ export default function Market() {
                       <tr>
                         <th className={`${thClass} pl-4 text-left`}>名次</th>
                         <th className={`${thClass} text-left`}>代號 / 名稱</th>
+                        <th className={`${thClass} text-right`} title="各家券商目標價的中位數與家數，網路公開資訊整理、未驗證，點一下看每家與出處">券商目標</th>
                         <th className={`${thClass} text-right`}>成交價</th>
                         <th className={`${thClass} text-right`}>漲跌</th>
                         <th className={`${thClass} pr-4 text-right`}>漲跌幅</th>
@@ -738,6 +744,9 @@ export default function Market() {
                             <span className="block font-body-sm text-body-sm text-on-surface-variant">
                               {row.name}
                             </span>
+                          </td>
+                          <td className="p-2 py-3 text-right">
+                            <BrokerTargetCell symbol={row.symbol} />
                           </td>
                           <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface">
                             {formatPrice(row.close_price)}
@@ -785,6 +794,7 @@ export default function Market() {
                       <tr>
                         <th className={`${thClass} pl-4 text-left`}>名次</th>
                         <th className={`${thClass} text-left`}>代號 / 名稱</th>
+                        <th className={`${thClass} text-right`} title="各家券商目標價的中位數與家數，網路公開資訊整理、未驗證，點一下看每家與出處">券商目標</th>
                         <th className={`${thClass} pr-4 text-right`}>成交值</th>
                       </tr>
                     </thead>
@@ -806,6 +816,9 @@ export default function Market() {
                             <span className="block font-body-sm text-body-sm text-on-surface-variant">
                               {row.name}
                             </span>
+                          </td>
+                          <td className="p-2 py-3 text-right">
+                            <BrokerTargetCell symbol={row.symbol} />
                           </td>
                           <td className="p-2 pr-4 py-3 text-right font-data-md text-data-md text-on-surface">
                             {formatThousandTWD(row.trading_amount)}
