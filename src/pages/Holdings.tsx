@@ -25,7 +25,9 @@ import {
   PortfolioRow,
 } from '../api/types';
 import { useSymbol } from '../context/SymbolContext';
+import ScoreBadges from '../components/ScoreBadges';
 import { useAsyncData } from '../hooks/useAsyncData';
+import { useStockScores } from '../hooks/useStockScores';
 import {
   DASH,
   formatAmount,
@@ -419,6 +421,10 @@ export default function Holdings() {
   );
 
   const groups = useMemo(() => groupByAccount(rows, weightBase), [rows, weightBase]);
+
+  // 三面向評分問的是「持股的每一檔」，同一檔分散在多個帳戶也只問一次（hook 內會去重）。
+  // 評分失敗不擋持股表：那一欄退成破折號。
+  const scores = useStockScores(rows.map((row) => row.symbol));
 
   /**
    * 「這個帳戶已經有這一檔」時，新增表單要提示它會併進哪一列。
@@ -1029,6 +1035,12 @@ export default function Holdings() {
                     <th className={`${headCell} text-right`}>未實現損益</th>
                     <th className={`${headCell} text-right`}>報酬率</th>
                     <th className={`${headCell} text-right`}>比重</th>
+                    <th
+                      className={`${headCell} text-right`}
+                      title="基本面、籌碼面、技術面各自偏多、中性或偏空；破折號是沒有資料可評，不是中性。滑鼠移到徽章上看判斷依據"
+                    >
+                      三面向
+                    </th>
                     <th className={`${headCell} pr-4 text-right`}>操作</th>
                   </tr>
                 </thead>
@@ -1087,6 +1099,7 @@ export default function Holdings() {
                         <td className={`${numberCell} text-on-surface-variant`}>
                           {formatPercent(group.weight)}
                         </td>
+                        <td className="px-2 py-2" />
                         <td className="px-4 py-2" />
                       </tr>
                       {group.symbols.map((item) => {
@@ -1187,6 +1200,12 @@ export default function Holdings() {
                                   </span>
                                 )}
                               </td>
+                              <td className="p-2 py-3 text-right">
+                                <ScoreBadges
+                                  score={scores.bySymbol.get(item.symbol)}
+                                  title={scores.failed ? '評分載入失敗，持股表不受影響' : undefined}
+                                />
+                              </td>
                               <td
                                 className="p-2 pr-4 py-3 text-right whitespace-nowrap"
                                 onClick={(event) => event.stopPropagation()}
@@ -1215,7 +1234,7 @@ export default function Holdings() {
                             */}
                             {expanded && (
                               <tr className="bg-surface-container">
-                                <td colSpan={10} className="p-4">
+                                <td colSpan={11} className="p-4">
                                   <div className="flex flex-col gap-stack-md">
                                     {/* ── 這一檔的各筆部位 ── */}
                                     <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-3">
@@ -1763,6 +1782,10 @@ export default function Holdings() {
             <p className="font-body-sm text-body-sm text-on-surface-variant">
               比重的分母是所有算得出市值的部位，跟上面合計的涵蓋範圍不一定相同——
               只缺成本的部位仍然佔著倉，不該從分布裡消失。金額以「億／萬」縮寫顯示。
+              「三面向」是依規則算的現況描述，不是買賣建議，也跟你的成本與損益無關：
+              基本面看月營收年增率與本益比，籌碼面看三大法人與融資餘額的變化，
+              技術面看月線、季線的排列與斜率；破折號是沒有資料可評，不是中性
+              （持股多半有收，但剛加進來的檔天數不夠，技術面要 60 個交易日）。
             </p>
           </>
         )}
