@@ -1,7 +1,7 @@
 import { ScoreFacet, ScoreLevel, StockScore } from '../api/types';
 import { DASH, quoteBadge } from '../utils/format';
 
-const LEVEL_LABEL: Record<ScoreLevel, string> = {
+export const LEVEL_LABEL: Record<ScoreLevel, string> = {
   BULLISH: '偏多',
   NEUTRAL: '中性',
   BEARISH: '偏空',
@@ -10,7 +10,7 @@ const LEVEL_LABEL: Record<ScoreLevel, string> = {
 
 // 台股慣例漲紅跌綠，沿用 quoteBadge 讓這一欄跟漲跌幅欄是同一組顏色。
 // 資料不足刻意不給底色：它不是一種「結論」，畫成灰底膠囊會被當成中性。
-function levelClass(level: ScoreLevel): string {
+export function levelClass(level: ScoreLevel): string {
   switch (level) {
     case 'BULLISH':
       return quoteBadge(1);

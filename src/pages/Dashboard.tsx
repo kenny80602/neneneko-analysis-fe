@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
+import ScoreCard from '../components/ScoreCard';
 import StatCard from '../components/StatCard';
 import PriceChart from '../components/PriceChart';
 import SymbolSearch from '../components/SymbolSearch';
@@ -18,6 +19,7 @@ import { FinancialPeer, IndustryPeer, IndustryPeers } from '../api/types';
 import { getWarningHistory } from '../api/warning';
 import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
+import { useStockScores } from '../hooks/useStockScores';
 import { changePercentOver, toCandles } from '../utils/chart';
 import {
   DASH,
@@ -117,6 +119,9 @@ function buildPeerRows(data: IndustryPeers | undefined): PeerRow[] {
 export default function Dashboard() {
   const { symbol, setSymbol } = useSymbol();
   const enabled = !!symbol;
+
+  // 三面向評分。同一支 /stocks/scores，只問這一檔；失敗不擋整頁。
+  const scores = useStockScores(symbol ? [symbol] : []);
 
   const quote = useAsyncData(() => getRealtimeQuote(symbol), [symbol], {
     enabled,
@@ -565,6 +570,12 @@ export default function Dashboard() {
                 </div>
               </div>
             </section>
+
+            <ScoreCard
+              score={scores.bySymbol.get(symbol)}
+              failed={scores.failed}
+              loading={scores.loading}
+            />
 
             {history.loading && <PageState kind="loading" />}
             {history.error && (
