@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState } from 'react';
-import GroupChainButton from '../components/GroupChainButton';
+import GroupChainButton, { chainStocksOf } from '../components/GroupChainButton';
 import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
 import { getBelowMA, getDailyQuotesByDate } from '../api/dailyQuote';
@@ -64,6 +64,7 @@ export default function BelowMA() {
     () => groups.map((entry) => ({ name: entry.group.name, upstream: entry.group.upstream ?? [] })),
     [groups]
   );
+  const stocksOf = useMemo(() => chainStocksOf(groups, heat), [groups, heat]);
   const linkedGroups = useMemo(() => {
     const set = new Set<string>();
     for (const entry of groups) {
@@ -228,6 +229,7 @@ export default function BelowMA() {
                                         sources={chainSources}
                                         heat={heat}
                                         total={heatData.data?.items.length ?? 0}
+                                        stocksOf={stocksOf}
                                       />
                                     )}
                                   </span>

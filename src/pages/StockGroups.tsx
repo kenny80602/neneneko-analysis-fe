@@ -11,7 +11,7 @@ import {
   removeStockGroup,
   saveStockGroup,
 } from '../api/stockGroup';
-import GroupChainButton from '../components/GroupChainButton';
+import GroupChainButton, { chainStocksOf } from '../components/GroupChainButton';
 import { GroupHeat, GroupHeatMember, GroupLink, GroupMember, GroupPeer, Holding, StockGroup } from '../api/types';
 import { useAsyncData } from '../hooks/useAsyncData';
 import {
@@ -160,6 +160,7 @@ function GroupPanel() {
   const allGroupNames = entries.map((entry) => entry.group.name);
   // 關聯圖用的「名稱＋上游」。維護頁沒載入熱度榜，圖上不標名次與報酬。
   const chainSources = entries.map((entry) => ({ name: entry.group.name, upstream: entry.group.upstream ?? [] }));
+  const stocksOf = chainStocksOf(entries);
 
   // 自選股清單只給新增時的下拉建議用。族群成員不必在自選股裡，
   // 所以它不是名稱的主要來源，只是「挑一檔已經在追蹤的」比較快。
@@ -336,7 +337,7 @@ function GroupPanel() {
           <div className="flex flex-wrap items-center gap-1">
             <span className="mr-1">上游</span>
             {saved && (saved.upstream.length > 0 || saved.downstream.length > 0) && (
-              <GroupChainButton name={saved.name} sources={chainSources} />
+              <GroupChainButton name={saved.name} sources={chainSources} stocksOf={stocksOf} />
             )}
             {draft.upstream.length === 0 && <span className="text-outline">沒有</span>}
             {draft.upstream.map((link) => (
@@ -969,6 +970,8 @@ function HeatBoard() {
     [members.data, board]
   );
 
+  // 摸圖裡的族群要列股票：完整名單取自成員清單，今天的漲跌取自熱度榜。
+  const stocksOf = useMemo(() => chainStocksOf(members.data?.items ?? [], byName), [members.data, byName]);
   const [query, setQuery] = useState('');
   // 一次只展開一個族群。展開的內容是整群的逐檔，同時攤開十幾群的話這張表會長到
   // 捲不完，而且「我現在在看哪一群」會消失——那正是點開的人想確認的事。
@@ -1247,6 +1250,7 @@ function HeatBoard() {
                           sources={chainSources}
                           heat={byName}
                           total={board.items.length}
+                          stocksOf={stocksOf}
                         />
                       )}
                       <span className="block font-body-sm text-body-sm text-on-surface-variant">

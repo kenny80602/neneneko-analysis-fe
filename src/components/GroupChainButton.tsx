@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { GroupHeat } from '../api/types';
+import { createPortal } from 'react-dom';
+import { GroupHeat, GroupMembers } from '../api/types';
 import { buildChainGraph, ChainSource } from '../utils/groupChain';
-import { formatSignedPercent, quoteColor } from '../utils/format';
+import { DASH, formatSignedPercent, quoteColor } from '../utils/format';
 
 // 節點與版面尺寸（px）。名稱最長的族群約 14 個字，寬度給到兩行放得下。
 const NODE_W = 148;
@@ -12,9 +13,47 @@ const POPOVER_MARGIN = 16;
 // 滑鼠從圖示移到浮層中間會經過一小段空白，延遲一下才關，不然永遠點不到浮層。
 const CLOSE_DELAY_MS = 200;
 
+// 詳情面板最小寬度。只有一個節點的圖很窄（148px），但底下的股票小卡片至少要放得下兩欄。
+const DETAIL_MIN_W = 340;
+
 interface HeatEntry {
   item: GroupHeat;
   rank: number;
+}
+
+/** 族群裡的一檔股票。returnPct 是 null 代表今天算不出來或這一頁沒有行情，不是平盤。 */
+export interface ChainStock {
+  symbol: string;
+  name: string;
+  returnPct: number | null;
+}
+
+/**
+ * 組出「族群名稱 → 這個族群的股票」。
+ *
+ * 名單以完整成員清單為準（含今天停牌、除權息、算不出報酬的），今天的漲跌取自熱度榜；
+ * 成員清單還沒載入時退到熱度榜裡算得出報酬的那幾檔。兩邊都沒有就是空陣列，
+ * 畫面會說明，不會畫成「這個族群沒有股票」。
+ * 有行情的依報酬由高到低排在前面，沒行情的接在後面保持原順序。
+ */
+export function chainStocksOf(
+  roster: GroupMembers[],
+  heat?: Map<string, HeatEntry>
+): (group: string) => ChainStock[] {
+  const rosterByName = new Map(roster.map((entry) => [entry.group.name, entry.members]));
+  return (group) => {
+    const heatMembers = heat?.get(group)?.item.members ?? [];
+    const returns = new Map(heatMembers.map((m) => [m.symbol, m.return_pct]));
+    const full = rosterByName.get(group);
+    const stocks: ChainStock[] = full
+      ? full.map((m) => ({ symbol: m.symbol, name: m.name, returnPct: returns.get(m.symbol) ?? null }))
+      : heatMembers.map((m) => ({ symbol: m.symbol, name: m.name, returnPct: m.return_pct }));
+    const rank = (stock: ChainStock) => (stock.returnPct == null ? -Infinity : stock.returnPct);
+    return stocks
+      .map((stock, index) => ({ stock, index }))
+      .sort((a, b) => rank(b.stock) - rank(a.stock) || a.index - b.index)
+      .map(({ stock }) => stock);
+  };
 }
 
 interface GroupChainButtonProps {
@@ -28,6 +67,11 @@ interface GroupChainButtonProps {
    */
   heat?: Map<string, HeatEntry>;
   total?: number;
+  /**
+   * 摸（或點）圖裡的族群時，底下顯示這個族群的股票。不傳就沒有這個功能。
+   * 用 chainStocksOf 組。
+   */
+  stocksOf?: (group: string) => ChainStock[];
 }
 
 /**
@@ -36,9 +80,11 @@ interface GroupChainButtonProps {
  * 浮層用 fixed 定位：表格容器有 overflow-x-auto，絕對定位的浮層會被裁掉。
  * 圖本身是 HTML 節點加一層 SVG 箭頭，不引入任何圖表套件。
  */
-export default function GroupChainButton({ name, sources, heat, total = 0 }: GroupChainButtonProps) {
+export default function GroupChainButton({ name, sources, heat, total = 0, stocksOf }: GroupChainButtonProps) {
   const [open, setOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
+  // 圖裡目前選中看股票的族群。打開時從自己開始，摸到哪個就換成哪個。
+  const [focus, setFocus] = useState(name);
   const [box, setBox] = useState<{ left: number; top: number; maxHeight: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -47,26 +93,31 @@ export default function GroupChainButton({ name, sources, heat, total = 0 }: Gro
   const graph = useMemo(() => buildChainGraph(sources, name), [sources, name]);
   const rows = Math.max(1, ...graph.columns.map((column) => column.length));
   const width = graph.columns.length * NODE_W + (graph.columns.length - 1) * COL_GAP;
+  const popoverInner = Math.max(width, DETAIL_MIN_W);
   const height = rows * NODE_H + (rows - 1) * ROW_GAP;
+
+  // 有股票面板時浮層會高一截，放置位置要多留空間。只取「有沒有」，函式本身每次 render 都是新的。
+  const hasStocks = stocksOf !== undefined;
 
   const place = useCallback(() => {
     const rect = buttonRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const popoverWidth = Math.min(width + 32, window.innerWidth - POPOVER_MARGIN * 2);
+    const popoverWidth = Math.min(popoverInner + 32, window.innerWidth - POPOVER_MARGIN * 2);
     const left = Math.max(POPOVER_MARGIN, Math.min(rect.left, window.innerWidth - popoverWidth - POPOVER_MARGIN));
     // 下方放不下就放上方，兩邊都放不下就選比較大的那一邊並讓浮層自己捲動。
     const below = window.innerHeight - rect.bottom - POPOVER_MARGIN;
     const above = rect.top - POPOVER_MARGIN;
-    const useBelow = below >= Math.min(height + 120, above) || below >= above;
+    const useBelow = below >= Math.min(height + (hasStocks ? 340 : 120), above) || below >= above;
     setBox(
       useBelow
         ? { left, top: rect.bottom + 6, maxHeight: below }
-        : { left, top: Math.max(POPOVER_MARGIN, rect.top - 6 - Math.min(above, height + 120)), maxHeight: above }
+        : { left, top: Math.max(POPOVER_MARGIN, rect.top - 6 - Math.min(above, height + (hasStocks ? 340 : 120))), maxHeight: above }
     );
-  }, [width, height]);
+  }, [popoverInner, height, hasStocks]);
 
   const show = () => {
     window.clearTimeout(closeTimer.current);
+    if (!open) setFocus(name);
     place();
     setOpen(true);
   };
@@ -162,14 +213,23 @@ export default function GroupChainButton({ name, sources, heat, total = 0 }: Gro
         <span className="material-symbols-outlined text-[18px]">account_tree</span>
       </button>
 
-      {open && box && (
+      {open && box && createPortal(
         <div
           ref={popoverRef}
           role="dialog"
           aria-label={`${name} 的上下游關聯圖`}
           onMouseEnter={() => window.clearTimeout(closeTimer.current)}
           onMouseLeave={hideSoon}
-          style={{ position: 'fixed', left: box.left, top: box.top, maxHeight: box.maxHeight, maxWidth: window.innerWidth - POPOVER_MARGIN * 2 }}
+          // 掛在 body 之後，React 的事件仍會沿著元件樹冒泡回放按鈕的那一列：
+          // 不擋的話，點圖裡的節點會連帶把表格那一列展開或選取。
+          onClick={(event) => event.stopPropagation()}
+          style={{
+            position: 'fixed',
+            left: box.left,
+            top: box.top,
+            maxHeight: box.maxHeight,
+            width: Math.min(popoverInner + 32, window.innerWidth - POPOVER_MARGIN * 2),
+          }}
           className="z-50 overflow-auto rounded-xl border border-outline-variant bg-surface-container-lowest p-4 shadow-lg"
         >
           <p className="font-body-md text-body-md text-on-surface font-semibold">
@@ -222,11 +282,14 @@ export default function GroupChainButton({ name, sources, heat, total = 0 }: Gro
                 <div
                   key={node.name}
                   style={{ position: 'absolute', left: pos.x, top: pos.y, width: NODE_W, height: NODE_H }}
-                  className={`flex flex-col justify-center rounded-lg border px-2 py-1 ${
+                  onMouseEnter={() => stocksOf && setFocus(node.name)}
+                  onClick={() => stocksOf && setFocus(node.name)}
+                  data-testid={`chain-node-${node.name}`}
+                  className={`flex flex-col justify-center rounded-lg border px-2 py-1 ${stocksOf ? 'cursor-pointer' : ''} ${
                     isSelf
                       ? 'border-primary bg-primary/10 ring-1 ring-primary'
                       : 'border-outline-variant bg-surface-container-low'
-                  }`}
+                  } ${stocksOf && focus === node.name ? 'ring-2 ring-primary' : ''}`}
                   title={
                     heat ? (entry ? `熱度第 ${entry.rank} / ${total} 名` : '今天不在榜上（成員一檔都算不出報酬）') : undefined
                   }
@@ -248,8 +311,46 @@ export default function GroupChainButton({ name, sources, heat, total = 0 }: Gro
               );
             })}
           </div>
-        </div>
+
+          {stocksOf && (
+            <StockPanel group={focus} stocks={stocksOf(focus)} showReturn={heat !== undefined} />
+          )}
+        </div>,
+        document.body
       )}
     </>
+  );
+}
+
+// 圖底下的股票面板：摸到（或點到）哪個族群就列出它的股票。
+function StockPanel({ group, stocks, showReturn }: { group: string; stocks: ChainStock[]; showReturn: boolean }) {
+  return (
+    <div className="mt-4 border-t border-outline-variant pt-3" data-testid="chain-stocks">
+      <p className="mb-2 font-body-sm text-body-sm text-on-surface-variant">
+        <span className="text-on-surface font-semibold">{group}</span> 的股票
+        {stocks.length > 0 && `（${stocks.length} 檔）`}
+        <span className="ml-2 text-outline">摸圖裡的族群可以換看別的</span>
+      </p>
+      {stocks.length === 0 ? (
+        <p className="font-body-sm text-body-sm text-outline">成員清單還沒載入，或這個族群沒有成員。</p>
+      ) : (
+        <div className="grid gap-1 sm:grid-cols-2 max-h-48 overflow-auto">
+          {stocks.map((stock) => (
+            <div
+              key={stock.symbol}
+              className="flex items-baseline gap-2 rounded border border-outline-variant bg-surface-container-low px-2 py-1"
+            >
+              <span className="font-data-md text-data-md text-on-surface-variant">{stock.symbol}</span>
+              <span className="font-body-sm text-body-sm text-on-surface truncate">{stock.name || DASH}</span>
+              {showReturn && (
+                <span className={`ml-auto font-data-md text-data-md ${quoteColor(stock.returnPct)}`}>
+                  {formatSignedPercent(stock.returnPct)}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

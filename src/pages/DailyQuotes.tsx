@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import GroupChainButton from '../components/GroupChainButton';
+import GroupChainButton, { chainStocksOf } from '../components/GroupChainButton';
 import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
 import { collectDailyQuotes, getDailyQuotesByDate } from '../api/dailyQuote';
@@ -21,6 +21,7 @@ export default function DailyQuotes() {
     () => groupList.map((entry) => ({ name: entry.group.name, upstream: entry.group.upstream ?? [] })),
     [groupList]
   );
+  const stocksOf = useMemo(() => chainStocksOf(groupList), [groupList]);
   const linkedGroups = useMemo(() => {
     const set = new Set<string>();
     for (const entry of groupList) {
@@ -146,7 +147,7 @@ export default function DailyQuotes() {
                       {groups.get(row.symbol)?.map((name) => (
                         <div key={name}>
                           {name}
-                          {linkedGroups.has(name) && <GroupChainButton name={name} sources={chainSources} />}
+                          {linkedGroups.has(name) && <GroupChainButton name={name} sources={chainSources} stocksOf={stocksOf} />}
                         </div>
                       )) ?? '—'}
                     </td>
