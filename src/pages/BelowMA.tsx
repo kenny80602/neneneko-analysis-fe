@@ -1,6 +1,7 @@
 import { Fragment, useMemo, useState } from 'react';
 import GroupChainButton, { chainStocksOf } from '../components/GroupChainButton';
 import PageHeader from '../components/PageHeader';
+import TargetPriceEditor from '../components/TargetPriceEditor';
 import PageState from '../components/PageState';
 import { getBelowMA, getDailyQuotesByDate } from '../api/dailyQuote';
 import { getGroupHeat } from '../api/groupHeat';
@@ -9,9 +10,11 @@ import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { useGroupIndex } from '../hooks/useSymbolGroups';
 import { useSymbolValuations } from '../hooks/useSymbolValuations';
+import { useTargets } from '../hooks/useTargets';
 import {
   changePercent,
   formatAmount,
+  gapToTarget,
   formatNumber,
   formatPe,
   formatPercent,
@@ -45,6 +48,8 @@ const TH = 'p-2 font-label-caps text-label-caps text-on-surface-variant uppercas
 export default function BelowMA() {
   const { setSymbol } = useSymbol();
   const { groups, names: groupNames } = useGroupIndex();
+  // 使用者自己設定的目標價；表格、關聯圖面板、展開的同族群股票共用同一份。
+  const targets = useTargets();
   const [expanded, setExpanded] = useState<string | null>(null);
   // 不帶日期：每一檔取自己最新的一筆估值，跟「最新一天的收盤」最接近。
   const valuations = useSymbolValuations();
@@ -131,7 +136,7 @@ export default function BelowMA() {
 
       <div className="flex flex-col gap-stack-lg">
         <p className="font-body-sm text-body-sm text-on-surface-variant">
-          季線 = 最近 60 個成交日收盤價的簡單平均（未還原，除權息會有偏差）；成交量以張計（1 張 = 1,000 股）、成交金額為新台幣，都是最新一天的。漲跌% 是最新一天對前一交易日（除權息日不算，顯示破折號）；乖離 = 收盤相對季線的百分比，
+          季線 = 最近 60 個成交日收盤價的簡單平均（未還原，除權息會有偏差）；成交量以張計（1 張 = 1,000 股）、成交金額為新台幣，都是最新一天的。目標價是你自己設定的（點格子輸入，清空刪除），距目標是還要漲多少才到、負數是已經超過，沒設定顯示破折號；漲跌% 是最新一天對前一交易日（除權息日不算，顯示破折號）；乖離 = 收盤相對季線的百分比，
           越負離季線越遠。表格依族群熱度排序：取這檔所屬族群裡最熱的名次，沒歸族群或族群不在熱度榜上的排最後；同一個族群內依龍頭、老二、老三、其他排，再來維持乖離由負得最多排起。範圍只有已落地收盤行情的那批（自選股加半導體族群），不是全市場。
           收盤在季線以下是現況描述，不是買賣訊號。族群是自己在「主題族群」建的，破折號代表沒歸進任何族群。成交金額名次是最新一天在同市場普通股裡的名次，沒有名次（ETF、回補進來的日期）顯示破折號。龍頭／老二／老三是族群裡月營收最大的三檔（營收大不一定是產業龍頭），這檔自己是的話族群欄會標出，展開可看三檔今天的漲跌；族群熱度前 20 名用藍色底標出（刻意不用紅綠：那是漲跌的顏色）（族群欄的 #名次，是熱度榜的現況排序、不是預測）。回檔 =（半年最高 − 收盤）÷ 半年最高，公式同持股試算，超過 30% 整格標紅；半年最高取已落地的收盤行情，不是去問 Yahoo，歷史不到約 100 個成交日的檔標紅色星號（回檔被低估）。本益比與殖利率取每一檔最新一筆估值，本益比「虧損」是上游給空值（虧損或尚無盈餘）；破折號是沒配息沒有殖利率，或估值還沒收集。
         </p>
@@ -169,6 +174,8 @@ export default function BelowMA() {
                   <th className={`${TH} text-left`}>族群</th>
                   <th className={`${TH} text-right`}>收盤</th>
                   <th className={`${TH} text-right`}>漲跌%</th>
+                  <th className={`${TH} text-right`} title="自己設定的目標價，點格子修改，清空刪除">目標價</th>
+                  <th className={`${TH} text-right`} title="還要漲多少才到目標價；負數是已經超過">距目標</th>
                   <th className={`${TH} text-right`}>成交量(張)</th>
                   <th className={`${TH} text-right`}>成交金額</th>
                   <th className={`${TH} text-right`}>季線</th>
@@ -230,6 +237,7 @@ export default function BelowMA() {
                                         heat={heat}
                                         total={heatData.data?.items.length ?? 0}
                                         stocksOf={stocksOf}
+                                        targets={targets}
                                       />
                                     )}
                                   </span>
@@ -245,6 +253,12 @@ export default function BelowMA() {
                         </td>
                         <td className={`p-2 py-3 text-right font-data-md text-data-md ${quoteColor(row.change_pct)}`}>
                           {formatSignedPercent(row.change_pct)}
+                        </td>
+                        <td className="p-2 py-3 text-right">
+                          <TargetPriceEditor symbol={row.symbol} store={targets} />
+                        </td>
+                        <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface whitespace-nowrap">
+                          {formatSignedPercent(gapToTarget(row.close, targets.get(row.symbol)?.target_price))}
                         </td>
                         <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface-variant whitespace-nowrap">
                           {formatShareToLot(row.volume)}
@@ -298,7 +312,7 @@ export default function BelowMA() {
                       </tr>
                       {open && (
                         <tr className="bg-surface-container-low/40">
-                          <td colSpan={16} className="p-4">
+                          <td colSpan={18} className="p-4">
                             <GroupPeersPanel
                               row={row}
                               groups={groups}

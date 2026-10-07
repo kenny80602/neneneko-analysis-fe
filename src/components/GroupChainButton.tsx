@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { GroupHeat, GroupMembers } from '../api/types';
 import { buildChainGraph, ChainSource } from '../utils/groupChain';
+import { TargetStore } from '../hooks/useTargets';
 import { DASH, formatSignedPercent, quoteColor } from '../utils/format';
+import TargetPriceEditor from './TargetPriceEditor';
 
 // 節點與版面尺寸（px）。名稱最長的族群約 14 個字，寬度給到兩行放得下。
 const NODE_W = 148;
@@ -97,6 +99,8 @@ interface GroupChainButtonProps {
    * 用 chainStocksOf 組。
    */
   stocksOf?: (group: string) => ChainStock[];
+  /** 傳了就在每檔股票旁顯示自己設定的目標價，並可就地設定。 */
+  targets?: TargetStore;
 }
 
 /**
@@ -105,7 +109,7 @@ interface GroupChainButtonProps {
  * 浮層用 fixed 定位：表格容器有 overflow-x-auto，絕對定位的浮層會被裁掉。
  * 圖本身是 HTML 節點加一層 SVG 箭頭，不引入任何圖表套件。
  */
-export default function GroupChainButton({ name, sources, heat, total = 0, stocksOf }: GroupChainButtonProps) {
+export default function GroupChainButton({ name, sources, heat, total = 0, stocksOf, targets }: GroupChainButtonProps) {
   const [open, setOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
   // 圖裡目前選中看股票的族群。打開時從自己開始，摸到哪個就換成哪個。
@@ -338,7 +342,7 @@ export default function GroupChainButton({ name, sources, heat, total = 0, stock
           </div>
 
           {stocksOf && (
-            <StockPanel group={focus} stocks={stocksOf(focus)} showReturn={heat !== undefined} />
+            <StockPanel group={focus} stocks={stocksOf(focus)} showReturn={heat !== undefined} targets={targets} />
           )}
         </div>,
         document.body
@@ -348,7 +352,17 @@ export default function GroupChainButton({ name, sources, heat, total = 0, stock
 }
 
 // 圖底下的股票面板：摸到（或點到）哪個族群就列出它的股票。
-function StockPanel({ group, stocks, showReturn }: { group: string; stocks: ChainStock[]; showReturn: boolean }) {
+function StockPanel({
+  group,
+  stocks,
+  showReturn,
+  targets,
+}: {
+  group: string;
+  stocks: ChainStock[];
+  showReturn: boolean;
+  targets?: TargetStore;
+}) {
   return (
     <div className="mt-4 border-t border-outline-variant pt-3" data-testid="chain-stocks">
       <p className="mb-2 font-body-sm text-body-sm text-on-surface-variant">
@@ -378,6 +392,11 @@ function StockPanel({ group, stocks, showReturn }: { group: string; stocks: Chai
               {showReturn && (
                 <span className={`ml-auto font-data-md text-data-md ${quoteColor(stock.returnPct)}`}>
                   {formatSignedPercent(stock.returnPct)}
+                </span>
+              )}
+              {targets && (
+                <span className={`${showReturn ? '' : 'ml-auto'} font-body-sm text-body-sm text-on-surface-variant whitespace-nowrap`}>
+                  目標 <TargetPriceEditor symbol={stock.symbol} store={targets} compact />
                 </span>
               )}
             </div>

@@ -182,3 +182,12 @@ export function formatPe(valuation: { pe_ratio: number | null } | undefined): st
   if (!valuation) return DASH;
   return valuation.pe_ratio == null ? '虧損' : formatNumber(valuation.pe_ratio, 2);
 }
+
+/**
+ * 距離目標價還差幾 %：（目標價 − 現價）÷ 現價。正數代表還要漲這麼多才到，負數代表已經超過。
+ * 沒設目標價、沒成交（現價 0）回 null，不是 0——0% 代表剛好在目標價上。
+ */
+export function gapToTarget(close: number | null | undefined, target: number | null | undefined): number | null {
+  if (isBlank(close) || isBlank(target) || close <= 0) return null;
+  return ((target - close) / close) * 100;
+}

@@ -12,6 +12,8 @@ import {
   saveStockGroup,
 } from '../api/stockGroup';
 import GroupChainButton, { chainStocksOf } from '../components/GroupChainButton';
+import TargetPriceEditor from '../components/TargetPriceEditor';
+import { TargetStore, useTargets } from '../hooks/useTargets';
 import { GroupHeat, GroupHeatMember, GroupLink, GroupMember, GroupPeer, Holding, StockGroup } from '../api/types';
 import { useAsyncData } from '../hooks/useAsyncData';
 import {
@@ -161,6 +163,7 @@ function GroupPanel() {
   // 關聯圖用的「名稱＋上游」。維護頁沒載入熱度榜，圖上不標名次與報酬。
   const chainSources = entries.map((entry) => ({ name: entry.group.name, upstream: entry.group.upstream ?? [] }));
   const stocksOf = chainStocksOf(entries);
+  const targets = useTargets();
 
   // 自選股清單只給新增時的下拉建議用。族群成員不必在自選股裡，
   // 所以它不是名稱的主要來源，只是「挑一檔已經在追蹤的」比較快。
@@ -337,7 +340,7 @@ function GroupPanel() {
           <div className="flex flex-wrap items-center gap-1">
             <span className="mr-1">上游</span>
             {saved && (saved.upstream.length > 0 || saved.downstream.length > 0) && (
-              <GroupChainButton name={saved.name} sources={chainSources} stocksOf={stocksOf} />
+              <GroupChainButton name={saved.name} sources={chainSources} stocksOf={stocksOf} targets={targets} />
             )}
             {draft.upstream.length === 0 && <span className="text-outline">沒有</span>}
             {draft.upstream.map((link) => (
@@ -826,7 +829,15 @@ function LinkBadge({ link }: { link: GroupLink }) {
 }
 
 // 整群逐檔的小卡片格。熱度榜展開處與上下游族群展開處共用。
-function HeatMemberGrid({ members, keyword }: { members: GroupHeatMember[]; keyword: string }) {
+function HeatMemberGrid({
+  members,
+  keyword,
+  targets,
+}: {
+  members: GroupHeatMember[];
+  keyword: string;
+  targets?: TargetStore;
+}) {
   return (
     <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
       {members.map((member) => {
@@ -849,6 +860,11 @@ function HeatMemberGrid({ members, keyword }: { members: GroupHeatMember[]; keyw
               {formatSignedPercent(member.return_pct)}
             </span>
             <span className="font-data-md text-data-md text-outline">{formatAmount(member.trade_value)}</span>
+            {targets && (
+              <span className="font-body-sm text-body-sm text-on-surface-variant whitespace-nowrap">
+                目標 <TargetPriceEditor symbol={member.symbol} store={targets} compact />
+              </span>
+            )}
           </div>
         );
       })}
@@ -862,11 +878,12 @@ interface LinkedGroupsProps {
   byName: Map<string, { item: GroupHeat; rank: number }>;
   total: number;
   keyword: string;
+  targets?: TargetStore;
 }
 
 // 這個族群的上游與下游，各自今天的表現。看哪一段已經動、哪一段還沒動，下一棒由使用者判斷：
 // 這是現況描述，不是預測，也沒有檢定過上下游之間誰領先誰。
-function LinkedGroups({ item, byName, total, keyword }: LinkedGroupsProps) {
+function LinkedGroups({ item, byName, total, keyword, targets }: LinkedGroupsProps) {
   const [openLinked, setOpenLinked] = useState('');
   const sections: { title: string; links: GroupLink[] }[] = [
     { title: '上游', links: item.upstream },
@@ -933,7 +950,7 @@ function LinkedGroups({ item, byName, total, keyword }: LinkedGroupsProps) {
                       </span>
                     )}
                   </div>
-                  {linked && open && <HeatMemberGrid members={linked.item.members} keyword={keyword} />}
+                  {linked && open && <HeatMemberGrid members={linked.item.members} keyword={keyword} targets={targets} />}
                 </div>
               );
             })}
@@ -948,6 +965,8 @@ function HeatBoard() {
   // 不輪詢：這一支要當天的全市場橫斷面才算得出來，一天只會變一次。
   const heat = useAsyncData(() => getGroupHeat(), []);
   const board = heat.data;
+  // 使用者自己設定的目標價：整群逐檔、上下游展開、關聯圖面板共用同一份。
+  const targets = useTargets();
   // 族群名稱 → 榜上那一列與它的名次。上下游族群靠名稱對榜（上下游欄位存的就是名稱）。
   const byName = useMemo(
     () => new Map((board?.items ?? []).map((entry, index) => [entry.name, { item: entry, rank: index + 1 }])),
@@ -1251,6 +1270,7 @@ function HeatBoard() {
                           heat={byName}
                           total={board.items.length}
                           stocksOf={stocksOf}
+                          targets={targets}
                         />
                       )}
                       <span className="block font-body-sm text-body-sm text-on-surface-variant">
@@ -1380,12 +1400,13 @@ function HeatBoard() {
                           )}
                           {/* 先看自己的股票，上下游放在後面：展開是為了看這個族群本身，
                               相關族群是延伸，不該把整群逐檔擠到最下面去。 */}
-                          <HeatMemberGrid members={item.members} keyword={keyword} />
+                          <HeatMemberGrid members={item.members} keyword={keyword} targets={targets} />
                           <LinkedGroups
                             item={item}
                             byName={byName}
                             total={board.items.length}
                             keyword={keyword}
+                            targets={targets}
                           />
                         </div>
                       </td>

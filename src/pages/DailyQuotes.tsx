@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import GroupChainButton, { chainStocksOf } from '../components/GroupChainButton';
 import PageHeader from '../components/PageHeader';
+import TargetPriceEditor from '../components/TargetPriceEditor';
 import PageState from '../components/PageState';
 import { collectDailyQuotes, getDailyQuotesByDate } from '../api/dailyQuote';
 import { apiErrorMessage } from '../api/request';
@@ -8,7 +9,8 @@ import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { useGroupIndex } from '../hooks/useSymbolGroups';
 import { useSymbolValuations } from '../hooks/useSymbolValuations';
-import { formatAmount, formatNumber, formatPe, formatPrice, formatRank, formatSigned, marketLabel, quoteColor, today } from '../utils/format';
+import { useTargets } from '../hooks/useTargets';
+import { formatAmount, gapToTarget, formatSignedPercent, formatNumber, formatPe, formatPrice, formatRank, formatSigned, marketLabel, quoteColor, today } from '../utils/format';
 
 export default function DailyQuotes() {
   const { setSymbol } = useSymbol();
@@ -16,6 +18,7 @@ export default function DailyQuotes() {
   // 用「今天」當預設的話，假日與收集之前都會是空清單，看起來像壞掉。
   const [date, setDate] = useState('');
   const { groups: groupList, names: groups } = useGroupIndex();
+  const targets = useTargets();
   // 關聯圖用的「名稱＋上游」。這一頁沒載入熱度榜，圖上不標名次與報酬。
   const chainSources = useMemo(
     () => groupList.map((entry) => ({ name: entry.group.name, upstream: entry.group.upstream ?? [] })),
@@ -120,6 +123,8 @@ export default function DailyQuotes() {
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">最高</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">最低</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">收盤</th>
+                  <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap" title="自己設定的目標價，點格子修改，清空刪除">目標價</th>
+                  <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap" title="還要漲多少才到目標價；負數是已經超過">距目標</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">漲跌</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">本益比</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">成交量</th>
@@ -147,7 +152,7 @@ export default function DailyQuotes() {
                       {groups.get(row.symbol)?.map((name) => (
                         <div key={name}>
                           {name}
-                          {linkedGroups.has(name) && <GroupChainButton name={name} sources={chainSources} stocksOf={stocksOf} />}
+                          {linkedGroups.has(name) && <GroupChainButton name={name} sources={chainSources} stocksOf={stocksOf} targets={targets} />}
                         </div>
                       )) ?? '—'}
                     </td>
@@ -164,6 +169,12 @@ export default function DailyQuotes() {
                         </td>
                         <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface font-bold">
                           {formatPrice(row.close)}
+                        </td>
+                        <td className="p-2 py-3 text-right">
+                          <TargetPriceEditor symbol={row.symbol} store={targets} />
+                        </td>
+                        <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface whitespace-nowrap">
+                          {formatSignedPercent(gapToTarget(row.close, targets.get(row.symbol)?.target_price))}
                         </td>
                         <td className={`p-2 py-3 text-right font-data-md text-data-md ${quoteColor(row.change)}`}>
                           {row.ex_dividend ? '除權息' : formatSigned(row.change)}
@@ -185,7 +196,7 @@ export default function DailyQuotes() {
                         </td>
                       </>
                     ) : (
-                      <td colSpan={10} className="p-2 py-3 text-right font-body-sm text-body-sm text-outline">
+                      <td colSpan={12} className="p-2 py-3 text-right font-body-sm text-body-sm text-outline">
                         當日無成交
                       </td>
                     )}

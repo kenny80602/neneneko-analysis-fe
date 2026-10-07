@@ -2175,3 +2175,27 @@ export interface StockIndicators {
   // 抄了之後後端改了說法，畫面上會是舊的。
   caveats: string[];
 }
+
+// ===== 自訂目標價（/stocks/targets）=====
+
+// 使用者自己替某一檔設定的目標價。完全是使用者的判斷，不是券商目標價，也不是估值模型的結果。
+// 沒設定的檔不會出現在清單裡——對不到就是「沒設定」，不是 0。
+export interface StockTarget {
+  symbol: string;
+  // 目標價，單位元，一定大於 0。
+  target_price: number;
+  // 使用者自己的備註，沒寫是空字串。
+  note: string;
+  updated_at: string;
+}
+
+export interface StockTargetList {
+  count: number;
+  items: StockTarget[];
+}
+
+export interface RemoveStockTargetResult {
+  symbol: string;
+  // 刪掉幾列（0 或 1）。0 代表本來就沒設定，不是錯誤。
+  removed: number;
+}
