@@ -51,17 +51,17 @@ type Tab = 'edit' | 'heat';
 // 分頁而不是上下堆疊，理由同全市場排行那一頁：兩塊的性質差很遠，堆在一起會很長，
 // 而且會讓人以為熱度榜是「剛剛編的那個族群的」——它是全部族群的當日橫斷面。
 //
+//   今日熱度  收盤後才算得出來的橫斷面，唯讀，一天只變一次。這是平常最常看的，所以排前面、預設開它
 //   族群維護  自己維護的清單，隨時可改，改完立刻生效
-//   今日熱度  收盤後才算得出來的橫斷面，唯讀，一天只變一次
 const TABS: { value: Tab; label: string; hint: string }[] = [
-  { value: 'edit', label: '族群維護', hint: '自己歸類，隨時可改' },
   { value: 'heat', label: '今日熱度', hint: '收盤後才有，一天一次' },
+  { value: 'edit', label: '族群維護', hint: '自己歸類，隨時可改' },
 ];
 
-// 龍頭排名的稱呼。後端只給名次 1～3，稱呼是畫面的事。
+// 龍頭排名的稱呼已搬到 utils/format 的 coreRankLabel；這裡不再留一份。
 
 export default function StockGroups() {
-  const [tab, setTab] = useState<Tab>('edit');
+  const [tab, setTab] = useState<Tab>('heat');
 
   return (
     <>
