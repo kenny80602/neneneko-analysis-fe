@@ -5,6 +5,7 @@ import { collectDailyQuotes, getDailyQuotesByDate } from '../api/dailyQuote';
 import { apiErrorMessage } from '../api/request';
 import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
+import { useSymbolGroups } from '../hooks/useSymbolGroups';
 import { formatNumber, formatPrice, formatSigned, marketLabel, quoteColor, today } from '../utils/format';
 
 export default function DailyQuotes() {
@@ -12,6 +13,7 @@ export default function DailyQuotes() {
   // 空字串代表不帶 date：後端會回目前收集到最新的那一天，
   // 用「今天」當預設的話，假日與收集之前都會是空清單，看起來像壞掉。
   const [date, setDate] = useState('');
+  const groups = useSymbolGroups();
   const { data, loading, error, reload } = useAsyncData(() => getDailyQuotesByDate(date || undefined), [date]);
   const [collecting, setCollecting] = useState(false);
   const [notice, setNotice] = useState('');
@@ -73,7 +75,8 @@ export default function DailyQuotes() {
       <div className="flex flex-col gap-stack-lg">
         <p className="font-body-sm text-body-sm text-on-surface-variant">
           「立即收集」會打上游並寫入資料庫，同時順帶收三大法人、融資融券與估值；
-          同一天重跑是覆蓋而不是新增，補資料可以放心重跑。
+          同一天重跑是覆蓋而不是新增，補資料可以放心重跑。族群是自己在「主題族群」建的，
+          破折號代表這檔沒被歸進任何族群（多數檔都是），不是資料缺漏。
           {notice && <span className="ml-2 text-on-surface-variant">{notice}</span>}
         </p>
 
@@ -94,6 +97,7 @@ export default function DailyQuotes() {
                 <tr>
                   <th className="p-2 pl-4 text-left font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">代號</th>
                   <th className="p-2 text-left font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">名稱</th>
+                  <th className="p-2 text-left font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">族群</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">開盤</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">最高</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">最低</th>
@@ -118,6 +122,9 @@ export default function DailyQuotes() {
                       </span>
                     </td>
                     <td className="p-2 py-3 font-body-md text-body-md text-on-surface whitespace-nowrap">{row.name}</td>
+                    <td className="p-2 py-3 font-body-sm text-body-sm text-on-surface-variant whitespace-nowrap">
+                      {groups.get(row.symbol)?.join('、') ?? '—'}
+                    </td>
                     {row.traded ? (
                       <>
                         <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface">
