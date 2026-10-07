@@ -20,6 +20,9 @@ import {
   quoteColor,
 } from '../utils/format';
 
+// 半年約 125 個成交日；不到這個數字的高點是用不完整的歷史算的。
+const SHORT_HISTORY_DAYS = 100;
+
 const TH = 'p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap';
 
 export default function BelowMA() {
@@ -75,7 +78,7 @@ export default function BelowMA() {
         <p className="font-body-sm text-body-sm text-on-surface-variant">
           季線 = 最近 60 個成交日收盤價的簡單平均（未還原，除權息會有偏差）；乖離 = 收盤相對季線的百分比，
           越負離季線越遠。範圍只有已落地收盤行情的那批（自選股加半導體族群），不是全市場。
-          收盤在季線以下是現況描述，不是買賣訊號。族群是自己在「主題族群」建的，破折號代表沒歸進任何族群。成交金額名次是最新一天在同市場普通股裡的名次，沒有名次（ETF、回補進來的日期）顯示破折號。本益比與殖利率取每一檔最新一筆估值，破折號是公司虧損算不出本益比、沒配息沒有殖利率，或估值還沒收集。
+          收盤在季線以下是現況描述，不是買賣訊號。族群是自己在「主題族群」建的，破折號代表沒歸進任何族群。成交金額名次是最新一天在同市場普通股裡的名次，沒有名次（ETF、回補進來的日期）顯示破折號。回檔 =（半年最高 − 收盤）÷ 半年最高，公式同持股試算；半年最高取已落地的收盤行情，不是去問 Yahoo，歷史不到約 100 個成交日的檔標紅色星號（回檔被低估）。本益比與殖利率取每一檔最新一筆估值，破折號是公司虧損算不出本益比、沒配息沒有殖利率，或估值還沒收集。
         </p>
 
         {data && (
@@ -112,6 +115,8 @@ export default function BelowMA() {
                   <th className={`${TH} text-right`}>收盤</th>
                   <th className={`${TH} text-right`}>季線</th>
                   <th className={`${TH} text-right`}>乖離</th>
+                  <th className={`${TH} text-right`}>半年高</th>
+                  <th className={`${TH} text-right`}>回檔</th>
                   <th className={`${TH} text-right`}>本益比</th>
                   <th className={`${TH} text-right`}>殖利率</th>
                   <th className={`${TH} text-right`}>成交金額名次</th>
@@ -160,6 +165,20 @@ export default function BelowMA() {
                         <td className={`p-2 py-3 text-right font-data-md text-data-md ${quoteColor(row.gap_pct)}`}>
                           {formatSignedPercent(row.gap_pct)}
                         </td>
+                        <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface-variant whitespace-nowrap">
+                          {formatPrice(row.recent_high)}
+                          {row.recent_high_days < SHORT_HISTORY_DAYS && (
+                            <span
+                              className="ml-1 font-body-sm text-body-sm text-error"
+                              title={`只看了 ${row.recent_high_days} 個成交日，不到半年，高點偏低、回檔被低估`}
+                            >
+                              *
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface">
+                          {formatPercent(row.pullback_pct)}
+                        </td>
                         <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface">
                           {formatNumber(valuations.get(row.symbol)?.pe_ratio, 2)}
                         </td>
@@ -175,7 +194,7 @@ export default function BelowMA() {
                       </tr>
                       {open && (
                         <tr className="bg-surface-container-low/40">
-                          <td colSpan={11} className="p-4">
+                          <td colSpan={13} className="p-4">
                             <GroupPeersPanel
                               row={row}
                               groups={groups}

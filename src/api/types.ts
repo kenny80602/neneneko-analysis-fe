@@ -88,6 +88,13 @@ export interface BelowMAStock {
   // null 是沒有名次（回補進來的列、當天沒成交），不是排最後。
   trade_value_rank: number | null;
   trade_value_rank_total: number | null;
+  // 最近半年有成交日的最高價，與實際看了幾個成交日。
+  // 歷史沒補到半年時高點偏低、回檔被低估，天數不到一百就別當半年高點看。
+  recent_high: number;
+  recent_high_days: number;
+  // 回檔幅度（%）＝（半年最高 − 收盤）／半年最高 × 100，公式同持股試算的 pullback_percent。
+  // null 是算不出來（沒有高點），不是沒有回檔。
+  pullback_pct: number | null;
 }
 
 export interface BelowMA {
