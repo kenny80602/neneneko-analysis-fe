@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import GroupChainButton from '../components/GroupChainButton';
 import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
 import { collectDailyQuotes, getDailyQuotesByDate } from '../api/dailyQuote';
 import { apiErrorMessage } from '../api/request';
 import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
-import { useSymbolGroups } from '../hooks/useSymbolGroups';
+import { useGroupIndex } from '../hooks/useSymbolGroups';
 import { useSymbolValuations } from '../hooks/useSymbolValuations';
 import { formatAmount, formatNumber, formatPe, formatPrice, formatRank, formatSigned, marketLabel, quoteColor, today } from '../utils/format';
 
@@ -14,7 +15,21 @@ export default function DailyQuotes() {
   // 空字串代表不帶 date：後端會回目前收集到最新的那一天，
   // 用「今天」當預設的話，假日與收集之前都會是空清單，看起來像壞掉。
   const [date, setDate] = useState('');
-  const groups = useSymbolGroups();
+  const { groups: groupList, names: groups } = useGroupIndex();
+  // 關聯圖用的「名稱＋上游」。這一頁沒載入熱度榜，圖上不標名次與報酬。
+  const chainSources = useMemo(
+    () => groupList.map((entry) => ({ name: entry.group.name, upstream: entry.group.upstream ?? [] })),
+    [groupList]
+  );
+  const linkedGroups = useMemo(() => {
+    const set = new Set<string>();
+    for (const entry of groupList) {
+      if ((entry.group.upstream ?? []).length > 0 || (entry.group.downstream ?? []).length > 0) {
+        set.add(entry.group.name);
+      }
+    }
+    return set;
+  }, [groupList]);
   const { data, loading, error, reload } = useAsyncData(() => getDailyQuotesByDate(date || undefined), [date]);
   const valuations = useSymbolValuations(date);
   const [collecting, setCollecting] = useState(false);
@@ -128,7 +143,12 @@ export default function DailyQuotes() {
                     </td>
                     <td className="p-2 py-3 font-body-md text-body-md text-on-surface whitespace-nowrap">{row.name}</td>
                     <td className="p-2 py-3 font-body-sm text-body-sm text-on-surface-variant whitespace-nowrap">
-                      {groups.get(row.symbol)?.map((name) => <div key={name}>{name}</div>) ?? '—'}
+                      {groups.get(row.symbol)?.map((name) => (
+                        <div key={name}>
+                          {name}
+                          {linkedGroups.has(name) && <GroupChainButton name={name} sources={chainSources} />}
+                        </div>
+                      )) ?? '—'}
                     </td>
                     {row.traded ? (
                       <>
