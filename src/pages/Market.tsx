@@ -573,7 +573,8 @@ export default function Market() {
                   <table className="w-full text-left border-collapse">
                     <thead className="bg-surface-container-lowest border-b border-outline-variant">
                       <tr>
-                        <th className={`${thClass} pl-4 text-left`}>代號 / 名稱</th>
+                        <th className={`${thClass} pl-4 text-left`}>名次</th>
+                        <th className={`${thClass} text-left`}>代號 / 名稱</th>
                         <th className={`${thClass} text-right`}>收盤</th>
                         <th className={`${thClass} text-right`}>漲跌幅</th>
                         <th className={`${thClass} pr-4 text-right`}>
@@ -582,14 +583,17 @@ export default function Market() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-outline-variant/50">
-                      {rankedTwse.map((row) => (
+                      {rankedTwse.map((row, index) => (
                         <tr
                           key={row.symbol}
                           onClick={() => openSymbol(row.symbol)}
                           title="點擊查看個股總覽"
                           className="hover:bg-surface-container-low/50 transition-colors cursor-pointer"
                         >
-                          <td className="p-2 pl-4 py-3">
+                          <td className="p-2 pl-4 py-3 font-data-md text-data-md text-on-surface-variant">
+                            {index + 1}
+                          </td>
+                          <td className="p-2 py-3">
                             <span className="block font-data-md text-data-md text-primary font-bold">
                               {row.symbol}
                             </span>
@@ -678,21 +682,25 @@ export default function Market() {
                   <table className="w-full text-left border-collapse">
                     <thead className="bg-surface-container-lowest border-b border-outline-variant">
                       <tr>
-                        <th className={`${thClass} pl-4 text-left`}>代號 / 名稱</th>
+                        <th className={`${thClass} pl-4 text-left`}>名次</th>
+                        <th className={`${thClass} text-left`}>代號 / 名稱</th>
                         <th className={`${thClass} text-right`}>成交價</th>
                         <th className={`${thClass} text-right`}>漲跌</th>
                         <th className={`${thClass} pr-4 text-right`}>漲跌幅</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-outline-variant/50">
-                      {rankedMovers.map((row) => (
+                      {rankedMovers.map((row, index) => (
                         <tr
                           key={row.symbol}
                           onClick={() => openSymbol(row.symbol)}
                           title="點擊查看個股總覽"
                           className="hover:bg-surface-container-low/50 transition-colors cursor-pointer"
                         >
-                          <td className="p-2 pl-4 py-3">
+                          <td className="p-2 pl-4 py-3 font-data-md text-data-md text-on-surface-variant">
+                            {index + 1}
+                          </td>
+                          <td className="p-2 py-3">
                             <span className="block font-data-md text-data-md text-primary font-bold">
                               {row.symbol}
                             </span>
