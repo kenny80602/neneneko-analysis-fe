@@ -425,6 +425,9 @@ export default function Holdings() {
   // 三面向評分問的是「持股的每一檔」，同一檔分散在多個帳戶也只問一次（hook 內會去重）。
   // 評分失敗不擋持股表：那一欄退成破折號。
   const scores = useStockScores(rows.map((row) => row.symbol));
+  // 觀察中的檔另外問一次，不跟持股併在一起：兩邊各自有 40 檔上限，
+  // 併起來超過時尾端會被截掉，而那幾格會被讀成「沒有資料」。
+  const watchScores = useStockScores(watchOnlyRows.map((row) => row.symbol));
 
   /**
    * 「這個帳戶已經有這一檔」時，新增表單要提示它會併進哪一列。
@@ -1812,6 +1815,12 @@ export default function Holdings() {
                     <th className={`${headCell} text-right`}>成本</th>
                     <th className={`${headCell} text-right`}>現價</th>
                     <th className={`${headCell} text-right`}>報酬率</th>
+                    <th
+                      className={`${headCell} text-right`}
+                      title="基本面、籌碼面、技術面各自偏多、中性或偏空；破折號是沒有資料可評，不是中性。滑鼠移到徽章上看判斷依據"
+                    >
+                      三面向
+                    </th>
                     <th className={`${headCell} pr-4 text-right`}>操作</th>
                   </tr>
                 </thead>
@@ -1870,6 +1879,12 @@ export default function Holdings() {
                         <td className={`${numberCell} text-on-surface`}>{formatPrice(row.price)}</td>
                         <td className={`${numberCell} ${quoteColor(row.profitPercent)}`}>
                           {formatSignedPercent(row.profitPercent)}
+                        </td>
+                        <td className="p-2 py-3 text-right">
+                          <ScoreBadges
+                            score={watchScores.bySymbol.get(row.symbol)}
+                            title={watchScores.failed ? '評分載入失敗，清單不受影響' : undefined}
+                          />
                         </td>
                         <td
                           className="p-2 pr-4 py-3 text-right whitespace-nowrap"
