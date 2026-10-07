@@ -191,3 +191,14 @@ export function gapToTarget(close: number | null | undefined, target: number | n
   if (isBlank(close) || isBlank(target) || close <= 0) return null;
   return ((target - close) / close) * 100;
 }
+
+/**
+ * 族群內的營收名次標籤：1 龍頭、2 老二、3 老三，之後就是數字本身（4、5、6…）。
+ * 名次依最新月營收，營收大不一定是產業龍頭。
+ */
+export function coreRankLabel(rank: number): string {
+  if (rank === 1) return '龍頭';
+  if (rank === 2) return '老二';
+  if (rank === 3) return '老三';
+  return String(rank);
+}

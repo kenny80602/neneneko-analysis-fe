@@ -26,6 +26,7 @@ import {
   formatSignedPercent,
   formatThousandTWD,
   quoteColor,
+  coreRankLabel,
 } from '../utils/format';
 
 // 自己維護的主題族群：誰屬於散熱（上半頁，可編輯），以及散熱今天有沒有在動（下半頁，唯讀）。
@@ -58,7 +59,6 @@ const TABS: { value: Tab; label: string; hint: string }[] = [
 ];
 
 // 龍頭排名的稱呼。後端只給名次 1～3，稱呼是畫面的事。
-const CORE_LABEL: Record<number, string> = { 1: '龍頭', 2: '老二', 3: '老三' };
 
 export default function StockGroups() {
   const [tab, setTab] = useState<Tab>('edit');
@@ -853,7 +853,7 @@ function HeatMemberTable({ members, keyword, targets, core = [], leaders = [], c
   // 龍頭今天算不出報酬（停牌、除權息）時不在 members 裡，但它是這個族群最重要的一檔，
   // 不能因此從表上消失：補在最後面，漲跌顯示破折號。
   const shown = new Set(members.map((m) => m.symbol));
-  const extra = core.filter((c) => !shown.has(c.symbol));
+  const extra = core.filter((c) => c.rank <= 3 && !shown.has(c.symbol));
   const hasTarget = targets !== undefined;
 
   const headCell = 'p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap';
@@ -875,10 +875,14 @@ function HeatMemberTable({ members, keyword, targets, core = [], leaders = [], c
           <span className="flex flex-wrap gap-1">
             {rank != null && (
               <span
-                className="rounded px-1.5 py-0.5 bg-primary/15 text-primary font-body-sm text-[11px] font-bold whitespace-nowrap"
-                title="依最新月營收排序，營收大不一定是產業龍頭"
+                className={`rounded px-1.5 py-0.5 font-body-sm text-[11px] whitespace-nowrap ${
+                  rank <= 3
+                    ? 'bg-primary/15 text-primary font-bold'
+                    : 'bg-surface-container text-on-surface-variant border border-outline-variant'
+                }`}
+                title={`族群內依最新月營收排第 ${rank} 名，營收大不一定是產業龍頭`}
               >
-                {CORE_LABEL[rank] ?? `第${rank}`}
+                {coreRankLabel(rank)}
               </span>
             )}
             {leaderSet.has(row.symbol) && (
@@ -938,7 +942,7 @@ function HeatMemberTable({ members, keyword, targets, core = [], leaders = [], c
       </div>
       {(core.length > 0 || leaders.length > 0) && (
         <p className="font-body-sm text-body-sm text-outline">
-          {core.length > 0 && `龍頭、老二、老三依 ${coreMonth || '最新'} 月營收排序，不是今天漲最多的；`}
+          {core.length > 0 && `標示欄的龍頭、老二、老三、4、5…是族群內依 ${coreMonth || '最新'} 月營收的名次，不是今天漲最多的；`}
           領漲是今天漲最多的三檔。
           {extra.length > 0 && '龍頭今天算不出報酬（停牌或除權息）的列在最後。'}
         </p>
@@ -999,9 +1003,9 @@ function LinkedGroups({ item, byName, total, keyword, targets }: LinkedGroupsPro
                             {formatSignedPercent(linked.item.excess_return)}
                           </span>
                         </span>
-                        {linked.item.core.map((member) => (
+                        {linked.item.core.slice(0, 3).map((member) => (
                           <span key={member.symbol} className="font-body-sm text-body-sm whitespace-nowrap">
-                            <span className="text-outline">{CORE_LABEL[member.rank] ?? `第${member.rank}`}</span>{' '}
+                            <span className="text-outline">{coreRankLabel(member.rank)}</span>{' '}
                             <span className="text-on-surface">{member.name}</span>{' '}
                             <span className={`font-data-md ${quoteColor(member.return_pct)}`}>
                               {formatSignedPercent(member.return_pct)}

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { GroupHeat, GroupMembers } from '../api/types';
 import { buildChainGraph, ChainSource } from '../utils/groupChain';
 import { TargetStore } from '../hooks/useTargets';
-import { DASH, formatSignedPercent, quoteColor } from '../utils/format';
+import { coreRankLabel, DASH, formatSignedPercent, quoteColor } from '../utils/format';
 import BrokerTargetCell from './BrokerTargetCell';
 import TargetPriceEditor from './TargetPriceEditor';
 
@@ -33,8 +33,6 @@ export interface ChainStock {
   /** 在這個族群的龍頭排名：1 龍頭、2 老二、3 老三；不在龍頭三檔裡是 null。 */
   coreRank: number | null;
 }
-
-const CORE_LABEL: Record<number, string> = { 1: '龍頭', 2: '老二', 3: '老三' };
 
 const TH = 'py-1 pr-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap';
 
@@ -416,10 +414,14 @@ function StockPanel({
                 <td className="py-1 pr-2 whitespace-nowrap">
                   {stock.coreRank != null && (
                     <span
-                      className="rounded px-1 py-0.5 bg-primary/15 text-primary font-body-sm text-[11px] font-bold"
-                      title="依最新月營收排序，營收大不一定是產業龍頭"
+                      className={`rounded px-1 py-0.5 font-body-sm text-[11px] ${
+                        stock.coreRank <= 3
+                          ? 'bg-primary/15 text-primary font-bold'
+                          : 'bg-surface-container text-on-surface-variant border border-outline-variant'
+                      }`}
+                      title={`族群內依最新月營收排第 ${stock.coreRank} 名，營收大不一定是產業龍頭`}
                     >
-                      {CORE_LABEL[stock.coreRank] ?? `第${stock.coreRank}`}
+                      {coreRankLabel(stock.coreRank)}
                     </span>
                   )}
                 </td>

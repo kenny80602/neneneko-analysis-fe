@@ -1,4 +1,4 @@
-import { gapToTarget } from './format';
+import { coreRankLabel, gapToTarget } from './format';
 
 describe('gapToTarget', () => {
   it('還要漲多少才到目標價；負數是已經超過', () => {
@@ -12,5 +12,11 @@ describe('gapToTarget', () => {
     expect(gapToTarget(100, null)).toBeNull();
     expect(gapToTarget(0, 120)).toBeNull();
     expect(gapToTarget(null, 120)).toBeNull();
+  });
+});
+
+describe('coreRankLabel', () => {
+  it('前三名是龍頭、老二、老三，之後就是數字', () => {
+    expect([1, 2, 3, 4, 5, 12].map(coreRankLabel)).toEqual(['龍頭', '老二', '老三', '4', '5', '12']);
   });
 });

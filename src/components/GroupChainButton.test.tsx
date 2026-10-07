@@ -139,3 +139,31 @@ describe('龍頭標示', () => {
     expect(panel).not.toHaveTextContent('老三');
   });
 });
+
+describe('第 4 名以後標數字', () => {
+  it('面板上龍頭、老二、老三之後的標 4、5', () => {
+    const wide: GroupMembers[] = [
+      group(
+        'CCL',
+        [['1', '甲'], ['2', '乙'], ['3', '丙'], ['4', '丁'], ['5', '戊']],
+        [],
+        [['1', '甲'], ['2', '乙'], ['3', '丙'], ['4', '丁'], ['5', '戊']]
+      ),
+    ];
+    const stocks = chainStocksOf(wide)('CCL');
+    expect(stocks.map((s) => s.coreRank)).toEqual([1, 2, 3, 4, 5]);
+    render(
+      <GroupChainButton
+        name="CCL"
+        sources={[{ name: 'CCL', upstream: [] }]}
+        stocksOf={chainStocksOf(wide)}
+      />
+    );
+    fireEvent.mouseEnter(screen.getByRole('button', { name: /CCL 的上下游關聯圖/ }));
+    const panel = screen.getByTestId('chain-stocks');
+    expect(panel).toHaveTextContent('龍頭');
+    expect(panel).toHaveTextContent('老三');
+    const badges = Array.from(panel.querySelectorAll('span[title^="族群內依最新月營收排第"]')).map((n) => n.textContent);
+    expect(badges).toEqual(['龍頭', '老二', '老三', '4', '5']);
+  });
+});
