@@ -76,6 +76,26 @@ describe('GroupChainButton', () => {
   });
 });
 
+describe('浮層捲動', () => {
+  it('在浮層裡捲動（看底下的股票）不會把浮層收起來', () => {
+    render(<GroupChainButton name="CCL" sources={sources} stocksOf={chainStocksOf(roster)} />);
+    fireEvent.mouseEnter(screen.getByRole('button', { name: /CCL 的上下游關聯圖/ }));
+    fireEvent.scroll(screen.getByTestId('chain-stocks'));
+    fireEvent.scroll(screen.getByRole('dialog'));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByTestId('chain-stocks')).toBeInTheDocument();
+  });
+
+  it('頁面捲動時重新定位而不是收起來（圖示還在畫面內）', () => {
+    render(<GroupChainButton name="CCL" sources={sources} stocksOf={chainStocksOf(roster)} />);
+    fireEvent.mouseEnter(screen.getByRole('button', { name: /CCL 的上下游關聯圖/ }));
+    fireEvent.scroll(window);
+    fireEvent.scroll(document);
+    fireEvent.resize(window);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+});
+
 describe('chainStocksOf', () => {
   it('名單以成員清單為準，有行情的依報酬由高到低排前面，沒行情的接後面', () => {
     const heat = new Map([

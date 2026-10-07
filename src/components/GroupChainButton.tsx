@@ -133,15 +133,16 @@ export default function GroupChainButton({ name, sources, heat, total = 0, stock
     if (!rect) return;
     const popoverWidth = Math.min(popoverInner + 32, window.innerWidth - POPOVER_MARGIN * 2);
     const left = Math.max(POPOVER_MARGIN, Math.min(rect.left, window.innerWidth - popoverWidth - POPOVER_MARGIN));
-    // 下方放不下就放上方，兩邊都放不下就選比較大的那一邊並讓浮層自己捲動。
-    const below = window.innerHeight - rect.bottom - POPOVER_MARGIN;
-    const above = rect.top - POPOVER_MARGIN;
-    const useBelow = below >= Math.min(height + (hasStocks ? 340 : 120), above) || below >= above;
-    setBox(
-      useBelow
-        ? { left, top: rect.bottom + 6, maxHeight: below }
-        : { left, top: Math.max(POPOVER_MARGIN, rect.top - 6 - Math.min(above, height + (hasStocks ? 340 : 120))), maxHeight: above }
+    // 想要的高度：標題與說明＋圖＋股票面板。放不下的話圖和股票面板各自捲動，整個浮層不會被裁掉。
+    const wanted = height + (hasStocks ? 320 : 100) + 90;
+    const boxHeight = Math.min(wanted, window.innerHeight - POPOVER_MARGIN * 2);
+    // 優先放在圖示正下方；放不下就整個往上挪到下緣貼齊視窗。浮層可以蓋住圖示：
+    // 滑鼠從圖示移進浮層的瞬間不會被收起（見 closeTimer）。
+    const top = Math.max(
+      POPOVER_MARGIN,
+      Math.min(rect.bottom + 6, window.innerHeight - POPOVER_MARGIN - boxHeight)
     );
+    setBox({ left, top, maxHeight: window.innerHeight - POPOVER_MARGIN - top });
   }, [popoverInner, height, hasStocks]);
 
   const show = () => {
@@ -182,20 +183,29 @@ export default function GroupChainButton({ name, sources, heat, total = 0, stock
     };
   }, [open, pinned]);
 
-  // 捲動或縮放時位置會跑掉，直接收起來比追著重算簡單。
+  // 頁面捲動或視窗縮放時重新算位置；圖示捲出畫面就收起來（釘住的也一樣，不然浮層會飄在半空）。
+  // 浮層自己內部的捲動不算頁面捲動：之前這裡一律收起來，結果在浮層裡往下捲看底下的股票時，
+  // 浮層就整個消失了。
   useEffect(() => {
     if (!open) return;
-    const close = () => {
-      setPinned(false);
-      setOpen(false);
+    const reposition = (event?: Event) => {
+      // resize 的目標是 window、不是 DOM 節點，先確認是節點才能問 contains。
+      if (event && event.target instanceof Node && popoverRef.current?.contains(event.target)) return;
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect || rect.bottom < 0 || rect.top > window.innerHeight) {
+        setPinned(false);
+        setOpen(false);
+        return;
+      }
+      place();
     };
-    window.addEventListener('resize', close);
-    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', reposition);
+    window.addEventListener('scroll', reposition, true);
     return () => {
-      window.removeEventListener('resize', close);
-      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', reposition);
+      window.removeEventListener('scroll', reposition, true);
     };
-  }, [open]);
+  }, [open, place]);
 
   // 節點座標。欄內垂直置中，讓欄數少的那幾欄不會全擠在最上面。
   const positions = useMemo(() => {
@@ -259,7 +269,7 @@ export default function GroupChainButton({ name, sources, heat, total = 0, stock
             maxHeight: box.maxHeight,
             width: Math.min(popoverInner + 32, window.innerWidth - POPOVER_MARGIN * 2),
           }}
-          className="z-50 overflow-auto rounded-xl border border-outline-variant bg-surface-container-lowest p-4 shadow-lg"
+          className="z-50 flex flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest p-4 shadow-lg"
         >
           <p className="font-body-md text-body-md text-on-surface font-semibold">
             {name}
@@ -272,6 +282,8 @@ export default function GroupChainButton({ name, sources, heat, total = 0, stock
             {heat && '節點下方是今天的熱度名次與中位數報酬——這是現況，不是預測。'}
           </p>
 
+          {/* 圖本身超過高度或寬度時自己捲動，底下的股票面板才一直看得到。 */}
+          <div className="max-h-[40vh] shrink-0 overflow-auto overscroll-contain">
           <div className="relative" style={{ width, height }}>
             <svg width={width} height={height} className="absolute inset-0" aria-hidden="true">
               <defs>
@@ -340,6 +352,7 @@ export default function GroupChainButton({ name, sources, heat, total = 0, stock
               );
             })}
           </div>
+          </div>
 
           {stocksOf && (
             <StockPanel group={focus} stocks={stocksOf(focus)} showReturn={heat !== undefined} targets={targets} />
@@ -364,7 +377,10 @@ function StockPanel({
   targets?: TargetStore;
 }) {
   return (
-    <div className="mt-4 border-t border-outline-variant pt-3" data-testid="chain-stocks">
+    <div
+      className="mt-4 min-h-[160px] flex-1 overflow-auto overscroll-contain border-t border-outline-variant pt-3"
+      data-testid="chain-stocks"
+    >
       <p className="mb-2 font-body-sm text-body-sm text-on-surface-variant">
         <span className="text-on-surface font-semibold">{group}</span> 的股票
         {stocks.length > 0 && `（${stocks.length} 檔）`}
@@ -373,7 +389,7 @@ function StockPanel({
       {stocks.length === 0 ? (
         <p className="font-body-sm text-body-sm text-outline">成員清單還沒載入，或這個族群沒有成員。</p>
       ) : (
-        <div className="grid gap-1 sm:grid-cols-2 max-h-48 overflow-auto">
+        <div className="grid gap-1 sm:grid-cols-2">
           {stocks.map((stock) => (
             <div
               key={stock.symbol}
