@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
+import ScoreBadges from '../components/ScoreBadges';
 import { getDailyQuotesByDate } from '../api/dailyQuote';
 import {
   addHolding,
@@ -12,6 +13,7 @@ import { apiErrorMessage } from '../api/request';
 import { DailyQuote, PortfolioRow } from '../api/types';
 import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
+import { useStockScores } from '../hooks/useStockScores';
 import {
   DASH,
   formatDateTime,
@@ -134,6 +136,10 @@ export default function Portfolio() {
   const pageCount = Math.max(1, Math.ceil(visibleRows.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
   const pagedRows = visibleRows.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+
+  // 三面向評分只問目前這一頁的列（最多 PAGE_SIZE 檔）。換頁才會多問一次，
+  // 評分失敗不擋清單：那一欄退成破折號。
+  const scores = useStockScores(pagedRows.map((row) => row.symbol));
 
   const toggleSort = (key: SortKey) => {
     if (key === sortKey) {
@@ -363,6 +369,12 @@ export default function Portfolio() {
                   <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-right">
                     損益
                   </th>
+                  <th
+                    className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-right"
+                    title="基本面、籌碼面、技術面各自偏多、中性或偏空；破折號是沒有資料可評，不是中性。滑鼠移到徽章上看判斷依據"
+                  >
+                    三面向
+                  </th>
                   <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-center">
                     狀態
                   </th>
@@ -432,6 +444,12 @@ export default function Portfolio() {
                       >
                         {formatPercent(row.profit_percent)}
                       </span>
+                    </td>
+                    <td className="p-2 py-3 text-right">
+                      <ScoreBadges
+                        score={scores.bySymbol.get(row.symbol)}
+                        title={scores.failed ? '評分載入失敗，清單不受影響' : undefined}
+                      />
                     </td>
                     <td className="p-2 py-3 text-center">
                       {/* 設計稿的「高估」後端沒有對應欄位（要先定義規則才做得出來），
@@ -515,6 +533,7 @@ export default function Portfolio() {
           現價為即時報價（來源標示於價格下方），漲跌與成交量取自最近一次收盤
           {daily.data?.date ? `（${daily.data.date}）` : ''}，成交量單位為張。
           破折號代表該值算不出來（例如沒有成本、虧損無本益比），不是 0。
+          「三面向」是依規則算的現況描述，不是買賣建議：基本面看月營收年增率與本益比，籌碼面看三大法人與融資餘額的變化，技術面看月線、季線的排列與斜率；自選股的收盤、法人與融資融券都有收，但剛加進來的檔收集的天數不夠（技術面要 60 個交易日），也會是破折號。
           現價時間 {formatDateTime(rows.find((row) => row.price_as_of)?.price_as_of)}。
         </p>
       )}
