@@ -1180,7 +1180,7 @@ function HeatBoard() {
         其次訊號數，平手才看超額報酬。所以名次高不等於漲得多，而是「今天最像整群在動」；
         標了樣本過少的一律排在後段，那個名次講的是不可信不是比較弱。搜尋過濾不會重編名次。
         　表格只列族群層級的數字，股票都收在每個族群的
-        <span className="text-on-surface">展開</span>裡：龍頭／老二／老三是依最新月營收排的族群最大三檔（營收大不一定是產業龍頭），領漲是今天漲最多的三檔，再來是這個族群的上游與下游各自今天的熱度名次、報酬與龍頭（可再點開看成員，看哪一段還沒動；標「推論」的關係是依產業常識推的、沒有文件佐證，請自己確認，這是現況不是預測），最後是整群逐檔的漲跌；破折號代表今天算不出來（停牌、除權息）。
+        <span className="text-on-surface">展開</span>裡：龍頭／老二／老三是依最新月營收排的族群最大三檔（營收大不一定是產業龍頭），領漲是今天漲最多的三檔，接著是整群逐檔的漲跌，最後才是這個族群的上游與下游各自今天的熱度名次、報酬與龍頭（可再點開看成員，看哪一段還沒動；標「推論」的關係是依產業常識推的、沒有文件佐證，請自己確認，這是現況不是預測）；破折號代表今天算不出來（停牌、除權息）。
         {board != null && <>　用到 {board.days_covered} 個交易日。</>}
         　搜尋比對的是族群名稱與<span className="text-on-surface">全部成員</span>的股號、名稱，
         不只領漲三檔。
@@ -1374,13 +1374,15 @@ function HeatBoard() {
                               ))}
                             </p>
                           )}
+                          {/* 先看自己的股票，上下游放在後面：展開是為了看這個族群本身，
+                              相關族群是延伸，不該把整群逐檔擠到最下面去。 */}
+                          <HeatMemberGrid members={item.members} keyword={keyword} />
                           <LinkedGroups
                             item={item}
                             byName={byName}
                             total={board.items.length}
                             keyword={keyword}
                           />
-                          <HeatMemberGrid members={item.members} keyword={keyword} />
                         </div>
                       </td>
                     </tr>
