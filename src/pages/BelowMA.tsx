@@ -151,7 +151,7 @@ export default function BelowMA() {
                         <td className="p-2 py-3 font-body-md text-body-md text-on-surface whitespace-nowrap">{row.name}</td>
                         <td className="p-2 py-3 font-body-sm text-body-sm text-on-surface-variant whitespace-nowrap">
                           {mine ? (
-                            <span className="flex flex-wrap gap-1">
+                            <span className="flex flex-col items-start gap-1">
                               {mine.map((name) => {
                                 const h = heat.get(name);
                                 const hot = !!h && h.rank <= HOT_GROUP_TOP;
