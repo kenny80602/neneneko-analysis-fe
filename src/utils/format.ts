@@ -170,3 +170,15 @@ export function changePercent(quote: { traded: boolean; ex_dividend: boolean; cl
   const previous = quote.close - quote.change;
   return previous > 0 ? (quote.change / previous) * 100 : null;
 }
+
+/**
+ * 本益比。三種情況要分得出來：
+ *  - 沒有估值紀錄（undefined）：還沒收集，破折號。
+ *  - 有紀錄但 pe_ratio 是 null：上游給空值＝虧損或尚無盈餘，算不出來，顯示「虧損」。
+ *  - 有值：兩位小數。
+ * 絕不能把 null 畫成 0——「本益比 0 倍」根本不成立。
+ */
+export function formatPe(valuation: { pe_ratio: number | null } | undefined): string {
+  if (!valuation) return DASH;
+  return valuation.pe_ratio == null ? '虧損' : formatNumber(valuation.pe_ratio, 2);
+}

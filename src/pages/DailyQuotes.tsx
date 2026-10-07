@@ -7,7 +7,7 @@ import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { useSymbolGroups } from '../hooks/useSymbolGroups';
 import { useSymbolValuations } from '../hooks/useSymbolValuations';
-import { formatNumber, formatPrice, formatRank, formatSigned, marketLabel, quoteColor, today } from '../utils/format';
+import { formatNumber, formatPe, formatPrice, formatRank, formatSigned, marketLabel, quoteColor, today } from '../utils/format';
 
 export default function DailyQuotes() {
   const { setSymbol } = useSymbol();
@@ -78,7 +78,7 @@ export default function DailyQuotes() {
         <p className="font-body-sm text-body-sm text-on-surface-variant">
           「立即收集」會打上游並寫入資料庫，同時順帶收三大法人、融資融券與估值；
           同一天重跑是覆蓋而不是新增，補資料可以放心重跑。族群是自己在「主題族群」建的，
-          破折號代表這檔沒被歸進任何族群（多數檔都是），不是資料缺漏。成交金額名次是當日在同市場普通股裡的名次（上市比上市、上櫃比上櫃），ETF 與回補進來的歷史日期沒有名次，同樣顯示破折號。本益比破折號有兩種意思：公司虧損算不出來，或估值還沒收集（只收自選股與額外名單，且沒有回補歷史）。
+          破折號代表這檔沒被歸進任何族群（多數檔都是），不是資料缺漏。成交金額名次是當日在同市場普通股裡的名次（上市比上市、上櫃比上櫃），ETF 與回補進來的歷史日期沒有名次，同樣顯示破折號。本益比顯示「虧損」是上游給空值（虧損或尚無盈餘），破折號是估值還沒收集（只收自選股與額外名單，且沒有回補歷史）。
           {notice && <span className="ml-2 text-on-surface-variant">{notice}</span>}
         </p>
 
@@ -147,7 +147,7 @@ export default function DailyQuotes() {
                           {row.ex_dividend ? '除權息' : formatSigned(row.change)}
                         </td>
                         <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface">
-                          {formatNumber(valuations.get(row.symbol)?.pe_ratio, 2)}
+                          {formatPe(valuations.get(row.symbol))}
                         </td>
                         <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface-variant">
                           {formatNumber(row.volume)}
