@@ -12,11 +12,17 @@ import StatCard from '../components/StatCard';
 import { getMacroIndicators } from '../api/macroIndicators';
 import { getWorldIndices } from '../api/worldIndex';
 import { getMarketMarginSummaries } from '../api/margin';
-import { getTPExMarketHighlight, getTPExPriceAdvanced, getTPExPriceDeclined } from '../api/tpex';
+import {
+  getTPExAmountRanks,
+  getTPExMarketHighlight,
+  getTPExPriceAdvanced,
+  getTPExPriceDeclined,
+} from '../api/tpex';
 import {
   getLatestTWSEInstitutionalSummaries,
   getTWSEAdvanceDeclineSummaries,
   getTWSEMarketTradings,
+  getTWSETradeValueRanks,
   getTWSEVolumeRanks,
 } from '../api/twse';
 import { MarketMarginSummary, TWSEVolumeRank } from '../api/types';
@@ -31,6 +37,7 @@ import {
   formatShareToLot,
   formatSigned,
   formatSignedPercent,
+  formatThousandTWD,
   marketLabel,
   quoteColor,
 } from '../utils/format';
@@ -38,8 +45,8 @@ import {
 // 大盤總覽。這一整頁都是「即時打交易所 OpenAPI」、不落地且受上游限流，
 // 所以一律不輪詢，要更新請按右上角重新整理。
 
-type TwseSort = 'volume' | 'gain' | 'loss';
-type TpexSide = 'advanced' | 'declined';
+type TwseSort = 'volume' | 'value' | 'gain' | 'loss';
+type TpexSide = 'advanced' | 'declined' | 'amount';
 
 // 上櫃排行顯示幾檔。跟上市那張（上游固定給二十名）對齊，兩邊長度才不會差一大截。
 const TOP_N = 20;
@@ -74,20 +81,33 @@ export default function Market() {
   // 同一頁其他區塊的上游端點都不吃日期，做不到同樣的事，休市時仍然是空的。
   const institutional = useAsyncData(() => getLatestTWSEInstitutionalSummaries(), []);
   const tpex = useAsyncData(() => getTPExMarketHighlight(), []);
-  const volumeRanks = useAsyncData(() => getTWSEVolumeRanks(), []);
+  const [twseSort, setTwseSort] = useState<TwseSort>('volume');
+
+  // 成交量榜與成交金額榜是兩支端點（金額榜要抓整包收盤行情，比較慢），切到才發請求。
+  // 漲幅／跌幅是把成交量那 20 檔重排，所以只有「成交金額」會換資料來源。
+  const volumeRanks = useAsyncData(() => getTWSEVolumeRanks(), [twseSort === 'value'], {
+    enabled: twseSort !== 'value',
+  });
+  const tradeValueRanks = useAsyncData(() => getTWSETradeValueRanks(), [twseSort === 'value'], {
+    enabled: twseSort === 'value',
+  });
   // 大盤融資融券。這一支跟同頁其他區塊不同，讀的是後端落地的資料而不是即時打上游，
   // 所以假日與盤中一樣看得到最近一個交易日，不必像三大法人那樣自己往回找。
   const margin = useAsyncData(() => getMarketMarginSummaries(), []);
 
-  const [twseSort, setTwseSort] = useState<TwseSort>('volume');
   const [tpexSide, setTpexSide] = useState<TpexSide>('advanced');
 
   // 漲幅榜與跌幅榜是兩支端點，只抓目前這一頁要看的那支——
   // 兩支都先抓等於每次進首頁都多打一次上游，而使用者多半只看其中一邊。
   const movers = useAsyncData(
     () => (tpexSide === 'advanced' ? getTPExPriceAdvanced() : getTPExPriceDeclined()),
-    [tpexSide]
+    [tpexSide],
+    { enabled: tpexSide !== 'amount' }
   );
+  // 成交值榜同理，切到那一頁才發請求。
+  const amountRanks = useAsyncData(() => getTPExAmountRanks(), [tpexSide], {
+    enabled: tpexSide === 'amount',
+  });
 
   // 上游那兩支雖然叫「排行」，回來卻是照代號排的（實測 3066 +9.95% 排在 3441 +9.96% 前面），
   // 所以名次要自己排。漲幅榜由大到小、跌幅榜由小到大（跌幅是負數，跌最多的排前面）。
@@ -103,6 +123,18 @@ export default function Market() {
     );
     return rows.slice(0, TOP_N);
   }, [movers.data, tpexSide]);
+
+  // 名次自己依成交值重排，不信上游的 rank 欄位順序（同漲跌幅榜實測過不照榜單順序回）。
+  // 只留最新那一天：這組上游標明是「歷史」排行，同一份裡混到不同日期的話，
+  // 把兩天的成交值排在同一張榜上沒有意義。
+  const rankedAmounts = useMemo(() => {
+    const rows = amountRanks.data ?? [];
+    const latest = rows.reduce((max, row) => (row.date > max ? row.date : max), '');
+    return rows
+      .filter((row) => row.date === latest)
+      .sort((a, b) => b.trading_amount - a.trading_amount)
+      .slice(0, TOP_N);
+  }, [amountRanks.data]);
 
   // 融資融券只顯示最新一個交易日，一個市場一列。
   //
@@ -133,9 +165,26 @@ export default function Market() {
     : null;
 
   const rankedTwse = useMemo(() => {
+    if (twseSort === 'value') {
+      // 上游已排好。除權息當天的漲跌沒有可比性（Change 是 0），百分比留空不要顯示 0%。
+      return (tradeValueRanks.data ?? []).map((row) => {
+        const previousClose = row.close - row.change;
+        return {
+          symbol: row.symbol,
+          name: row.name,
+          close: row.close,
+          changePercent:
+            row.ex_dividend || previousClose <= 0 ? null : (row.change / previousClose) * 100,
+          metric: formatAmount(row.trade_value),
+        };
+      });
+    }
     const rows = (volumeRanks.data ?? []).map((row) => ({
-      ...row,
+      symbol: row.symbol,
+      name: row.name,
+      close: row.close,
       changePercent: toChangePercent(row),
+      metric: formatShareToLot(row.trade_volume),
     }));
     // 上游本來就是依成交量排好的，這個選項不重排。
     if (twseSort === 'volume') return rows;
@@ -148,7 +197,9 @@ export default function Market() {
         ? b.changePercent - a.changePercent
         : a.changePercent - b.changePercent;
     });
-  }, [volumeRanks.data, twseSort]);
+  }, [volumeRanks.data, tradeValueRanks.data, twseSort]);
+
+  const twseSource = twseSort === 'value' ? tradeValueRanks : volumeRanks;
 
   const loading = twse.loading || advanceDecline.loading || institutional.loading || tpex.loading;
   const error = twse.error || advanceDecline.error || institutional.error || tpex.error;
@@ -158,8 +209,11 @@ export default function Market() {
     advanceDecline.reload();
     institutional.reload();
     tpex.reload();
-    volumeRanks.reload();
-    movers.reload();
+    // reload 不看 enabled，只叫目前在看的那一支。
+    twseSource.reload();
+    // reload 不看 enabled，兩支都叫的話沒在看的那一支也會打上游。
+    if (tpexSide === 'amount') amountRanks.reload();
+    else movers.reload();
     margin.reload();
   };
 
@@ -474,16 +528,17 @@ export default function Market() {
               <div className="p-4 border-b border-outline-variant bg-surface-container-low flex flex-wrap justify-between items-center gap-stack-sm">
                 <div>
                   <h3 className="font-body-md text-body-md text-on-surface font-semibold">
-                    上市成交量前 20 名
+                    {twseSort === 'value' ? '上市成交金額前 20 名' : '上市成交量前 20 名'}
                   </h3>
                   <p className="font-body-sm text-body-sm text-on-surface-variant">
-                    {volumeRanks.data?.[0]?.date ?? DASH}
+                    {twseSource.data?.[0]?.date ?? DASH}
                   </p>
                 </div>
                 <div className="flex gap-1">
                   {(
                     [
                       { key: 'volume', label: '成交量' },
+                      { key: 'value', label: '成交金額' },
                       { key: 'gain', label: '漲幅' },
                       { key: 'loss', label: '跌幅' },
                     ] as { key: TwseSort; label: string }[]
@@ -501,15 +556,15 @@ export default function Market() {
                 </div>
               </div>
 
-              {volumeRanks.loading && <PageState kind="loading" />}
-              {volumeRanks.error && (
-                <PageState kind="error" message={volumeRanks.error} onRetry={volumeRanks.reload} />
+              {twseSource.loading && <PageState kind="loading" />}
+              {twseSource.error && (
+                <PageState kind="error" message={twseSource.error} onRetry={twseSource.reload} />
               )}
-              {!volumeRanks.loading && !volumeRanks.error && rankedTwse.length === 0 && (
+              {!twseSource.loading && !twseSource.error && rankedTwse.length === 0 && (
                 <PageState
                   kind="empty"
-                  message="今天還沒有成交量排行"
-                  hint="上游只給當天的榜單，假日與收盤資料出來之前都是空的。"
+                  message={twseSort === 'value' ? '今天還沒有成交金額排行' : '今天還沒有成交量排行'}
+                  hint="上游只給最近一個交易日的榜單，收盤資料出來之前（或剛開盤）會是空的。"
                 />
               )}
 
@@ -521,7 +576,9 @@ export default function Market() {
                         <th className={`${thClass} pl-4 text-left`}>代號 / 名稱</th>
                         <th className={`${thClass} text-right`}>收盤</th>
                         <th className={`${thClass} text-right`}>漲跌幅</th>
-                        <th className={`${thClass} pr-4 text-right`}>成交量</th>
+                        <th className={`${thClass} pr-4 text-right`}>
+                          {twseSort === 'value' ? '成交金額' : '成交量'}
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-outline-variant/50">
@@ -551,7 +608,7 @@ export default function Market() {
                             {formatSignedPercent(row.changePercent)}
                           </td>
                           <td className="p-2 pr-4 py-3 text-right font-data-md text-data-md text-on-surface-variant">
-                            {formatShareToLot(row.trade_volume)}
+                            {row.metric}
                           </td>
                         </tr>
                       ))}
@@ -561,8 +618,9 @@ export default function Market() {
               )}
 
               <p className="p-4 font-body-sm text-body-sm text-on-surface-variant border-t border-outline-variant">
-                成交量單位張。切換「漲幅」「跌幅」是把這 20 檔重新排序，不是全市場的漲跌幅排行——
-                集中市場沒有對應的排行端點。
+                {twseSort === 'value'
+                  ? '成交金額單位元，換算成億／萬。證交所沒有這個榜單，是後端把全市場收盤行情依成交金額排出來的，不排除 ETF。'
+                  : '成交量單位張。切換「漲幅」「跌幅」是把這 20 檔重新排序，不是全市場的漲跌幅排行——集中市場沒有對應的排行端點。'}
               </p>
             </div>
 
@@ -570,10 +628,13 @@ export default function Market() {
               <div className="p-4 border-b border-outline-variant bg-surface-container-low flex flex-wrap justify-between items-center gap-stack-sm">
                 <div>
                   <h3 className="font-body-md text-body-md text-on-surface font-semibold">
-                    上櫃盤中{tpexSide === 'advanced' ? '漲幅' : '跌幅'}排行
+                    {tpexSide === 'amount'
+                      ? '上櫃成交值排行'
+                      : `上櫃盤中${tpexSide === 'advanced' ? '漲幅' : '跌幅'}排行`}
                   </h3>
                   <p className="font-body-sm text-body-sm text-on-surface-variant">
-                    {rankedMovers[0]?.date ?? DASH}
+                    {(tpexSide === 'amount' ? rankedAmounts[0]?.date : rankedMovers[0]?.date) ??
+                      DASH}
                   </p>
                 </div>
                 <div className="flex gap-1">
@@ -581,6 +642,7 @@ export default function Market() {
                     [
                       { key: 'advanced', label: '漲幅' },
                       { key: 'declined', label: '跌幅' },
+                      { key: 'amount', label: '成交值' },
                     ] as { key: TpexSide; label: string }[]
                   ).map((tab) => (
                     <button
@@ -596,19 +658,22 @@ export default function Market() {
                 </div>
               </div>
 
-              {movers.loading && <PageState kind="loading" />}
-              {movers.error && (
+              {tpexSide !== 'amount' && movers.loading && <PageState kind="loading" />}
+              {tpexSide !== 'amount' && movers.error && (
                 <PageState kind="error" message={movers.error} onRetry={movers.reload} />
               )}
-              {!movers.loading && !movers.error && rankedMovers.length === 0 && (
-                <PageState
-                  kind="empty"
-                  message="目前沒有排行資料"
-                  hint="這支是盤中的即時榜單，假日與開盤前都是空的。"
-                />
-              )}
+              {tpexSide !== 'amount' &&
+                !movers.loading &&
+                !movers.error &&
+                rankedMovers.length === 0 && (
+                  <PageState
+                    kind="empty"
+                    message="目前沒有排行資料"
+                    hint="這支是盤中的即時榜單，假日與開盤前都是空的。"
+                  />
+                )}
 
-              {rankedMovers.length > 0 && (
+              {tpexSide !== 'amount' && rankedMovers.length > 0 && (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead className="bg-surface-container-lowest border-b border-outline-variant">
@@ -659,14 +724,77 @@ export default function Market() {
                 </div>
               )}
 
+              {tpexSide === 'amount' && amountRanks.loading && <PageState kind="loading" />}
+              {tpexSide === 'amount' && amountRanks.error && (
+                <PageState kind="error" message={amountRanks.error} onRetry={amountRanks.reload} />
+              )}
+              {tpexSide === 'amount' &&
+                !amountRanks.loading &&
+                !amountRanks.error &&
+                rankedAmounts.length === 0 && (
+                  <PageState
+                    kind="empty"
+                    message="目前沒有成交值排行"
+                    hint="上游還沒公布當天的榜單，或這段時間休市；盤前與假日都可能是空的。"
+                  />
+                )}
+
+              {tpexSide === 'amount' && rankedAmounts.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-surface-container-lowest border-b border-outline-variant">
+                      <tr>
+                        <th className={`${thClass} pl-4 text-left`}>名次</th>
+                        <th className={`${thClass} text-left`}>代號 / 名稱</th>
+                        <th className={`${thClass} pr-4 text-right`}>成交值</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-outline-variant/50">
+                      {rankedAmounts.map((row, index) => (
+                        <tr
+                          key={row.symbol}
+                          onClick={() => openSymbol(row.symbol)}
+                          title="點擊查看個股總覽"
+                          className="hover:bg-surface-container-low/50 transition-colors cursor-pointer"
+                        >
+                          <td className="p-2 pl-4 py-3 font-data-md text-data-md text-on-surface-variant">
+                            {index + 1}
+                          </td>
+                          <td className="p-2 py-3">
+                            <span className="block font-data-md text-data-md text-primary font-bold">
+                              {row.symbol}
+                            </span>
+                            <span className="block font-body-sm text-body-sm text-on-surface-variant">
+                              {row.name}
+                            </span>
+                          </td>
+                          <td className="p-2 pr-4 py-3 text-right font-data-md text-data-md text-on-surface">
+                            {formatThousandTWD(row.trading_amount)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
               <p className="p-4 font-body-sm text-body-sm text-on-surface-variant border-t border-outline-variant">
-                盤中即時榜單，收盤後不再變動。這一組只有上櫃有，上游沒有給成交量。
-                上游是把整個榜單一次回來（共 {movers.data?.length ?? 0} 檔），這裡只顯示前 {TOP_N} 名。
+                {tpexSide === 'amount' ? (
+                  <>
+                    榜單日期以標題下方那一行為準。成交值上游單位是千元，這裡換算成億／萬元；
+                    這一組沒有成交價與漲跌，要看價格請點進個股。
+                  </>
+                ) : (
+                  <>
+                    盤中即時榜單，收盤後不再變動。這一組只有上櫃有，上游沒有給成交量。
+                    上游是把整個榜單一次回來（共 {movers.data?.length ?? 0} 檔），這裡只顯示前{' '}
+                    {TOP_N} 名。
+                  </>
+                )}
               </p>
             </div>
           </div>
         </section>
-
       </div>
     </>
   );
@@ -822,9 +950,7 @@ function PremarketSection() {
                 key={card.symbol}
                 card={card}
                 selected={card.symbol === openSymbol}
-                onSelect={() =>
-                  setOpenSymbol(card.symbol === openSymbol ? '' : card.symbol)
-                }
+                onSelect={() => setOpenSymbol(card.symbol === openSymbol ? '' : card.symbol)}
               />
             ))}
           </div>
@@ -835,9 +961,7 @@ function PremarketSection() {
             <div className="rounded-xl border border-outline-variant bg-surface-container-low/40 p-4 flex flex-col gap-1">
               <p className="font-body-md text-body-md text-on-surface font-semibold">
                 {opened.name}
-                <span className="ml-2 font-data-md text-data-md text-outline">
-                  {opened.symbol}
-                </span>
+                <span className="ml-2 font-data-md text-data-md text-outline">{opened.symbol}</span>
               </p>
               {opened.note && (
                 <p className="font-body-sm text-body-sm text-on-surface-variant">{opened.note}</p>
@@ -848,7 +972,8 @@ function PremarketSection() {
           )}
 
           <p className="font-body-sm text-body-sm text-on-surface-variant">
-            這一排<span className="text-on-surface font-semibold">都不是台股資料</span>
+            這一排
+            <span className="text-on-surface font-semibold">都不是台股資料</span>
             ，日期本來就不同步——台北週三下午看到的是日韓週三收盤、
             <span className="text-on-surface font-semibold">美股週二收盤</span>
             ，那是正確的不是漏收，點卡片看得到各自的時間。

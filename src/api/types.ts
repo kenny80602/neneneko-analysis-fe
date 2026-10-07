@@ -834,6 +834,35 @@ export interface TPExPriceMover {
   change_percent: number;
 }
 
+// 上市成交金額排行（/stocks/twse/trade_value_ranks，回陣列）。
+// 上游沒有這個資料集，後端是從全市場收盤行情依成交金額排出來的前二十名，
+// 不排除 ETF；當天沒成交的不列入。
+export interface TWSETradeValueRank {
+  date: string;
+  rank: number;
+  symbol: string;
+  name: string;
+  // 成交金額，單位元（上櫃那支是千元，兩邊不同）。
+  trade_value: number;
+  // 成交股數。
+  volume: number;
+  close: number;
+  // 對前一個交易日的漲跌點數。ex_dividend 為 true 時是 0，那天的漲跌沒有可比性。
+  change: number;
+  ex_dividend: boolean;
+}
+
+// 上櫃成交值排行（/stocks/tpex/amount_ranks，回陣列）。
+// 這一組沒有成交價與漲跌，只有名次與成交值；需要價格得另外查個股。
+export interface TPExAmountRank {
+  date: string;
+  rank: number;
+  symbol: string;
+  name: string;
+  // 成交值，單位千元（跟月營收同一個單位，不是元）。
+  trading_amount: number;
+}
+
 // 上櫃股票市場現況（/stocks/tpex/market_highlight，回單一物件）。
 export interface TPExMarketHighlight {
   date: string;

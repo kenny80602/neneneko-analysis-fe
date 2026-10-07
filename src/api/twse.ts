@@ -4,6 +4,7 @@ import {
   TWSEAdvanceDeclineSummary,
   TWSEInstitutionalSummaries,
   TWSEMarketTrading,
+  TWSETradeValueRank,
   TWSEVolumeRank,
 } from './types';
 
@@ -32,6 +33,14 @@ export const getTWSEAdvanceDeclineSummaries = () =>
 export const getTWSEVolumeRanks = () =>
   request
     .get<ApiResponse<TWSEVolumeRank[]>>('/stocks/twse/volume_ranks')
+    .then((res) => res.data.data ?? []);
+
+// 每日成交金額前二十名。上游沒有這個資料集，後端從全市場收盤行情排出來，
+// 所以會比其他端點慢一點（要抓整包上市收盤行情），也不排除 ETF。
+// 成交金額單位是元；上游只回最近一個交易日，假日回上一個交易日。
+export const getTWSETradeValueRanks = () =>
+  request
+    .get<ApiResponse<TWSETradeValueRank[]>>('/stocks/twse/trade_value_ranks')
     .then((res) => res.data.data ?? []);
 
 // 三大法人買賣金額統計表（BFI82U），大盤層級的買賣超金額，單位元。
