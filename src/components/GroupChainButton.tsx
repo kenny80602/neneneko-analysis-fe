@@ -15,8 +15,9 @@ const POPOVER_MARGIN = 16;
 // 滑鼠從圖示移到浮層中間會經過一小段空白，延遲一下才關，不然永遠點不到浮層。
 const CLOSE_DELAY_MS = 200;
 
-// 詳情面板最小寬度。只有一個節點的圖很窄（148px），但底下的股票小卡片至少要放得下兩欄。
-const DETAIL_MIN_W = 340;
+// 詳情面板最小寬度。圖可能只有一兩個節點（148～352px），但底下的股票表要放得下
+// 代號、名稱、標示、漲跌、目標價五欄。
+const DETAIL_MIN_W = 460;
 
 interface HeatEntry {
   item: GroupHeat;
@@ -33,6 +34,8 @@ export interface ChainStock {
 }
 
 const CORE_LABEL: Record<number, string> = { 1: '龍頭', 2: '老二', 3: '老三' };
+
+const TH = 'py-1 pr-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap';
 
 /**
  * 組出「族群名稱 → 這個族群的股票」。
@@ -389,35 +392,49 @@ function StockPanel({
       {stocks.length === 0 ? (
         <p className="font-body-sm text-body-sm text-outline">成員清單還沒載入，或這個族群沒有成員。</p>
       ) : (
-        <div className="grid gap-1 sm:grid-cols-2">
-          {stocks.map((stock) => (
-            <div
-              key={stock.symbol}
-              className="flex items-baseline gap-2 rounded border border-outline-variant bg-surface-container-low px-2 py-1"
-            >
-              <span className="font-data-md text-data-md text-on-surface-variant">{stock.symbol}</span>
-              <span className="font-body-sm text-body-sm text-on-surface truncate">{stock.name || DASH}</span>
-              {stock.coreRank != null && (
-                <span
-                  className="shrink-0 rounded px-1 py-0.5 bg-primary/15 text-primary font-body-sm text-[11px] font-bold"
-                  title="依最新月營收排序，營收大不一定是產業龍頭"
-                >
-                  {CORE_LABEL[stock.coreRank] ?? `第${stock.coreRank}`}
-                </span>
-              )}
-              {showReturn && (
-                <span className={`ml-auto font-data-md text-data-md ${quoteColor(stock.returnPct)}`}>
-                  {formatSignedPercent(stock.returnPct)}
-                </span>
-              )}
-              {targets && (
-                <span className={`${showReturn ? '' : 'ml-auto'} font-body-sm text-body-sm text-on-surface-variant whitespace-nowrap`}>
-                  目標 <TargetPriceEditor symbol={stock.symbol} store={targets} compact />
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
+        // 單欄表格而不是卡片格：浮層本來就窄（只有兩欄的圖約 380px），卡片用「視窗寬度」決定分兩欄，
+        // 每張只剩一百多 px，代號、名稱、標籤、漲跌、目標價全擠在一起會跑版。
+        <table className="w-full border-collapse text-left">
+          <thead className="sticky top-0 bg-surface-container-lowest">
+            <tr className="border-b border-outline-variant">
+              <th className={`${TH} pl-1`}>代號</th>
+              <th className={TH}>名稱</th>
+              <th className={TH}>標示</th>
+              {showReturn && <th className={`${TH} text-right`}>漲跌</th>}
+              {targets && <th className={`${TH} pr-1 text-right`}>目標價</th>}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-outline-variant/50">
+            {stocks.map((stock) => (
+              <tr key={stock.symbol}>
+                <td className="py-1 pl-1 pr-2 font-data-md text-data-md text-on-surface-variant whitespace-nowrap">
+                  {stock.symbol}
+                </td>
+                <td className="py-1 pr-2 font-body-sm text-body-sm text-on-surface">{stock.name || DASH}</td>
+                <td className="py-1 pr-2 whitespace-nowrap">
+                  {stock.coreRank != null && (
+                    <span
+                      className="rounded px-1 py-0.5 bg-primary/15 text-primary font-body-sm text-[11px] font-bold"
+                      title="依最新月營收排序，營收大不一定是產業龍頭"
+                    >
+                      {CORE_LABEL[stock.coreRank] ?? `第${stock.coreRank}`}
+                    </span>
+                  )}
+                </td>
+                {showReturn && (
+                  <td className={`py-1 pr-2 text-right font-data-md text-data-md whitespace-nowrap ${quoteColor(stock.returnPct)}`}>
+                    {formatSignedPercent(stock.returnPct)}
+                  </td>
+                )}
+                {targets && (
+                  <td className="py-1 pr-1 text-right whitespace-nowrap">
+                    <TargetPriceEditor symbol={stock.symbol} store={targets} compact />
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   );
