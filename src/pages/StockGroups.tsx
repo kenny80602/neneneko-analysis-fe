@@ -11,6 +11,7 @@ import {
   removeStockGroup,
   saveStockGroup,
 } from '../api/stockGroup';
+import GroupChainButton from '../components/GroupChainButton';
 import { GroupHeat, GroupHeatMember, GroupLink, GroupMember, GroupPeer, Holding, StockGroup } from '../api/types';
 import { useAsyncData } from '../hooks/useAsyncData';
 import {
@@ -952,6 +953,17 @@ function HeatBoard() {
   // 它掛掉不擋熱度榜：搜尋會退化成只比對族群名稱與領漲那幾檔，下面的提示會講明。
   const members = useAsyncData(() => getGroupMembers(), []);
 
+  // 關聯圖要沿著上游一路往上下追，需要「全部族群」的上游。成員清單那一支是全部族群
+  // （含今天算不出報酬、不在榜上的），拿得到就用它；還沒回來或掛了就退到榜上的列，
+  // 至少看得到榜上這幾個族群之間的關係。
+  const chainSources = useMemo(
+    () =>
+      members.data
+        ? members.data.items.map((entry) => ({ name: entry.group.name, upstream: entry.group.upstream ?? [] }))
+        : (board?.items ?? []).map((entry) => ({ name: entry.name, upstream: entry.upstream })),
+    [members.data, board]
+  );
+
   const [query, setQuery] = useState('');
   // 一次只展開一個族群。展開的內容是整群的逐檔，同時攤開十幾群的話這張表會長到
   // 捲不完，而且「我現在在看哪一群」會消失——那正是點開的人想確認的事。
@@ -1224,6 +1236,14 @@ function HeatBoard() {
                       <span className="font-body-md text-body-md text-on-surface font-semibold">
                         {item.name}
                       </span>
+                      {(item.upstream.length > 0 || item.downstream.length > 0) && (
+                        <GroupChainButton
+                          name={item.name}
+                          sources={chainSources}
+                          heat={byName}
+                          total={board.items.length}
+                        />
+                      )}
                       <span className="block font-body-sm text-body-sm text-on-surface-variant">
                         {item.covered_count}/{item.member_count} 檔算得出報酬
                       </span>
