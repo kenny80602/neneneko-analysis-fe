@@ -591,6 +591,20 @@ export interface GroupHeat {
   // 橫斷面裡（ETF、權證、代號打錯）的那幾檔算不出報酬，不會出現在這裡。
   // 所以展開的清單可能比族群實際成員少，畫面上要說明差幾檔與為什麼。
   members: GroupHeatMember[];
+  // 龍頭、老二、老三（依序），依最新月營收由大到小，是這個族群「最大的」三檔，
+  // 跟 leaders（今天漲最多的三檔）是兩回事。還沒算過時是空陣列。
+  core: GroupHeatCore[];
+  // 龍頭排名依據的營收月份 YYYY-MM。沒有 core 時是空字串。
+  core_month: string;
+}
+
+export interface GroupHeatCore {
+  // 1 龍頭、2 老二、3 老三。
+  rank: number;
+  symbol: string;
+  name: string;
+  // 當日報酬（%）。null 是今天算不出來（停牌、除權息、不在橫斷面），不是平盤。
+  return_pct: number | null;
 }
 
 export interface MarketBreadth {
