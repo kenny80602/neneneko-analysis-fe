@@ -14,7 +14,7 @@ import {
 import GroupChainButton, { chainStocksOf } from '../components/GroupChainButton';
 import TargetPriceEditor from '../components/TargetPriceEditor';
 import { TargetStore, useTargets } from '../hooks/useTargets';
-import { GroupHeat, GroupHeatMember, GroupLink, GroupMember, GroupPeer, Holding, StockGroup } from '../api/types';
+import { GroupHeat, GroupHeatCore, GroupHeatMember, GroupLink, GroupMember, GroupPeer, Holding, StockGroup } from '../api/types';
 import { useAsyncData } from '../hooks/useAsyncData';
 import {
   DASH,
@@ -828,46 +828,114 @@ function LinkBadge({ link }: { link: GroupLink }) {
   );
 }
 
-// 整群逐檔的小卡片格。熱度榜展開處與上下游族群展開處共用。
-function HeatMemberGrid({
-  members,
-  keyword,
-  targets,
-}: {
+// 整群逐檔的表格。熱度榜展開處與上下游族群展開處共用。
+//
+// 龍頭／老二／老三與領漲直接標在那一檔的「標示」欄，不另外各佔一行文字：
+// 兩種標示講的是兩件事（最大的三檔 vs 今天漲最多的三檔），同一檔可以兩者皆是，
+// 放在同一列才看得出來。
+interface HeatMemberTableProps {
   members: GroupHeatMember[];
   keyword: string;
   targets?: TargetStore;
-}) {
-  return (
-    <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
-      {members.map((member) => {
-        const matched =
-          !!keyword &&
-          (member.symbol.toLowerCase().includes(keyword) ||
-            member.name.toLowerCase().includes(keyword));
-        return (
-          <div
-            key={member.symbol}
-            className={`flex items-baseline gap-2 rounded border px-2 py-1.5 ${
-              matched
-                ? 'border-primary bg-primary/10'
-                : 'border-outline-variant bg-surface-container-lowest'
-            }`}
-          >
-            <span className="font-data-md text-data-md text-on-surface-variant">{member.symbol}</span>
-            <span className="font-body-sm text-body-sm text-on-surface">{member.name}</span>
-            <span className={`ml-auto font-data-md text-data-md ${quoteColor(member.return_pct)}`}>
-              {formatSignedPercent(member.return_pct)}
-            </span>
-            <span className="font-data-md text-data-md text-outline">{formatAmount(member.trade_value)}</span>
-            {targets && (
-              <span className="font-body-sm text-body-sm text-on-surface-variant whitespace-nowrap">
-                目標 <TargetPriceEditor symbol={member.symbol} store={targets} compact />
+  /** 龍頭、老二、老三（依月營收）。 */
+  core?: GroupHeatCore[];
+  /** 今天漲最多的三檔。 */
+  leaders?: GroupHeatMember[];
+  /** 龍頭排名依據的營收月份 YYYY-MM，寫在表格底下的說明裡。 */
+  coreMonth?: string;
+}
+
+function HeatMemberTable({ members, keyword, targets, core = [], leaders = [], coreMonth }: HeatMemberTableProps) {
+  const coreRankOf = new Map(core.map((c) => [c.symbol, c.rank]));
+  const leaderSet = new Set(leaders.map((l) => l.symbol));
+
+  // 龍頭今天算不出報酬（停牌、除權息）時不在 members 裡，但它是這個族群最重要的一檔，
+  // 不能因此從表上消失：補在最後面，漲跌顯示破折號。
+  const shown = new Set(members.map((m) => m.symbol));
+  const extra = core.filter((c) => !shown.has(c.symbol));
+  const hasTarget = targets !== undefined;
+
+  const headCell = 'p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap';
+  const rowFor = (row: {
+    symbol: string;
+    name: string;
+    returnPct: number | null;
+    tradeValue: number | null;
+  }) => {
+    const rank = coreRankOf.get(row.symbol);
+    const matched =
+      !!keyword &&
+      (row.symbol.toLowerCase().includes(keyword) || row.name.toLowerCase().includes(keyword));
+    return (
+      <tr key={row.symbol} className={matched ? 'bg-primary/10' : 'hover:bg-surface-container-low/50'}>
+        <td className="p-2 pl-3 font-data-md text-data-md text-on-surface-variant whitespace-nowrap">{row.symbol}</td>
+        <td className="p-2 font-body-md text-body-md text-on-surface whitespace-nowrap">{row.name || DASH}</td>
+        <td className="p-2">
+          <span className="flex flex-wrap gap-1">
+            {rank != null && (
+              <span
+                className="rounded px-1.5 py-0.5 bg-primary/15 text-primary font-body-sm text-[11px] font-bold whitespace-nowrap"
+                title="依最新月營收排序，營收大不一定是產業龍頭"
+              >
+                {CORE_LABEL[rank] ?? `第${rank}`}
               </span>
             )}
-          </div>
-        );
-      })}
+            {leaderSet.has(row.symbol) && (
+              <span
+                className="rounded px-1.5 py-0.5 bg-surface-container border border-outline-variant text-on-surface font-body-sm text-[11px] whitespace-nowrap"
+                title="今天漲最多的三檔之一"
+              >
+                領漲
+              </span>
+            )}
+          </span>
+        </td>
+        <td className={`p-2 text-right font-data-md text-data-md ${quoteColor(row.returnPct)}`}>
+          {formatSignedPercent(row.returnPct)}
+        </td>
+        <td className="p-2 text-right font-data-md text-data-md text-outline whitespace-nowrap">
+          {row.tradeValue == null ? DASH : formatAmount(row.tradeValue)}
+        </td>
+        {hasTarget && (
+          <td className="p-2 pr-3 text-right">
+            <TargetPriceEditor symbol={row.symbol} store={targets as TargetStore} />
+          </td>
+        )}
+      </tr>
+    );
+  };
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="overflow-x-auto rounded-lg border border-outline-variant bg-surface-container-lowest">
+        <table className="w-full text-left border-collapse">
+          <thead className="bg-surface-container-low border-b border-outline-variant">
+            <tr>
+              <th className={`${headCell} pl-3 text-left`}>代號</th>
+              <th className={`${headCell} text-left`}>名稱</th>
+              <th className={`${headCell} text-left`}>標示</th>
+              <th className={`${headCell} text-right`}>漲跌</th>
+              <th className={`${headCell} text-right`}>成交金額</th>
+              {hasTarget && (
+                <th className={`${headCell} pr-3 text-right`} title="自己設定的目標價，點格子修改，清空刪除">
+                  目標價
+                </th>
+              )}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-outline-variant/50">
+            {members.map((m) => rowFor({ symbol: m.symbol, name: m.name, returnPct: m.return_pct, tradeValue: m.trade_value }))}
+            {extra.map((c) => rowFor({ symbol: c.symbol, name: c.name, returnPct: null, tradeValue: null }))}
+          </tbody>
+        </table>
+      </div>
+      {(core.length > 0 || leaders.length > 0) && (
+        <p className="font-body-sm text-body-sm text-outline">
+          {core.length > 0 && `龍頭、老二、老三依 ${coreMonth || '最新'} 月營收排序，不是今天漲最多的；`}
+          領漲是今天漲最多的三檔。
+          {extra.length > 0 && '龍頭今天算不出報酬（停牌或除權息）的列在最後。'}
+        </p>
+      )}
     </div>
   );
 }
@@ -950,7 +1018,16 @@ function LinkedGroups({ item, byName, total, keyword, targets }: LinkedGroupsPro
                       </span>
                     )}
                   </div>
-                  {linked && open && <HeatMemberGrid members={linked.item.members} keyword={keyword} targets={targets} />}
+                  {linked && open && (
+                    <HeatMemberTable
+                      members={linked.item.members}
+                      keyword={keyword}
+                      targets={targets}
+                      core={linked.item.core}
+                      leaders={linked.item.leaders}
+                      coreMonth={linked.item.core_month}
+                    />
+                  )}
                 </div>
               );
             })}
@@ -1202,7 +1279,7 @@ function HeatBoard() {
         其次訊號數，平手才看超額報酬。所以名次高不等於漲得多，而是「今天最像整群在動」；
         標了樣本過少的一律排在後段，那個名次講的是不可信不是比較弱。搜尋過濾不會重編名次。
         　表格只列族群層級的數字，股票都收在每個族群的
-        <span className="text-on-surface">展開</span>裡：龍頭／老二／老三是依最新月營收排的族群最大三檔（營收大不一定是產業龍頭），領漲是今天漲最多的三檔，接著是整群逐檔的漲跌，最後才是這個族群的上游與下游各自今天的熱度名次、報酬與龍頭（可再點開看成員，看哪一段還沒動；標「推論」的關係是依產業常識推的、沒有文件佐證，請自己確認，這是現況不是預測）；破折號代表今天算不出來（停牌、除權息）。
+        <span className="text-on-surface">展開</span>裡：展開是一張整群逐檔的表，「標示」欄標出龍頭／老二／老三（依最新月營收排的族群最大三檔，營收大不一定是產業龍頭）與領漲（今天漲最多的三檔），同一檔可以兩者皆是；表底下才是這個族群的上游與下游各自今天的熱度名次、報酬與龍頭（可再點開看成員，看哪一段還沒動；標「推論」的關係是依產業常識推的、沒有文件佐證，請自己確認，這是現況不是預測）；破折號代表今天算不出來（停牌、除權息）。
         {board != null && <>　用到 {board.days_covered} 個交易日。</>}
         　搜尋比對的是族群名稱與<span className="text-on-surface">全部成員</span>的股號、名稱，
         不只領漲三檔。
@@ -1361,46 +1438,16 @@ function HeatBoard() {
                               </>
                             )}
                           </p>
-                          {item.core.length > 0 && (
-                            <p className="font-body-sm text-body-sm text-on-surface-variant">
-                              {item.core.map((member) => (
-                                <span key={member.symbol} className="mr-4 whitespace-nowrap">
-                                  <span className="text-outline">
-                                    {CORE_LABEL[member.rank] ?? `第${member.rank}`}
-                                  </span>{' '}
-                                  <span className="font-data-md text-data-md text-on-surface-variant">
-                                    {member.symbol}
-                                  </span>{' '}
-                                  <span className="text-on-surface">{member.name}</span>{' '}
-                                  <span className={`font-data-md text-data-md ${quoteColor(member.return_pct)}`}>
-                                    {formatSignedPercent(member.return_pct)}
-                                  </span>
-                                </span>
-                              ))}
-                              <span className="text-outline">
-                                （依 {item.core_month} 月營收，不是今天漲最多的）
-                              </span>
-                            </p>
-                          )}
-                          {item.leaders.length > 0 && (
-                            <p className="font-body-sm text-body-sm text-on-surface-variant">
-                              <span className="mr-2 text-outline">領漲</span>
-                              {item.leaders.map((leader) => (
-                                <span key={leader.symbol} className="mr-4 whitespace-nowrap">
-                                  <span className="font-data-md text-data-md text-on-surface-variant">
-                                    {leader.symbol}
-                                  </span>{' '}
-                                  <span className="text-on-surface">{leader.name}</span>{' '}
-                                  <span className={`font-data-md text-data-md ${quoteColor(leader.return_pct)}`}>
-                                    {formatSignedPercent(leader.return_pct)}
-                                  </span>
-                                </span>
-                              ))}
-                            </p>
-                          )}
                           {/* 先看自己的股票，上下游放在後面：展開是為了看這個族群本身，
                               相關族群是延伸，不該把整群逐檔擠到最下面去。 */}
-                          <HeatMemberGrid members={item.members} keyword={keyword} targets={targets} />
+                          <HeatMemberTable
+                            members={item.members}
+                            keyword={keyword}
+                            targets={targets}
+                            core={item.core}
+                            leaders={item.leaders}
+                            coreMonth={item.core_month}
+                          />
                           <LinkedGroups
                             item={item}
                             byName={byName}
