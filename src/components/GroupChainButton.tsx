@@ -54,7 +54,7 @@ export function chainStocksOf(
     const heatMembers = heat?.get(group)?.item.members ?? [];
     const returns = new Map(heatMembers.map((m) => [m.symbol, m.return_pct]));
     // 龍頭三檔優先取族群本身落地的（每一頁都拿得到），沒有才用熱度榜帶的。
-    const leaders = rosterLeaders.get(group) ?? heat?.get(group)?.item.core.map((c) => c.symbol) ?? [];
+    const leaders = rosterLeaders.get(group) ?? heat?.get(group)?.item.core?.map((c) => c.symbol) ?? [];
     const coreRankOf = (symbol: string) => {
       const index = leaders.indexOf(symbol);
       return index >= 0 ? index + 1 : null;
