@@ -2,7 +2,12 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import GroupChainButton, { chainStocksOf } from './GroupChainButton';
 import { GroupMembers } from '../api/types';
 
-const group = (name: string, symbols: [string, string][], upstream: string[] = []): GroupMembers => ({
+const group = (
+  name: string,
+  symbols: [string, string][],
+  upstream: string[] = [],
+  leaders: [string, string][] = []
+): GroupMembers => ({
   group: {
     id: name,
     name,
@@ -10,13 +15,14 @@ const group = (name: string, symbols: [string, string][], upstream: string[] = [
     sort_order: 0,
     upstream: upstream.map((n) => ({ name: n, inferred: false })),
     downstream: [],
+    leaders: leaders.map(([symbol, name]) => ({ symbol, name })),
   },
   members: symbols.map(([symbol, stockName]) => ({ symbol, name: stockName, industry: '', in_watchlist: false })),
 });
 
 const roster: GroupMembers[] = [
   group('玻纖布', [['1802', '台玻'], ['1815', '富喬']]),
-  group('CCL', [['2383', '台光電'], ['6213', '聯茂']], ['玻纖布']),
+  group('CCL', [['2383', '台光電'], ['6213', '聯茂']], ['玻纖布'], [['6213', '聯茂'], ['2383', '台光電']]),
   group('PCB 板廠', [['2368', '金像電']], ['CCL']),
 ];
 const sources = roster.map((entry) => ({ name: entry.group.name, upstream: entry.group.upstream }));
@@ -93,5 +99,23 @@ describe('chainStocksOf', () => {
     ]) as unknown as Parameters<typeof chainStocksOf>[1];
     expect(chainStocksOf([], heat)('CCL').map((s) => s.symbol)).toEqual(['6213']);
     expect(chainStocksOf([], undefined)('CCL')).toEqual([]);
+  });
+});
+
+describe('龍頭標示', () => {
+  it('股票旁標出龍頭與老二，沒進龍頭三檔的不標', () => {
+    const stocks = chainStocksOf(roster)('CCL');
+    expect(stocks.find((s) => s.symbol === '6213')?.coreRank).toBe(1);
+    expect(stocks.find((s) => s.symbol === '2383')?.coreRank).toBe(2);
+    expect(chainStocksOf(roster)('玻纖布').every((s) => s.coreRank === null)).toBe(true);
+  });
+
+  it('面板上寫出龍頭、老二', () => {
+    render(<GroupChainButton name="CCL" sources={sources} stocksOf={chainStocksOf(roster)} />);
+    fireEvent.mouseEnter(screen.getByRole('button', { name: /CCL 的上下游關聯圖/ }));
+    const panel = screen.getByTestId('chain-stocks');
+    expect(panel).toHaveTextContent('龍頭');
+    expect(panel).toHaveTextContent('老二');
+    expect(panel).not.toHaveTextContent('老三');
   });
 });

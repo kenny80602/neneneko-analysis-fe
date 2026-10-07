@@ -26,7 +26,11 @@ export interface ChainStock {
   symbol: string;
   name: string;
   returnPct: number | null;
+  /** 在這個族群的龍頭排名：1 龍頭、2 老二、3 老三；不在龍頭三檔裡是 null。 */
+  coreRank: number | null;
 }
+
+const CORE_LABEL: Record<number, string> = { 1: '龍頭', 2: '老二', 3: '老三' };
 
 /**
  * 組出「族群名稱 → 這個族群的股票」。
@@ -41,13 +45,34 @@ export function chainStocksOf(
   heat?: Map<string, HeatEntry>
 ): (group: string) => ChainStock[] {
   const rosterByName = new Map(roster.map((entry) => [entry.group.name, entry.members]));
+  const rosterLeaders = new Map(
+    roster
+      .filter((entry) => (entry.group.leaders ?? []).length > 0)
+      .map((entry) => [entry.group.name, entry.group.leaders.map((l) => l.symbol)])
+  );
   return (group) => {
     const heatMembers = heat?.get(group)?.item.members ?? [];
     const returns = new Map(heatMembers.map((m) => [m.symbol, m.return_pct]));
+    // 龍頭三檔優先取族群本身落地的（每一頁都拿得到），沒有才用熱度榜帶的。
+    const leaders = rosterLeaders.get(group) ?? heat?.get(group)?.item.core.map((c) => c.symbol) ?? [];
+    const coreRankOf = (symbol: string) => {
+      const index = leaders.indexOf(symbol);
+      return index >= 0 ? index + 1 : null;
+    };
     const full = rosterByName.get(group);
     const stocks: ChainStock[] = full
-      ? full.map((m) => ({ symbol: m.symbol, name: m.name, returnPct: returns.get(m.symbol) ?? null }))
-      : heatMembers.map((m) => ({ symbol: m.symbol, name: m.name, returnPct: m.return_pct }));
+      ? full.map((m) => ({
+          symbol: m.symbol,
+          name: m.name,
+          returnPct: returns.get(m.symbol) ?? null,
+          coreRank: coreRankOf(m.symbol),
+        }))
+      : heatMembers.map((m) => ({
+          symbol: m.symbol,
+          name: m.name,
+          returnPct: m.return_pct,
+          coreRank: coreRankOf(m.symbol),
+        }));
     const rank = (stock: ChainStock) => (stock.returnPct == null ? -Infinity : stock.returnPct);
     return stocks
       .map((stock, index) => ({ stock, index }))
@@ -342,6 +367,14 @@ function StockPanel({ group, stocks, showReturn }: { group: string; stocks: Chai
             >
               <span className="font-data-md text-data-md text-on-surface-variant">{stock.symbol}</span>
               <span className="font-body-sm text-body-sm text-on-surface truncate">{stock.name || DASH}</span>
+              {stock.coreRank != null && (
+                <span
+                  className="shrink-0 rounded px-1 py-0.5 bg-primary/15 text-primary font-body-sm text-[11px] font-bold"
+                  title="依最新月營收排序，營收大不一定是產業龍頭"
+                >
+                  {CORE_LABEL[stock.coreRank] ?? `第${stock.coreRank}`}
+                </span>
+              )}
               {showReturn && (
                 <span className={`ml-auto font-data-md text-data-md ${quoteColor(stock.returnPct)}`}>
                   {formatSignedPercent(stock.returnPct)}

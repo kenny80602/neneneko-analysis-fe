@@ -473,6 +473,9 @@ export interface StockGroup {
   // 下游由後端反推。沒有時是空陣列，不是 null。
   upstream: GroupLink[];
   downstream: GroupLink[];
+  // 龍頭、老二、老三，依序（第一個是龍頭）。依最新月營收由大到小，跟 symbols 的順序無關。
+  // 還沒算過、或成員都沒有營收時是空陣列。
+  leaders: { symbol: string; name: string }[];
 }
 
 export interface GroupPeer {
