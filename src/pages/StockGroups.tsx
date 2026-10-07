@@ -111,9 +111,11 @@ interface GroupDraft {
   // 成員代號，順序有意義（使用者可能刻意把龍頭放第一個），後端照原順序存。
   symbols: string[];
   sortOrder: string;
+  // 上游族群。下游不在草稿裡：它由別的族群的上游反推，只能唯讀顯示。
+  upstream: GroupLink[];
 }
 
-const NEW_GROUP: GroupDraft = { id: '', name: '', symbols: [], sortOrder: '' };
+const NEW_GROUP: GroupDraft = { id: '', name: '', symbols: [], sortOrder: '', upstream: [] };
 
 function toGroupDraft(group: StockGroup): GroupDraft {
   return {
@@ -121,6 +123,7 @@ function toGroupDraft(group: StockGroup): GroupDraft {
     name: group.name,
     symbols: [...group.symbols],
     sortOrder: String(group.sort_order),
+    upstream: (group.upstream ?? []).map((link) => ({ ...link })),
   };
 }
 
@@ -153,6 +156,7 @@ function GroupPanel() {
   // 三張表），所以整份族群一載入就有名稱——不必展開、也不必逐檔去問報價。
   const members = useAsyncData(() => getGroupMembers(), []);
   const entries = members.data?.items ?? [];
+  const allGroupNames = entries.map((entry) => entry.group.name);
 
   // 自選股清單只給新增時的下拉建議用。族群成員不必在自選股裡，
   // 所以它不是名稱的主要來源，只是「挑一檔已經在追蹤的」比較快。
@@ -255,6 +259,7 @@ function GroupPanel() {
         name,
         symbols: draft.symbols,
         sort_order: draft.sortOrder === '' ? 0 : Math.trunc(order),
+        upstream: draft.upstream,
       });
       if (isNew) setCreating(NEW_GROUP);
       members.reload();
@@ -323,26 +328,73 @@ function GroupPanel() {
             : 'border-outline-variant bg-surface-container-lowest'
         }`}
       >
-        {saved && (saved.upstream.length > 0 || saved.downstream.length > 0) && (
-          <div className="flex flex-col gap-1 font-body-sm text-body-sm text-on-surface-variant">
-            {saved.upstream.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1">
-                <span className="mr-1">上游</span>
-                {saved.upstream.map((link) => (
-                  <LinkBadge key={link.name} link={link} />
+        {/* 上游可編輯；下游是別的族群的上游反推出來的，這裡只讀，要改請到那個族群改它的上游。 */}
+        <div className="flex flex-col gap-1 font-body-sm text-body-sm text-on-surface-variant">
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="mr-1">上游</span>
+            {draft.upstream.length === 0 && <span className="text-outline">沒有</span>}
+            {draft.upstream.map((link) => (
+              <span
+                key={link.name}
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container border border-outline-variant text-on-surface whitespace-nowrap"
+              >
+                {link.name}
+                {link.inferred && (
+                  <button
+                    type="button"
+                    title="這條是依產業常識推論的，沒有文件佐證。確認無誤就按這裡，存檔後不再標推論"
+                    onClick={() =>
+                      update({
+                        upstream: draft.upstream.map((l) =>
+                          l.name === link.name ? { ...l, inferred: false } : l
+                        ),
+                      })
+                    }
+                    className="text-primary hover:underline"
+                  >
+                    推論・確認
+                  </button>
+                )}
+                <button
+                  type="button"
+                  aria-label={`移除上游 ${link.name}`}
+                  onClick={() => update({ upstream: draft.upstream.filter((l) => l.name !== link.name) })}
+                  className="text-outline hover:text-error"
+                >
+                  <span className="material-symbols-outlined text-[14px] align-middle">close</span>
+                </button>
+              </span>
+            ))}
+            <select
+              value=""
+              onChange={(event) => {
+                const name = event.target.value;
+                if (name) update({ upstream: [...draft.upstream, { name, inferred: false }] });
+              }}
+              className={`${inputClass} ml-1 w-44`}
+              aria-label="加入上游族群"
+            >
+              <option value="">＋ 加入上游…</option>
+              {allGroupNames
+                .filter((n) => n !== draft.name.trim() && !draft.upstream.some((l) => l.name === n))
+                .map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
                 ))}
-              </div>
-            )}
-            {saved.downstream.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1">
-                <span className="mr-1">下游</span>
-                {saved.downstream.map((link) => (
-                  <LinkBadge key={link.name} link={link} />
-                ))}
-              </div>
-            )}
+            </select>
           </div>
-        )}
+          {saved && saved.downstream.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="mr-1" title="由別的族群的上游反推，不能在這裡改">
+                下游
+              </span>
+              {saved.downstream.map((link) => (
+                <LinkBadge key={link.name} link={link} />
+              ))}
+            </div>
+          )}
+        </div>
         <div className="flex flex-wrap items-end gap-stack-sm">
           <label className="flex flex-col gap-1">
             <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">
@@ -478,7 +530,13 @@ function GroupPanel() {
         展開明細後會標「非自選股」。
         <span className="text-on-surface font-semibold">一檔可以屬於多個族群</span>
         ，中美晶同時是矽晶圓與太陽能，加進兩個族群就好。
-        成員的順序會照原樣存下來，龍頭想擺第一個就用箭頭挪。
+        成員的順序會照原樣存下來；族群的龍頭、老二、老三另外依最新月營收算（在熱度榜上看），
+        跟這裡的順序無關。
+        <span className="text-on-surface font-semibold">上游</span>
+        是供貨給這個族群、流程在它之前的環節（玻纖布 → CCL → PCB 板廠），在卡片上加入或移除；
+        <span className="text-on-surface font-semibold">下游</span>
+        由別的族群的上游反推，不能直接改。標「推論」的是依產業常識推的、沒有文件佐證，確認無誤按「推論・確認」再存檔。
+        上游不能是自己、也不能成環。
       </p>
 
       {members.data != null && members.data.unnamed > 0 && (
