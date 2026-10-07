@@ -1,4 +1,5 @@
 import { Fragment, useMemo, useState } from 'react';
+import GroupChainButton from '../components/GroupChainButton';
 import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
 import { getBelowMA, getDailyQuotesByDate } from '../api/dailyQuote';
@@ -57,6 +58,21 @@ export default function BelowMA() {
     const items = heatData.data?.items ?? [];
     return new Map(items.map((item, index) => [item.name, { item, rank: index + 1, total: items.length }]));
   }, [heatData.data]);
+
+  // 關聯圖：沿著上游往上下追需要全部族群的上游；有上游或下游的族群才給圖示。
+  const chainSources = useMemo(
+    () => groups.map((entry) => ({ name: entry.group.name, upstream: entry.group.upstream ?? [] })),
+    [groups]
+  );
+  const linkedGroups = useMemo(() => {
+    const set = new Set<string>();
+    for (const entry of groups) {
+      if ((entry.group.upstream ?? []).length > 0 || (entry.group.downstream ?? []).length > 0) {
+        set.add(entry.group.name);
+      }
+    }
+    return set;
+  }, [groups]);
 
   // 展開後要看同族群的漲跌：一次抓最新一天的全部收盤，不必每展開一列發一次請求。
   // 族群成員不一定都有落地收盤（範圍是自選股加額外名單），查不到的那幾檔顯示破折號。
@@ -206,6 +222,14 @@ export default function BelowMA() {
                                     {h ? `${name} #${h.rank}` : name}
                                     {coreRank(h?.item, row.symbol) != null &&
                                       `・${CORE_LABEL[coreRank(h?.item, row.symbol) as number]}`}
+                                    {linkedGroups.has(name) && (
+                                      <GroupChainButton
+                                        name={name}
+                                        sources={chainSources}
+                                        heat={heat}
+                                        total={heatData.data?.items.length ?? 0}
+                                      />
+                                    )}
                                   </span>
                                 );
                               })}

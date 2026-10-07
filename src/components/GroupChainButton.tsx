@@ -22,9 +22,12 @@ interface GroupChainButtonProps {
   name: string;
   /** 全部族群的「名稱＋上游」，圖要沿著它往上下追。 */
   sources: ChainSource[];
-  /** 今天的熱度榜，用來在節點上標名次與報酬；不在榜上的節點標「今天不在榜上」。 */
-  heat: Map<string, HeatEntry>;
-  total: number;
+  /**
+   * 今天的熱度榜，用來在節點上標名次與報酬；不在榜上的節點標「今天不在榜上」。
+   * 不傳（例如族群維護頁沒載入熱度榜）就整個不標，而不是每個節點都寫「不在榜上」誤導人。
+   */
+  heat?: Map<string, HeatEntry>;
+  total?: number;
 }
 
 /**
@@ -33,7 +36,7 @@ interface GroupChainButtonProps {
  * 浮層用 fixed 定位：表格容器有 overflow-x-auto，絕對定位的浮層會被裁掉。
  * 圖本身是 HTML 節點加一層 SVG 箭頭，不引入任何圖表套件。
  */
-export default function GroupChainButton({ name, sources, heat, total }: GroupChainButtonProps) {
+export default function GroupChainButton({ name, sources, heat, total = 0 }: GroupChainButtonProps) {
   const [open, setOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [box, setBox] = useState<{ left: number; top: number; maxHeight: number } | null>(null);
@@ -141,7 +144,9 @@ export default function GroupChainButton({ name, sources, heat, total }: GroupCh
         onMouseLeave={hideSoon}
         onFocus={show}
         onBlur={hideSoon}
-        onClick={() => {
+        onClick={(event) => {
+          // 這顆按鈕會放在可點擊展開的表格列裡，不能讓點擊冒泡成「展開這一列」。
+          event.stopPropagation();
           if (pinned) {
             setPinned(false);
             setOpen(false);
@@ -175,7 +180,7 @@ export default function GroupChainButton({ name, sources, heat, total }: GroupCh
           </p>
           <p className="mt-1 mb-3 font-body-sm text-body-sm text-on-surface-variant">
             由左到右是供貨方向（上游 → 下游）。實線是已確認的關係，虛線是推論。
-            節點下方是今天的熱度名次與中位數報酬——這是現況，不是預測。
+            {heat && '節點下方是今天的熱度名次與中位數報酬——這是現況，不是預測。'}
           </p>
 
           <div className="relative" style={{ width, height }}>
@@ -211,7 +216,7 @@ export default function GroupChainButton({ name, sources, heat, total }: GroupCh
             {graph.columns.flat().map((node) => {
               const pos = positions.get(node.name);
               if (!pos) return null;
-              const entry = heat.get(node.name);
+              const entry = heat?.get(node.name);
               const isSelf = node.level === 0;
               return (
                 <div
@@ -222,7 +227,9 @@ export default function GroupChainButton({ name, sources, heat, total }: GroupCh
                       ? 'border-primary bg-primary/10 ring-1 ring-primary'
                       : 'border-outline-variant bg-surface-container-low'
                   }`}
-                  title={entry ? `熱度第 ${entry.rank} / ${total} 名` : '今天不在榜上（成員一檔都算不出報酬）'}
+                  title={
+                    heat ? (entry ? `熱度第 ${entry.rank} / ${total} 名` : '今天不在榜上（成員一檔都算不出報酬）') : undefined
+                  }
                 >
                   <span className="font-body-sm text-body-sm text-on-surface font-semibold leading-tight line-clamp-2">
                     {node.name}
@@ -235,7 +242,7 @@ export default function GroupChainButton({ name, sources, heat, total }: GroupCh
                       </span>
                     </span>
                   ) : (
-                    <span className="font-body-sm text-[11px] text-outline">今天不在榜上</span>
+                    heat && <span className="font-body-sm text-[11px] text-outline">今天不在榜上</span>
                   )}
                 </div>
               );
