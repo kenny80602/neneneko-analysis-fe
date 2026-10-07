@@ -3,10 +3,12 @@ import PageState from '../components/PageState';
 import { getBelowMA } from '../api/dailyQuote';
 import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
+import { useSymbolGroups } from '../hooks/useSymbolGroups';
 import { formatNumber, formatPrice, formatSignedPercent, marketLabel, quoteColor } from '../utils/format';
 
 export default function BelowMA() {
   const { setSymbol } = useSymbol();
+  const groups = useSymbolGroups();
   // 不輪詢：後端逐檔讀 60 個成交日，檔數多時比其他讀取端點慢，讓使用者按重新整理。
   const { data, loading, error, reload } = useAsyncData(() => getBelowMA(), []);
 
@@ -38,7 +40,7 @@ export default function BelowMA() {
         <p className="font-body-sm text-body-sm text-on-surface-variant">
           季線 = 最近 60 個成交日收盤價的簡單平均（未還原，除權息會有偏差）；乖離 = 收盤相對季線的百分比，
           越負離季線越遠。範圍只有已落地收盤行情的那批（自選股加半導體族群），不是全市場。
-          收盤在季線以下是現況描述，不是買賣訊號。
+          收盤在季線以下是現況描述，不是買賣訊號。族群是自己在「主題族群」建的，破折號代表沒歸進任何族群。
         </p>
 
         {data && (
@@ -70,6 +72,7 @@ export default function BelowMA() {
                 <tr>
                   <th className="p-2 pl-4 text-left font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">代號</th>
                   <th className="p-2 text-left font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">名稱</th>
+                  <th className="p-2 text-left font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">族群</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">收盤</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">季線</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">乖離</th>
@@ -91,6 +94,9 @@ export default function BelowMA() {
                       </span>
                     </td>
                     <td className="p-2 py-3 font-body-md text-body-md text-on-surface whitespace-nowrap">{row.name}</td>
+                    <td className="p-2 py-3 font-body-sm text-body-sm text-on-surface-variant whitespace-nowrap">
+                      {groups.get(row.symbol)?.join('、') ?? '—'}
+                    </td>
                     <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface font-bold">
                       {formatPrice(row.close)}
                     </td>
