@@ -84,6 +84,10 @@ export interface BelowMAStock {
   ma60: number;
   // 收盤相對季線的乖離（%），負數；越負離季線越遠。
   gap_pct: number;
+  // 最新一天的全市場成交金額名次與分母（同市場普通股內）。
+  // null 是沒有名次（回補進來的列、當天沒成交），不是排最後。
+  trade_value_rank: number | null;
+  trade_value_rank_total: number | null;
 }
 
 export interface BelowMA {

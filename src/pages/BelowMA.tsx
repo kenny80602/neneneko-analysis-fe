@@ -4,7 +4,7 @@ import { getBelowMA } from '../api/dailyQuote';
 import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { useSymbolGroups } from '../hooks/useSymbolGroups';
-import { formatNumber, formatPrice, formatSignedPercent, marketLabel, quoteColor } from '../utils/format';
+import { formatNumber, formatPrice, formatRank, formatSignedPercent, marketLabel, quoteColor } from '../utils/format';
 
 export default function BelowMA() {
   const { setSymbol } = useSymbol();
@@ -40,7 +40,7 @@ export default function BelowMA() {
         <p className="font-body-sm text-body-sm text-on-surface-variant">
           季線 = 最近 60 個成交日收盤價的簡單平均（未還原，除權息會有偏差）；乖離 = 收盤相對季線的百分比，
           越負離季線越遠。範圍只有已落地收盤行情的那批（自選股加半導體族群），不是全市場。
-          收盤在季線以下是現況描述，不是買賣訊號。族群是自己在「主題族群」建的，破折號代表沒歸進任何族群。
+          收盤在季線以下是現況描述，不是買賣訊號。族群是自己在「主題族群」建的，破折號代表沒歸進任何族群。成交金額名次是最新一天在同市場普通股裡的名次，沒有名次（ETF、回補進來的日期）顯示破折號。
         </p>
 
         {data && (
@@ -76,6 +76,7 @@ export default function BelowMA() {
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">收盤</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">季線</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">乖離</th>
+                  <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">成交金額名次</th>
                   <th className="p-2 pr-4 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">日期</th>
                 </tr>
               </thead>
@@ -105,6 +106,9 @@ export default function BelowMA() {
                     </td>
                     <td className={`p-2 py-3 text-right font-data-md text-data-md ${quoteColor(row.gap_pct)}`}>
                       {formatSignedPercent(row.gap_pct)}
+                    </td>
+                    <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface whitespace-nowrap">
+                      {formatRank(row.trade_value_rank, row.trade_value_rank_total)}
                     </td>
                     <td className="p-2 pr-4 py-3 text-right font-data-md text-data-md text-on-surface-variant whitespace-nowrap">
                       {row.date}

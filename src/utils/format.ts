@@ -149,3 +149,13 @@ export function priceSourceLabel(source: string | null | undefined): string {
       return DASH;
   }
 }
+
+/**
+ * 全市場名次，連同分母一起顯示（例如「92 / 1,087」）。
+ * 掛牌檔數逐年變動，只看名次會把不同時期的第 92 名當成同一件事。
+ * 名次是 null（沒成交、不是普通股、回補的列）回破折號，不是排最後。
+ */
+export function formatRank(rank: number | null | undefined, total: number | null | undefined): string {
+  if (isBlank(rank)) return DASH;
+  return isBlank(total) ? formatNumber(rank) : `${formatNumber(rank)} / ${formatNumber(total)}`;
+}

@@ -6,7 +6,7 @@ import { apiErrorMessage } from '../api/request';
 import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { useSymbolGroups } from '../hooks/useSymbolGroups';
-import { formatNumber, formatPrice, formatSigned, marketLabel, quoteColor, today } from '../utils/format';
+import { formatNumber, formatPrice, formatRank, formatSigned, marketLabel, quoteColor, today } from '../utils/format';
 
 export default function DailyQuotes() {
   const { setSymbol } = useSymbol();
@@ -76,7 +76,7 @@ export default function DailyQuotes() {
         <p className="font-body-sm text-body-sm text-on-surface-variant">
           「立即收集」會打上游並寫入資料庫，同時順帶收三大法人、融資融券與估值；
           同一天重跑是覆蓋而不是新增，補資料可以放心重跑。族群是自己在「主題族群」建的，
-          破折號代表這檔沒被歸進任何族群（多數檔都是），不是資料缺漏。
+          破折號代表這檔沒被歸進任何族群（多數檔都是），不是資料缺漏。成交金額名次是當日在同市場普通股裡的名次（上市比上市、上櫃比上櫃），ETF 與回補進來的歷史日期沒有名次，同樣顯示破折號。
           {notice && <span className="ml-2 text-on-surface-variant">{notice}</span>}
         </p>
 
@@ -105,6 +105,7 @@ export default function DailyQuotes() {
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">漲跌</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">成交量</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">成交筆數</th>
+                  <th className="p-2 pr-4 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">成交金額名次</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/50">
@@ -148,9 +149,12 @@ export default function DailyQuotes() {
                         <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface-variant">
                           {formatNumber(row.transaction_count)}
                         </td>
+                        <td className="p-2 pr-4 py-3 text-right font-data-md text-data-md text-on-surface whitespace-nowrap">
+                          {formatRank(row.trade_value_rank, row.trade_value_rank_total)}
+                        </td>
                       </>
                     ) : (
-                      <td colSpan={7} className="p-2 py-3 text-right font-body-sm text-body-sm text-outline">
+                      <td colSpan={8} className="p-2 py-3 text-right font-body-sm text-body-sm text-outline">
                         當日無成交
                       </td>
                     )}
