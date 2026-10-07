@@ -167,3 +167,28 @@ describe('第 4 名以後標數字', () => {
     expect(badges).toEqual(['龍頭', '老二', '老三', '4', '5']);
   });
 });
+
+describe('股票順序從龍頭開始', () => {
+  it('依營收名次排，不是依今天漲幅：龍頭漲得少也在最前面，沒名次的接在最後', () => {
+    const roster: GroupMembers[] = [
+      group('CCL', [['1', '甲'], ['2', '乙'], ['3', '丙'], ['4', '丁']], [], [['2', '乙'], ['1', '甲'], ['3', '丙']]),
+    ];
+    const heat = new Map([
+      [
+        'CCL',
+        {
+          rank: 1,
+          item: {
+            members: [
+              { symbol: '4', name: '丁', return_pct: 9, trade_value: 1 },
+              { symbol: '3', name: '丙', return_pct: 5, trade_value: 1 },
+              { symbol: '1', name: '甲', return_pct: 1, trade_value: 1 },
+              { symbol: '2', name: '乙', return_pct: -2, trade_value: 1 },
+            ],
+          },
+        },
+      ],
+    ]) as unknown as Parameters<typeof chainStocksOf>[1];
+    expect(chainStocksOf(roster, heat)('CCL').map((s) => s.symbol)).toEqual(['2', '1', '3', '4']);
+  });
+});

@@ -42,7 +42,7 @@ const TH = 'py-1 pr-2 font-label-caps text-label-caps text-on-surface-variant up
  * 名單以完整成員清單為準（含今天停牌、除權息、算不出報酬的），今天的漲跌取自熱度榜；
  * 成員清單還沒載入時退到熱度榜裡算得出報酬的那幾檔。兩邊都沒有就是空陣列，
  * 畫面會說明，不會畫成「這個族群沒有股票」。
- * 有行情的依報酬由高到低排在前面，沒行情的接在後面保持原順序。
+ * 從龍頭開始排：有營收名次的依名次由小到大，沒名次的接在後面（依今天漲幅由高到低，沒行情的最後）。
  */
 export function chainStocksOf(
   roster: GroupMembers[],
@@ -77,10 +77,18 @@ export function chainStocksOf(
           returnPct: m.return_pct,
           coreRank: coreRankOf(m.symbol),
         }));
-    const rank = (stock: ChainStock) => (stock.returnPct == null ? -Infinity : stock.returnPct);
+    // 從龍頭開始排：有名次的依營收名次由小到大，沒名次的接在後面；同樣沒名次的再依今天漲幅
+    // 由高到低（沒行情的最後），其餘維持原順序。
+    const byRank = (stock: ChainStock) => stock.coreRank ?? Infinity;
+    const byReturn = (stock: ChainStock) => (stock.returnPct == null ? -Infinity : stock.returnPct);
     return stocks
       .map((stock, index) => ({ stock, index }))
-      .sort((a, b) => rank(b.stock) - rank(a.stock) || a.index - b.index)
+      .sort((a, b) => {
+        const ra = byRank(a.stock);
+        const rb = byRank(b.stock);
+        if (ra !== rb) return ra < rb ? -1 : 1;
+        return byReturn(b.stock) - byReturn(a.stock) || a.index - b.index;
+      })
       .map(({ stock }) => stock);
   };
 }

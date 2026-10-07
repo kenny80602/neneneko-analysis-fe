@@ -851,7 +851,7 @@ function HeatMemberTable({ members, keyword, targets, core = [], leaders = [], c
   const leaderSet = new Set(leaders.map((l) => l.symbol));
 
   // 龍頭今天算不出報酬（停牌、除權息）時不在 members 裡，但它是這個族群最重要的一檔，
-  // 不能因此從表上消失：補在最後面，漲跌顯示破折號。
+  // 不能因此從表上消失：照名次補進表裡，漲跌顯示破折號。
   const shown = new Set(members.map((m) => m.symbol));
   const extra = core.filter((c) => c.rank <= 3 && !shown.has(c.symbol));
   const hasTarget = targets !== undefined;
@@ -913,6 +913,20 @@ function HeatMemberTable({ members, keyword, targets, core = [], leaders = [], c
     );
   };
 
+  // 從龍頭開始排：有名次的依營收名次由小到大（龍頭、老二、老三、4、5…），
+  // 沒有名次的（ETF、剛上市）接在後面，維持後端給的順序（今天漲幅由高到低）。
+  const ordered = [
+    ...members.map((m) => ({ symbol: m.symbol, name: m.name, returnPct: m.return_pct as number | null, tradeValue: m.trade_value as number | null })),
+    ...extra.map((c) => ({ symbol: c.symbol, name: c.name, returnPct: null as number | null, tradeValue: null as number | null })),
+  ]
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => {
+      const ra = coreRankOf.get(a.row.symbol) ?? Infinity;
+      const rb = coreRankOf.get(b.row.symbol) ?? Infinity;
+      return ra === rb ? a.index - b.index : ra < rb ? -1 : 1;
+    })
+    .map(({ row }) => row);
+
   return (
     <div className="flex flex-col gap-1">
       <div className="overflow-x-auto rounded-lg border border-outline-variant bg-surface-container-lowest">
@@ -935,8 +949,7 @@ function HeatMemberTable({ members, keyword, targets, core = [], leaders = [], c
             </tr>
           </thead>
           <tbody className="divide-y divide-outline-variant/50">
-            {members.map((m) => rowFor({ symbol: m.symbol, name: m.name, returnPct: m.return_pct, tradeValue: m.trade_value }))}
-            {extra.map((c) => rowFor({ symbol: c.symbol, name: c.name, returnPct: null, tradeValue: null }))}
+            {ordered.map(rowFor)}
           </tbody>
         </table>
       </div>
@@ -944,7 +957,7 @@ function HeatMemberTable({ members, keyword, targets, core = [], leaders = [], c
         <p className="font-body-sm text-body-sm text-outline">
           {core.length > 0 && `標示欄的龍頭、老二、老三、4、5…是族群內依 ${coreMonth || '最新'} 月營收的名次，不是今天漲最多的；`}
           領漲是今天漲最多的三檔。
-          {extra.length > 0 && '龍頭今天算不出報酬（停牌或除權息）的列在最後。'}
+          {extra.length > 0 && '龍頭、老二、老三今天算不出報酬（停牌或除權息）的，仍照名次列在原位，漲跌是破折號。'}
         </p>
       )}
     </div>
@@ -1290,7 +1303,7 @@ function HeatBoard() {
         其次訊號數，平手才看超額報酬。所以名次高不等於漲得多，而是「今天最像整群在動」；
         標了樣本過少的一律排在後段，那個名次講的是不可信不是比較弱。搜尋過濾不會重編名次。
         　表格只列族群層級的數字，股票都收在每個族群的
-        <span className="text-on-surface">展開</span>裡：展開是一張整群逐檔的表，「標示」欄標出龍頭／老二／老三（依最新月營收排的族群最大三檔，營收大不一定是產業龍頭）與領漲（今天漲最多的三檔），同一檔可以兩者皆是；表底下才是這個族群的上游與下游各自今天的熱度名次、報酬與龍頭（可再點開看成員，看哪一段還沒動；標「推論」的關係是依產業常識推的、沒有文件佐證，請自己確認，這是現況不是預測）；破折號代表今天算不出來（停牌、除權息）。
+        <span className="text-on-surface">展開</span>裡：展開是一張整群逐檔的表，從龍頭開始依營收名次排，「標示」欄標出龍頭／老二／老三（依最新月營收排的族群最大三檔，營收大不一定是產業龍頭）與領漲（今天漲最多的三檔），同一檔可以兩者皆是；表底下才是這個族群的上游與下游各自今天的熱度名次、報酬與龍頭（可再點開看成員，看哪一段還沒動；標「推論」的關係是依產業常識推的、沒有文件佐證，請自己確認，這是現況不是預測）；破折號代表今天算不出來（停牌、除權息）。
         {board != null && <>　用到 {board.days_covered} 個交易日。</>}
         　搜尋比對的是族群名稱與<span className="text-on-surface">全部成員</span>的股號、名稱，
         不只領漲三檔。
