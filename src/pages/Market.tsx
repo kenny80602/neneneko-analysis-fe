@@ -83,14 +83,11 @@ export default function Market() {
   const tpex = useAsyncData(() => getTPExMarketHighlight(), []);
   const [twseSort, setTwseSort] = useState<TwseSort>('volume');
 
-  // 成交量榜與成交金額榜是兩支端點（金額榜要抓整包收盤行情，比較慢），切到才發請求。
-  // 漲幅／跌幅是把成交量那 20 檔重排，所以只有「成交金額」會換資料來源。
-  const volumeRanks = useAsyncData(() => getTWSEVolumeRanks(), [twseSort === 'value'], {
-    enabled: twseSort !== 'value',
-  });
-  const tradeValueRanks = useAsyncData(() => getTWSETradeValueRanks(), [twseSort === 'value'], {
-    enabled: twseSort === 'value',
-  });
+  // 成交量榜與成交金額榜是兩支端點（金額榜要抓整包收盤行情，比較慢）。兩份都載入：
+  // 「成交量與成交金額都在前 20 名」要拿兩份榜單對照才標得出來，只載入目前看的那一份做不到。
+  // 漲幅／跌幅是把成交量那 20 檔重排，不需要另外的資料來源。
+  const volumeRanks = useAsyncData(() => getTWSEVolumeRanks(), []);
+  const tradeValueRanks = useAsyncData(() => getTWSETradeValueRanks(), []);
   // 大盤融資融券。這一支跟同頁其他區塊不同，讀的是後端落地的資料而不是即時打上游，
   // 所以假日與盤中一樣看得到最近一個交易日，不必像三大法人那樣自己往回找。
   const margin = useAsyncData(() => getMarketMarginSummaries(), []);
@@ -201,6 +198,21 @@ export default function Market() {
 
   const twseSource = twseSort === 'value' ? tradeValueRanks : volumeRanks;
 
+  // 同時在成交量前 20 與成交金額前 20 的代號。兩份榜單都載入成功才算：只有一份有資料時，
+  // 「交集是空的」跟「還不知道」不一樣，不能讓使用者以為今天沒有這種股票。
+  const bothTop = useMemo(() => {
+    const volume = volumeRanks.data ?? [];
+    const value = tradeValueRanks.data ?? [];
+    if (volume.length === 0 || value.length === 0) return new Set<string>();
+    const inValue = new Set(value.map((row) => row.symbol));
+    return new Set(volume.filter((row) => inValue.has(row.symbol)).map((row) => row.symbol));
+  }, [volumeRanks.data, tradeValueRanks.data]);
+  const bothTopReady =
+    (volumeRanks.data?.length ?? 0) > 0 &&
+    (tradeValueRanks.data?.length ?? 0) > 0 &&
+    !volumeRanks.error &&
+    !tradeValueRanks.error;
+
   const loading = twse.loading || advanceDecline.loading || institutional.loading || tpex.loading;
   const error = twse.error || advanceDecline.error || institutional.error || tpex.error;
 
@@ -209,8 +221,8 @@ export default function Market() {
     advanceDecline.reload();
     institutional.reload();
     tpex.reload();
-    // reload 不看 enabled，只叫目前在看的那一支。
-    twseSource.reload();
+    volumeRanks.reload();
+    tradeValueRanks.reload();
     // reload 不看 enabled，兩支都叫的話沒在看的那一支也會打上游。
     if (tpexSide === 'amount') amountRanks.reload();
     else movers.reload();
@@ -587,8 +599,16 @@ export default function Market() {
                         <tr
                           key={row.symbol}
                           onClick={() => openSymbol(row.symbol)}
-                          title="點擊查看個股總覽"
-                          className="hover:bg-surface-container-low/50 transition-colors cursor-pointer"
+                          title={
+                            bothTop.has(row.symbol)
+                              ? '成交量與成交金額都在前 20 名，點擊查看個股總覽'
+                              : '點擊查看個股總覽'
+                          }
+                          className={`transition-colors cursor-pointer ${
+                            bothTop.has(row.symbol)
+                              ? 'bg-primary/10 hover:bg-primary/15'
+                              : 'hover:bg-surface-container-low/50'
+                          }`}
                         >
                           <td className="p-2 pl-4 py-3 font-data-md text-data-md text-on-surface-variant">
                             {index + 1}
@@ -596,6 +616,11 @@ export default function Market() {
                           <td className="p-2 py-3">
                             <span className="block font-data-md text-data-md text-primary font-bold">
                               {row.symbol}
+                              {bothTop.has(row.symbol) && (
+                                <span className="ml-2 rounded px-1 py-0.5 bg-primary/15 font-body-sm text-[11px] font-bold">
+                                  量額雙榜
+                                </span>
+                              )}
                             </span>
                             <span className="block font-body-sm text-body-sm text-on-surface-variant">
                               {row.name}
@@ -621,7 +646,13 @@ export default function Market() {
                 </div>
               )}
 
-              <p className="p-4 font-body-sm text-body-sm text-on-surface-variant border-t border-outline-variant">
+              <p className="px-4 pt-4 font-body-sm text-body-sm text-on-surface-variant border-t border-outline-variant">
+                {bothTopReady
+                  ? `標色的是成交量與成交金額都在前 20 名的股票（今天 ${bothTop.size} 檔），表示量大、金額也大，不是漲跌訊號。`
+                  : '成交量或成交金額其中一份榜單還沒載入成功，所以暫時無法標出「兩個榜都在前 20 名」的股票（這不代表今天沒有）。'}
+                上櫃沒有成交量榜，所以上櫃那一欄不標。
+              </p>
+              <p className="p-4 pt-2 font-body-sm text-body-sm text-on-surface-variant">
                 {twseSort === 'value'
                   ? '成交金額單位元，換算成億／萬。證交所沒有這個榜單，是後端把全市場收盤行情依成交金額排出來的，不排除 ETF。'
                   : '成交量單位張。切換「漲幅」「跌幅」是把這 20 檔重新排序，不是全市場的漲跌幅排行——集中市場沒有對應的排行端點。'}
