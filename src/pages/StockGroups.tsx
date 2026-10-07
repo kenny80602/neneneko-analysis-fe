@@ -11,7 +11,7 @@ import {
   removeStockGroup,
   saveStockGroup,
 } from '../api/stockGroup';
-import { GroupHeat, GroupMember, GroupPeer, Holding, StockGroup } from '../api/types';
+import { GroupHeat, GroupHeatMember, GroupLink, GroupMember, GroupPeer, Holding, StockGroup } from '../api/types';
 import { useAsyncData } from '../hooks/useAsyncData';
 import {
   DASH,
@@ -323,6 +323,26 @@ function GroupPanel() {
             : 'border-outline-variant bg-surface-container-lowest'
         }`}
       >
+        {saved && (saved.upstream.length > 0 || saved.downstream.length > 0) && (
+          <div className="flex flex-col gap-1 font-body-sm text-body-sm text-on-surface-variant">
+            {saved.upstream.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1">
+                <span className="mr-1">上游</span>
+                {saved.upstream.map((link) => (
+                  <LinkBadge key={link.name} link={link} />
+                ))}
+              </div>
+            )}
+            {saved.downstream.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1">
+                <span className="mr-1">下游</span>
+                {saved.downstream.map((link) => (
+                  <LinkBadge key={link.name} link={link} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <div className="flex flex-wrap items-end gap-stack-sm">
           <label className="flex flex-col gap-1">
             <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">
@@ -726,10 +746,148 @@ interface HeatRow {
  * ⚠️ 這是現況描述不是預測：四個訊號講的都是「已經發生了什麼」，沒有任何一項檢定過
  * 「之後會不會漲」。後端回的 caveats 原樣列在表下方，不要在改版時拿掉。
  */
+// 上下游關係的小標籤。inferred 是依產業常識推的、沒有文件佐證，標出來讓人自己再確認。
+function LinkBadge({ link }: { link: GroupLink }) {
+  return (
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container border border-outline-variant font-body-sm text-body-sm text-on-surface whitespace-nowrap">
+      {link.name}
+      {link.inferred && (
+        <span className="text-outline" title="依產業常識推論，沒有文件佐證，請自己再確認">
+          推論
+        </span>
+      )}
+    </span>
+  );
+}
+
+// 整群逐檔的小卡片格。熱度榜展開處與上下游族群展開處共用。
+function HeatMemberGrid({ members, keyword }: { members: GroupHeatMember[]; keyword: string }) {
+  return (
+    <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
+      {members.map((member) => {
+        const matched =
+          !!keyword &&
+          (member.symbol.toLowerCase().includes(keyword) ||
+            member.name.toLowerCase().includes(keyword));
+        return (
+          <div
+            key={member.symbol}
+            className={`flex items-baseline gap-2 rounded border px-2 py-1.5 ${
+              matched
+                ? 'border-primary bg-primary/10'
+                : 'border-outline-variant bg-surface-container-lowest'
+            }`}
+          >
+            <span className="font-data-md text-data-md text-on-surface-variant">{member.symbol}</span>
+            <span className="font-body-sm text-body-sm text-on-surface">{member.name}</span>
+            <span className={`ml-auto font-data-md text-data-md ${quoteColor(member.return_pct)}`}>
+              {formatSignedPercent(member.return_pct)}
+            </span>
+            <span className="font-data-md text-data-md text-outline">{formatAmount(member.trade_value)}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+interface LinkedGroupsProps {
+  item: GroupHeat;
+  // 族群名稱 → 榜上那一列與名次。
+  byName: Map<string, { item: GroupHeat; rank: number }>;
+  total: number;
+  keyword: string;
+}
+
+// 這個族群的上游與下游，各自今天的表現。看哪一段已經動、哪一段還沒動，下一棒由使用者判斷：
+// 這是現況描述，不是預測，也沒有檢定過上下游之間誰領先誰。
+function LinkedGroups({ item, byName, total, keyword }: LinkedGroupsProps) {
+  const [openLinked, setOpenLinked] = useState('');
+  const sections: { title: string; links: GroupLink[] }[] = [
+    { title: '上游', links: item.upstream },
+    { title: '下游', links: item.downstream },
+  ];
+  if (sections.every((section) => section.links.length === 0)) return null;
+
+  return (
+    <div className="flex flex-col gap-stack-sm">
+      {sections.map(({ title, links }) =>
+        links.length === 0 ? null : (
+          <div key={title} className="flex flex-col gap-1">
+            <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">{title}</span>
+            {links.map((link) => {
+              const linked = byName.get(link.name);
+              const open = openLinked === link.name;
+              return (
+                <div
+                  key={link.name}
+                  className="rounded border border-outline-variant bg-surface-container-lowest p-2 flex flex-col gap-1"
+                >
+                  <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                    <LinkBadge link={link} />
+                    {linked ? (
+                      <>
+                        <span className="font-body-sm text-body-sm text-on-surface-variant">
+                          熱度第 <span className="font-data-md text-on-surface">{linked.rank}</span> / {total} 名
+                        </span>
+                        <span className="font-body-sm text-body-sm text-on-surface-variant">
+                          中位數{' '}
+                          <span className={`font-data-md ${quoteColor(linked.item.median_return)}`}>
+                            {formatSignedPercent(linked.item.median_return)}
+                          </span>
+                        </span>
+                        <span className="font-body-sm text-body-sm text-on-surface-variant">
+                          超額{' '}
+                          <span className={`font-data-md ${quoteColor(linked.item.excess_return)}`}>
+                            {formatSignedPercent(linked.item.excess_return)}
+                          </span>
+                        </span>
+                        {linked.item.core.map((member) => (
+                          <span key={member.symbol} className="font-body-sm text-body-sm whitespace-nowrap">
+                            <span className="text-outline">{CORE_LABEL[member.rank] ?? `第${member.rank}`}</span>{' '}
+                            <span className="text-on-surface">{member.name}</span>{' '}
+                            <span className={`font-data-md ${quoteColor(member.return_pct)}`}>
+                              {formatSignedPercent(member.return_pct)}
+                            </span>
+                          </span>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setOpenLinked(open ? '' : link.name)}
+                          className="ml-auto inline-flex items-center gap-1 font-body-sm text-body-sm text-primary hover:underline"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">
+                            {open ? 'expand_less' : 'expand_more'}
+                          </span>
+                          {open ? '收合' : `展開 ${linked.item.members.length} 檔`}
+                        </button>
+                      </>
+                    ) : (
+                      <span className="font-body-sm text-body-sm text-outline">
+                        今天不在榜上（成員一檔都算不出報酬）
+                      </span>
+                    )}
+                  </div>
+                  {linked && open && <HeatMemberGrid members={linked.item.members} keyword={keyword} />}
+                </div>
+              );
+            })}
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
 function HeatBoard() {
   // 不輪詢：這一支要當天的全市場橫斷面才算得出來，一天只會變一次。
   const heat = useAsyncData(() => getGroupHeat(), []);
   const board = heat.data;
+  // 族群名稱 → 榜上那一列與它的名次。上下游族群靠名稱對榜（上下游欄位存的就是名稱）。
+  const byName = useMemo(
+    () => new Map((board?.items ?? []).map((entry, index) => [entry.name, { item: entry, rank: index + 1 }])),
+    [board]
+  );
 
   // 搜尋要比對的是完整成員名單，而熱度榜只回族群層級的數字與最多三檔領漲，所以另外拿一份。
   // 這一支不打上游（只讀族群表、月營收與自選股三張表），跟熱度榜本身比成本可以忽略。
@@ -947,7 +1105,7 @@ function HeatBoard() {
         其次訊號數，平手才看超額報酬。所以名次高不等於漲得多，而是「今天最像整群在動」；
         標了樣本過少的一律排在後段，那個名次講的是不可信不是比較弱。搜尋過濾不會重編名次。
         　表格只列族群層級的數字，股票都收在每個族群的
-        <span className="text-on-surface">展開</span>裡：龍頭／老二／老三是依最新月營收排的族群最大三檔（營收大不一定是產業龍頭），領漲是今天漲最多的三檔，再往下是整群逐檔的漲跌；破折號代表今天算不出來（停牌、除權息）。
+        <span className="text-on-surface">展開</span>裡：龍頭／老二／老三是依最新月營收排的族群最大三檔（營收大不一定是產業龍頭），領漲是今天漲最多的三檔，再來是這個族群的上游與下游各自今天的熱度名次、報酬與龍頭（可再點開看成員，看哪一段還沒動；標「推論」的關係是依產業常識推的、沒有文件佐證，請自己確認，這是現況不是預測），最後是整群逐檔的漲跌；破折號代表今天算不出來（停牌、除權息）。
         {board != null && <>　用到 {board.days_covered} 個交易日。</>}
         　搜尋比對的是族群名稱與<span className="text-on-surface">全部成員</span>的股號、名稱，
         不只領漲三檔。
@@ -1133,41 +1291,13 @@ function HeatBoard() {
                               ))}
                             </p>
                           )}
-                          <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
-                            {item.members.map((member) => {
-                              const matched =
-                                !!keyword &&
-                                (member.symbol.toLowerCase().includes(keyword) ||
-                                  member.name.toLowerCase().includes(keyword));
-                              return (
-                                <div
-                                  key={member.symbol}
-                                  className={`flex items-baseline gap-2 rounded border px-2 py-1.5 ${
-                                    matched
-                                      ? 'border-primary bg-primary/10'
-                                      : 'border-outline-variant bg-surface-container-lowest'
-                                  }`}
-                                >
-                                  <span className="font-data-md text-data-md text-on-surface-variant">
-                                    {member.symbol}
-                                  </span>
-                                  <span className="font-body-sm text-body-sm text-on-surface">
-                                    {member.name}
-                                  </span>
-                                  <span
-                                    className={`ml-auto font-data-md text-data-md ${quoteColor(
-                                      member.return_pct
-                                    )}`}
-                                  >
-                                    {formatSignedPercent(member.return_pct)}
-                                  </span>
-                                  <span className="font-data-md text-data-md text-outline">
-                                    {formatAmount(member.trade_value)}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
+                          <LinkedGroups
+                            item={item}
+                            byName={byName}
+                            total={board.items.length}
+                            keyword={keyword}
+                          />
+                          <HeatMemberGrid members={item.members} keyword={keyword} />
                         </div>
                       </td>
                     </tr>

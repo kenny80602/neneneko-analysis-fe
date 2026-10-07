@@ -453,6 +453,15 @@ export interface LinePreviewList {
 
 // ===== 主題族群（/stocks/groups）=====
 
+// 族群之間的一條上下游關係。
+export interface GroupLink {
+  // 對方族群的名稱（族群名稱本來就是後端的唯一鍵，對得上熱度榜的 name）。
+  name: string;
+  // true 是依產業常識推論的關係，沒有 docs/maps 的文件佐證。畫面要標出來，
+  // 關聯錯了會誤導，使用者得知道哪些該自己再確認。
+  inferred: boolean;
+}
+
 export interface StockGroup {
   id: string;
   // 族群名稱，同時也是鍵：同名視為覆蓋而不是新增。
@@ -460,6 +469,10 @@ export interface StockGroup {
   // 成員代號，順序照當初輸入的（可能刻意把龍頭放第一個），後端不會重排。
   symbols: string[];
   sort_order: number;
+  // 上游：供貨給這個族群、流程順序在它之前的環節（玻纖布 → CCL → PCB 板廠）。
+  // 下游由後端反推。沒有時是空陣列，不是 null。
+  upstream: GroupLink[];
+  downstream: GroupLink[];
 }
 
 export interface GroupPeer {
@@ -596,6 +609,9 @@ export interface GroupHeat {
   core: GroupHeatCore[];
   // 龍頭排名依據的營收月份 YYYY-MM。沒有 core 時是空字串。
   core_month: string;
+  // 這個族群的上下游（對得上榜上其他列的 name），畫面拿它看「哪一段還沒動」。
+  upstream: GroupLink[];
+  downstream: GroupLink[];
 }
 
 export interface GroupHeatCore {
