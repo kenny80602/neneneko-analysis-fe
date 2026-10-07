@@ -95,6 +95,8 @@ export interface BelowMAStock {
   // 回檔幅度（%）＝（半年最高 − 收盤）／半年最高 × 100，公式同持股試算的 pullback_percent。
   // null 是算不出來（沒有高點），不是沒有回檔。
   pullback_pct: number | null;
+  // 最新一天對前一個交易日的漲跌幅（%）。null 是算不出來（除權息日、沒有前收），不是平盤。
+  change_pct: number | null;
 }
 
 export interface BelowMA {
