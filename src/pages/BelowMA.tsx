@@ -36,6 +36,9 @@ const PULLBACK_ALERT_PCT = 30;
 // 龍頭排名的稱呼。後端只給名次 1～3，稱呼是畫面的事。
 const CORE_LABEL: Record<number, string> = { 1: '龍頭', 2: '老二', 3: '老三' };
 
+// 龍頭排名只有三名；不在三檔裡的排在老三之後。
+const CORE_LABEL_COUNT = 3;
+
 const TH = 'p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap';
 
 export default function BelowMA() {
@@ -63,19 +66,27 @@ export default function BelowMA() {
     [quotesData.data]
   );
 
-  // 依族群熱度排：取這檔所屬族群裡最熱（名次數字最小）的那個。沒歸族群、或族群不在熱度榜上的排最後。
-  // 同名次（同族群）與沒名次的那一批維持後端順序，也就是乖離由負得最多排起。
+  // 依族群熱度排，同一個族群內依龍頭、老二、老三、其他排：
+  //   1. 取這檔所屬族群裡最熱（名次數字最小）的那個，名次小的在前；沒歸族群或族群不在熱度榜上的排最後。
+  //   2. 同一個族群內，龍頭 → 老二 → 老三 → 不在三檔裡的。
+  //   3. 其餘維持後端順序，也就是乖離由負得最多排起。
   // 排序在前端做：熱度榜是另一支端點，後端的 below-ma 不知道它。
   const items = useMemo(() => {
-    const hottest = (symbol: string) => {
-      const ranks = (groupNames.get(symbol) ?? []).map((name) => heat.get(name)?.rank ?? Infinity);
-      return ranks.length > 0 ? Math.min(...ranks) : Infinity;
+    const keyOf = (symbol: string): [number, number] => {
+      let best: { rank: number; item: GroupHeat } | null = null;
+      for (const name of groupNames.get(symbol) ?? []) {
+        const h = heat.get(name);
+        if (h && (!best || h.rank < best.rank)) best = { rank: h.rank, item: h.item };
+      }
+      if (!best) return [Infinity, Infinity];
+      return [best.rank, coreRank(best.item, symbol) ?? CORE_LABEL_COUNT + 1];
     };
     return [...(data?.items ?? [])].sort((a, b) => {
-      const ra = hottest(a.symbol);
-      const rb = hottest(b.symbol);
-      if (ra === rb) return 0;
-      return ra < rb ? -1 : 1;
+      const [ga, ca] = keyOf(a.symbol);
+      const [gb, cb] = keyOf(b.symbol);
+      if (ga !== gb) return ga < gb ? -1 : 1;
+      if (ca !== cb) return ca < cb ? -1 : 1;
+      return 0;
     });
   }, [data, groupNames, heat]);
   const asOf = Object.entries(data?.as_of ?? {})
@@ -104,7 +115,7 @@ export default function BelowMA() {
       <div className="flex flex-col gap-stack-lg">
         <p className="font-body-sm text-body-sm text-on-surface-variant">
           季線 = 最近 60 個成交日收盤價的簡單平均（未還原，除權息會有偏差）；成交量以張計（1 張 = 1,000 股）、成交金額為新台幣，都是最新一天的。漲跌% 是最新一天對前一交易日（除權息日不算，顯示破折號）；乖離 = 收盤相對季線的百分比，
-          越負離季線越遠。表格依族群熱度排序：取這檔所屬族群裡最熱的名次，沒歸族群或族群不在熱度榜上的排最後，同名次維持乖離由負得最多排起。範圍只有已落地收盤行情的那批（自選股加半導體族群），不是全市場。
+          越負離季線越遠。表格依族群熱度排序：取這檔所屬族群裡最熱的名次，沒歸族群或族群不在熱度榜上的排最後；同一個族群內依龍頭、老二、老三、其他排，再來維持乖離由負得最多排起。範圍只有已落地收盤行情的那批（自選股加半導體族群），不是全市場。
           收盤在季線以下是現況描述，不是買賣訊號。族群是自己在「主題族群」建的，破折號代表沒歸進任何族群。成交金額名次是最新一天在同市場普通股裡的名次，沒有名次（ETF、回補進來的日期）顯示破折號。龍頭／老二／老三是族群裡月營收最大的三檔（營收大不一定是產業龍頭），這檔自己是的話族群欄會標出，展開可看三檔今天的漲跌；族群熱度前 20 名用藍色底標出（刻意不用紅綠：那是漲跌的顏色）（族群欄的 #名次，是熱度榜的現況排序、不是預測）。回檔 =（半年最高 − 收盤）÷ 半年最高，公式同持股試算，超過 30% 整格標紅；半年最高取已落地的收盤行情，不是去問 Yahoo，歷史不到約 100 個成交日的檔標紅色星號（回檔被低估）。本益比與殖利率取每一檔最新一筆估值，本益比「虧損」是上游給空值（虧損或尚無盈餘）；破折號是沒配息沒有殖利率，或估值還沒收集。
         </p>
 
