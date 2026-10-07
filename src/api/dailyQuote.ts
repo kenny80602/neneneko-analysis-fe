@@ -32,7 +32,13 @@ export const collectDailyQuotes = () =>
     .post<ApiResponse<CollectResult>>('/stocks/daily/collect')
     .then((res) => res.data.data);
 
+// 掃描要逐檔讀 150 筆歷史，超過 request.ts 預設 20 秒就會被判成「無法連線到伺服器」，
+// 所以單獨放寬。後端已並行讀取；這裡是檔數變多或資料庫變慢時的餘裕。
+const BELOW_MA_TIMEOUT_MS = 60000;
+
 // 收盤在季線（60 日均）以下的股票，離季線最遠的排最前面。
 // 後端逐檔讀最近 60 個成交日，回應時間跟 daily_quotes 的檔數成正比，不要輪詢。
 export const getBelowMA = () =>
-  request.get<ApiResponse<BelowMA>>('/stocks/daily/below-ma').then((res) => res.data.data);
+  request
+    .get<ApiResponse<BelowMA>>('/stocks/daily/below-ma', { timeout: BELOW_MA_TIMEOUT_MS })
+    .then((res) => res.data.data);
