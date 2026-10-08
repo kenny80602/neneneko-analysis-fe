@@ -10,6 +10,7 @@ import {
   getGroupPeers,
   getJapanHeat,
   getJapanStocks,
+  getStockGroups,
   removeStockGroup,
   saveStockGroup,
 } from '../api/stockGroup';
@@ -20,6 +21,7 @@ import { TargetStore, useTargets } from '../hooks/useTargets';
 import {
   GroupHeat,
   GroupHeatCore,
+  GroupHeatBoard,
   GroupHeatMember,
   GroupLink,
   GroupMember,
@@ -1189,6 +1191,20 @@ function JapanHeatBoard() {
   // 不輪詢：資料來自每日排程收下來的日 K，一天只會變一次。
   const heat = useAsyncData(() => getJapanHeat(query), [query]);
   const board = heat.data;
+
+  // 展開時要對到台灣的族群：日本節點的「下游」就是它供貨或對照的台灣族群（關聯圖用的同一份），
+  // 台灣今天的表現取自今日熱度榜，兩邊用族群名稱對（名稱本來就是後端的鍵）。
+  // 這兩支掛了不擋日本榜：展開時那一塊會講明對不到的原因。
+  const groupList = useAsyncData(() => getStockGroups(), []);
+  const taiwan = useAsyncData(() => getGroupHeat(), []);
+  const downstreamOf = useMemo(
+    () => new Map((groupList.data ?? []).map((group) => [group.name, group.downstream ?? []])),
+    [groupList.data]
+  );
+  const taiwanByName = useMemo(
+    () => new Map((taiwan.data?.items ?? []).map((item, index) => [item.name, { item, rank: index + 1 }])),
+    [taiwan.data]
+  );
   // 一次只展開一個族群，理由同今日熱度榜：同時攤開的話看不出自己在看哪一群。
   const [openGroup, setOpenGroup] = useState('');
 
@@ -1278,6 +1294,13 @@ function JapanHeatBoard() {
                 <JapanGroupRows
                   key={group.name}
                   group={group}
+                  links={downstreamOf.get(group.name) ?? []}
+                  taiwan={{
+                    byName: taiwanByName,
+                    board: taiwan.data,
+                    loading: groupList.loading || taiwan.loading,
+                    error: groupList.error || taiwan.error,
+                  }}
                   open={openGroup === group.name}
                   onToggle={() => setOpenGroup(openGroup === group.name ? '' : group.name)}
                 />
@@ -1290,12 +1313,109 @@ function JapanHeatBoard() {
   );
 }
 
+/**
+ * 日本族群對應的台灣族群，並排今天台股的表現。
+ *
+ * 對應來自族群的上下游關係（日本節點的下游），不是另外維護的對照表。關聯多半是產業常識推論，
+ * 會標「推論」。⚠️ 這是兩邊的現況並排，不是「日本漲所以台灣會漲」的預測：日股比台股早收，
+ * 日本的漲跌常在台股當天就已經反映，台灣沒跟著動也可能是已經先動過了。
+ */
+function TaiwanCounterpart({ links, taiwan }: { links: GroupLink[]; taiwan: TaiwanHeatLookup }) {
+  if (links.length === 0) {
+    return (
+      <p className="font-body-sm text-body-sm text-on-surface-variant">
+        這個日本族群還沒有對應的台灣族群。到「族群維護」把台灣族群的上游指到它，這裡就會出現。
+      </p>
+    );
+  }
+  const asOf = taiwan.board
+    ? Object.entries(taiwan.board.as_of)
+        .map(([market, date]) => `${market === 'twse' ? '上市' : '上櫃'} ${date}`)
+        .join('、')
+    : '';
+
+  return (
+    <div className="flex flex-col gap-1.5 border-t border-outline-variant pt-3">
+      <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">
+        對應的台灣族群{asOf && `（台股資料日 ${asOf}）`}
+      </span>
+      {taiwan.loading && <PageState kind="loading" message="查台灣族群今天的表現…" />}
+      {taiwan.error && (
+        <p className="font-body-sm text-body-sm text-error">台灣族群的表現載入失敗：{taiwan.error}</p>
+      )}
+      {!taiwan.loading && !taiwan.error && (
+        <table className="w-full border-collapse">
+          <thead>
+            <tr>
+              <th className={`${headCell} text-left`}>台灣族群</th>
+              <th className={`${headCell} text-right`}>今日名次</th>
+              <th className={`${headCell} text-right`}>中位數報酬</th>
+              <th className={`${headCell} text-right`}>超額報酬</th>
+              <th className={`${headCell} text-right`}>上漲家數比</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-outline-variant/50">
+            {links.map((link) => {
+              const hit = taiwan.byName.get(link.name);
+              return (
+                <tr key={link.name}>
+                  <td className="p-2 py-2">
+                    <LinkBadge link={link} />
+                    {hit?.item.thin && (
+                      <span className="ml-2 px-1.5 py-0.5 rounded bg-error/10 font-body-sm text-body-sm text-error">
+                        樣本過少
+                      </span>
+                    )}
+                  </td>
+                  {hit ? (
+                    <>
+                      <td className={`${numCell} text-on-surface`}>
+                        {hit.rank}
+                        <span className="text-on-surface-variant"> / {taiwan.board?.items.length}</span>
+                      </td>
+                      <td className={`${numCell} ${quoteColor(hit.item.median_return)}`}>
+                        {formatSignedPercent(hit.item.median_return)}
+                      </td>
+                      <td className={`${numCell} ${quoteColor(hit.item.excess_return)}`}>
+                        {formatSignedPercent(hit.item.excess_return)}
+                      </td>
+                      <td className={`${numCell} text-on-surface`}>{formatNumber(hit.item.advance_ratio, 0)}%</td>
+                    </>
+                  ) : (
+                    // 不在榜上多半是成員全都不在今天的橫斷面（ETF、代號打錯）或還沒有橫斷面資料，
+                    // 不是「今天沒動」。
+                    <td colSpan={4} className="p-2 py-2 text-right font-body-sm text-body-sm text-on-surface-variant">
+                      {DASH} 不在今天的熱度榜上（還沒有今天的橫斷面，或成員都算不出報酬）
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+interface TaiwanHeatLookup {
+  byName: Map<string, { item: GroupHeat; rank: number }>;
+  board: GroupHeatBoard | undefined;
+  loading: boolean;
+  error: string;
+}
+
 function JapanGroupRows({
   group,
+  links,
+  taiwan,
   open,
   onToggle,
 }: {
   group: JapanGroupHeat;
+  /** 這個日本族群的下游，也就是對應的台灣族群。 */
+  links: GroupLink[];
+  taiwan: TaiwanHeatLookup;
   open: boolean;
   onToggle: () => void;
 }) {
@@ -1373,6 +1493,7 @@ function JapanGroupRows({
               {group.note && (
                 <p className="font-body-sm text-body-sm text-on-surface-variant whitespace-pre-wrap">{group.note}</p>
               )}
+              <TaiwanCounterpart links={links} taiwan={taiwan} />
             </div>
           </td>
         </tr>
