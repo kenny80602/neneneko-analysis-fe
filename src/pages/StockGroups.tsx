@@ -8,6 +8,8 @@ import { apiErrorMessage } from '../api/request';
 import {
   getGroupMembers,
   getGroupPeers,
+  getJapanHeat,
+  getJapanStocks,
   removeStockGroup,
   saveStockGroup,
 } from '../api/stockGroup';
@@ -15,7 +17,17 @@ import GroupChainButton, { chainNoteOf, chainStocksOf } from '../components/Grou
 import BrokerTargetCell from '../components/BrokerTargetCell';
 import TargetPriceEditor from '../components/TargetPriceEditor';
 import { TargetStore, useTargets } from '../hooks/useTargets';
-import { GroupHeat, GroupHeatCore, GroupHeatMember, GroupLink, GroupMember, GroupPeer, Holding, StockGroup } from '../api/types';
+import {
+  GroupHeat,
+  GroupHeatCore,
+  GroupHeatMember,
+  GroupLink,
+  GroupMember,
+  GroupPeer,
+  Holding,
+  JapanGroupHeat,
+  StockGroup,
+} from '../api/types';
 import { useAsyncData } from '../hooks/useAsyncData';
 import {
   DASH,
@@ -46,15 +58,17 @@ const numCell = 'p-2 py-3 text-right font-data-md text-data-md';
 const inputClass =
   'px-2 py-1.5 bg-surface-container border border-outline-variant rounded font-body-md text-body-md text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary';
 
-type Tab = 'edit' | 'heat';
+type Tab = 'edit' | 'heat' | 'japan';
 
 // 分頁而不是上下堆疊，理由同全市場排行那一頁：兩塊的性質差很遠，堆在一起會很長，
 // 而且會讓人以為熱度榜是「剛剛編的那個族群的」——它是全部族群的當日橫斷面。
 //
 //   今日熱度  收盤後才算得出來的橫斷面，唯讀，一天只變一次。這是平常最常看的，所以排前面、預設開它
+//   日本熱門  日股收盤的族群表現，台股開盤前就已定案，用來看日本上游有沒有動
 //   族群維護  自己維護的清單，隨時可改，改完立刻生效
 const TABS: { value: Tab; label: string; hint: string }[] = [
   { value: 'heat', label: '今日熱度', hint: '收盤後才有，一天一次' },
+  { value: 'japan', label: '日本熱門', hint: '日股收盤，一天一次' },
   { value: 'edit', label: '族群維護', hint: '自己歸類，隨時可改' },
 ];
 
@@ -101,7 +115,7 @@ export default function StockGroups() {
         </p>
 
         {/* 兩塊都保持掛載會讓熱度榜在編族群時照樣去打一次收盤資料，所以切換時才載入。 */}
-        {tab === 'edit' ? <GroupPanel /> : <HeatBoard />}
+        {tab === 'edit' ? <GroupPanel /> : tab === 'japan' ? <JapanHeatBoard /> : <HeatBoard />}
       </div>
     </>
   );
@@ -119,9 +133,19 @@ interface GroupDraft {
   upstream: GroupLink[];
   // 人工備註。沒有台股成員的節點（日本上游）靠它交代情報。
   note: string;
+  // 日本成員（Yahoo ticker，6981.T），跟台股 symbols 分開：日本代號也是四碼數字，會跟台股撞。
+  jpSymbols: string[];
 }
 
-const NEW_GROUP: GroupDraft = { id: '', name: '', symbols: [], sortOrder: '', upstream: [], note: '' };
+const NEW_GROUP: GroupDraft = {
+  id: '',
+  name: '',
+  symbols: [],
+  sortOrder: '',
+  upstream: [],
+  note: '',
+  jpSymbols: [],
+};
 
 function toGroupDraft(group: StockGroup): GroupDraft {
   return {
@@ -131,6 +155,7 @@ function toGroupDraft(group: StockGroup): GroupDraft {
     sortOrder: String(group.sort_order),
     upstream: (group.upstream ?? []).map((link) => ({ ...link })),
     note: group.note ?? '',
+    jpSymbols: [...(group.jp_symbols ?? [])],
   };
 }
 
@@ -173,6 +198,14 @@ function GroupPanel() {
   // 自選股清單只給新增時的下拉建議用。族群成員不必在自選股裡，
   // 所以它不是名稱的主要來源，只是「挑一檔已經在追蹤的」比較快。
   const holdings = useAsyncData(() => getHoldings(), []);
+
+  // 日本成員只能從後端有在收收盤價的清單挑。掛了不擋維護：台股成員照常能編，
+  // 只是日本那一格的下拉會是空的（已填的 chip 退回顯示代號）。
+  const japanStocks = useAsyncData(() => getJapanStocks(), []);
+  const japanNames = useMemo(
+    () => Object.fromEntries((japanStocks.data ?? []).map((stock) => [stock.symbol, stock.name])),
+    [japanStocks.data]
+  );
 
   const [drafts, setDrafts] = useState<GroupDraft[]>([]);
   const [creating, setCreating] = useState<GroupDraft>(NEW_GROUP);
@@ -273,6 +306,7 @@ function GroupPanel() {
         sort_order: draft.sortOrder === '' ? 0 : Math.trunc(order),
         upstream: draft.upstream,
         note: draft.note,
+        jp_symbols: draft.jpSymbols,
       });
       if (isNew) setCreating(NEW_GROUP);
       members.reload();
@@ -522,6 +556,56 @@ function GroupPanel() {
             options={holdings.data ?? []}
             onAdd={addSymbols}
           />
+        </div>
+
+        {/* 日本成員另成一格：代號帶 .T，不能跟上面的台股代號混著填。只收後端有在收收盤價的標的。 */}
+        <div className="flex flex-col gap-1.5">
+          <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">
+            日本成員（{draft.jpSymbols.length} 檔，只看收盤）
+          </span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {draft.jpSymbols.length === 0 && (
+              <span className="font-body-sm text-body-sm text-outline">沒有</span>
+            )}
+            {draft.jpSymbols.map((symbol) => (
+              <span
+                key={symbol}
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container border border-outline-variant font-body-sm text-body-sm text-on-surface whitespace-nowrap"
+              >
+                <span className="font-data-md text-data-md">{symbol}</span>
+                {japanNames[symbol] && <span>{japanNames[symbol]}</span>}
+                <button
+                  type="button"
+                  aria-label={`移除日本成員 ${symbol}`}
+                  onClick={() => update({ jpSymbols: draft.jpSymbols.filter((s) => s !== symbol) })}
+                  className="text-outline hover:text-error"
+                >
+                  <span className="material-symbols-outlined text-[14px] align-middle">close</span>
+                </button>
+              </span>
+            ))}
+            <select
+              value=""
+              onChange={(event) => {
+                const symbol = event.target.value;
+                if (symbol) update({ jpSymbols: [...draft.jpSymbols, symbol] });
+              }}
+              className={`${inputClass} w-48`}
+              aria-label="加入日本成員"
+            >
+              <option value="">＋ 加入日本個股…</option>
+              {(japanStocks.data ?? [])
+                .filter((stock) => !draft.jpSymbols.includes(stock.symbol))
+                .map((stock) => (
+                  <option key={stock.symbol} value={stock.symbol}>
+                    {stock.symbol} {stock.name}
+                  </option>
+                ))}
+            </select>
+          </div>
+          {japanStocks.error && (
+            <p className="font-body-sm text-body-sm text-error">日本個股清單載入失敗：{japanStocks.error}</p>
+          )}
         </div>
 
         {isOpen && (
@@ -1081,6 +1165,219 @@ function LinkedGroups({ item, byName, total, keyword, targets }: LinkedGroupsPro
         )
       )}
     </div>
+  );
+}
+
+/** 日本熱門榜搜尋框的等待時間：後端只讀資料庫，但每個字都發一次請求沒有意義。 */
+const JAPAN_SEARCH_DEBOUNCE_MS = 300;
+
+/**
+ * 日本熱門族群：有日本成員的族群，依成員最近一個交易日收盤漲跌幅的中位數排名。
+ *
+ * 日本的材料與設備廠（日東紡、村田、信越…）是台灣 CCL、載板、被動元件與晶圓廠的上游或同業，
+ * 日股比台股早收，所以這一頁是「日本昨天收盤誰在動」，不是「台股明天會跟著動」。
+ */
+function JapanHeatBoard() {
+  const [input, setInput] = useState('');
+  // 搜尋字串等使用者停手才送出去，deps 放這個而不是 input。
+  const [query, setQuery] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(input.trim()), JAPAN_SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [input]);
+
+  // 不輪詢：資料來自每日排程收下來的日 K，一天只會變一次。
+  const heat = useAsyncData(() => getJapanHeat(query), [query]);
+  const board = heat.data;
+  // 一次只展開一個族群，理由同今日熱度榜：同時攤開的話看不出自己在看哪一群。
+  const [openGroup, setOpenGroup] = useState('');
+
+  return (
+    <div className="flex flex-col gap-stack-md">
+      <div className="flex flex-wrap items-center gap-stack-sm">
+        <label className="flex items-center gap-2">
+          <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">搜尋</span>
+          <input
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            placeholder="族群、公司或代號，例如 村田、6981、被動"
+            className={`${inputClass} w-72`}
+          />
+        </label>
+        {query && board && (
+          <>
+            <span className="font-body-sm text-body-sm text-on-surface-variant">
+              {board.groups.length} / {board.total} 個族群符合
+            </span>
+            <button
+              type="button"
+              onClick={() => setInput('')}
+              className="font-body-sm text-body-sm text-primary hover:underline"
+            >
+              清除
+            </button>
+          </>
+        )}
+        {board?.date && (
+          <span className="ml-auto font-body-sm text-body-sm text-on-surface-variant">
+            日本收盤日{' '}
+            <span className="font-data-md text-data-md text-on-surface">{board.date}</span>
+          </span>
+        )}
+      </div>
+
+      <p className="font-body-sm text-body-sm text-on-surface-variant">
+        <span className="text-error font-semibold">這是日本收盤的現況描述，不是預測。</span>
+        收的是<span className="text-on-surface">收盤價不是即時報價</span>，日期以上方的收盤日為準
+        （日本休市日會停在更早的日子）。族群排名看成員漲跌幅的<span className="text-on-surface">中位數</span>，
+        只有一檔的族群中位數就是那一檔，標「樣本過少」並排在榜尾。名次是整張榜的位置，搜尋不會重編。
+        破折號代表沒有這個數字（還沒收集或算不出來），不是 0。
+        日本成員到「族群維護」的「日本成員」欄填，只能挑後端有在收的個股。
+      </p>
+
+      {board && board.caveats.length > 0 && (
+        <ul className="list-disc pl-5 font-body-sm text-body-sm text-on-surface-variant">
+          {board.caveats.map((caveat) => (
+            <li key={caveat}>{caveat}</li>
+          ))}
+        </ul>
+      )}
+
+      {heat.loading && <PageState kind="loading" />}
+      {heat.error && <PageState kind="error" message={heat.error} onRetry={heat.reload} />}
+
+      {!heat.loading && !heat.error && board && board.total === 0 && (
+        <PageState
+          kind="empty"
+          message="還沒有任何族群填日本成員"
+          hint="到「族群維護」，在族群卡的「日本成員」挑日本個股就會出現在這裡。也可能是日股收盤還沒收集過：排程要跑過一次才有收盤。"
+        />
+      )}
+      {!heat.loading && !heat.error && board && board.total > 0 && board.groups.length === 0 && (
+        <PageState
+          kind="empty"
+          message={`沒有日本族群含「${query}」`}
+          hint={`目前只有 ${board.total} 個族群有日本成員，搜尋比對族群名稱與成員的名稱、代號。沒歸進任何日本族群的公司搜不到——那不是漏收，是還沒有人把它放進去。`}
+        />
+      )}
+
+      {board && board.groups.length > 0 && (
+        <div className="overflow-x-auto rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm">
+          <table className="w-full border-collapse">
+            <thead className="bg-surface-container-low border-b border-outline-variant">
+              <tr>
+                <th className={`${headCell} pl-4 text-right`}>名次</th>
+                <th className={`${headCell} text-left`}>族群</th>
+                <th className={`${headCell} text-right`}>中位數漲跌</th>
+                <th className={`${headCell} text-right`}>上漲家數比</th>
+                <th className={`${headCell} text-right`}>算入檔數</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-outline-variant/50">
+              {board.groups.map((group) => (
+                <JapanGroupRows
+                  key={group.name}
+                  group={group}
+                  open={openGroup === group.name}
+                  onToggle={() => setOpenGroup(openGroup === group.name ? '' : group.name)}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function JapanGroupRows({
+  group,
+  open,
+  onToggle,
+}: {
+  group: JapanGroupHeat;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Fragment>
+      <tr className="hover:bg-surface-container-low/50 transition-colors align-top">
+        {/* 樣本過少的名次講的是「不可信」不是「比較弱」，用淡色跟前段班區分。 */}
+        <td className={`${numCell} pl-4 ${group.thin ? 'text-outline' : 'text-on-surface'}`}>{group.rank}</td>
+        <td className="p-2 py-3">
+          <span className="font-body-md text-body-md text-on-surface font-semibold">{group.name}</span>
+          {group.thin && (
+            <span className="ml-2 inline-block px-1.5 py-0.5 rounded bg-error/10 font-body-sm text-body-sm text-error">
+              樣本過少
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={onToggle}
+            className="block mt-1 font-body-sm text-body-sm text-primary hover:underline"
+          >
+            {open ? '收合' : `展開 ${group.member_count} 檔`}
+          </button>
+        </td>
+        <td className={`${numCell} ${quoteColor(group.median_change)}`}>{formatSignedPercent(group.median_change)}</td>
+        <td className={`${numCell} text-on-surface`}>
+          {group.advance_ratio == null ? DASH : `${formatNumber(group.advance_ratio, 0)}%`}
+        </td>
+        <td className={`${numCell} text-on-surface-variant`}>
+          {group.covered_count}/{group.member_count}
+        </td>
+      </tr>
+      {open && (
+        <tr className="bg-surface-container-low/30">
+          <td colSpan={5} className="p-3 pl-4">
+            <div className="flex flex-col gap-stack-sm">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr>
+                    <th className={`${headCell} text-left`}>代號</th>
+                    <th className={`${headCell} text-left`}>公司</th>
+                    <th className={`${headCell} text-right`}>收盤（日圓）</th>
+                    <th className={`${headCell} text-right`}>漲跌</th>
+                    <th className={`${headCell} text-left`}>收盤日</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-outline-variant/50">
+                  {group.members.map((member) => (
+                    <tr key={member.symbol}>
+                      <td className="p-2 py-2 font-data-md text-data-md text-on-surface">{member.symbol}</td>
+                      <td className="p-2 py-2 font-body-md text-body-md text-on-surface">
+                        {member.name || DASH}
+                      </td>
+                      <td className={`${numCell} text-on-surface`}>
+                        {formatNumber(member.close, member.close != null && !Number.isInteger(member.close) ? 1 : 0)}
+                      </td>
+                      <td className={`${numCell} ${quoteColor(member.change_percent)}`}>
+                        {formatSignedPercent(member.change_percent)}
+                      </td>
+                      <td className="p-2 py-2 font-data-md text-data-md text-on-surface-variant">
+                        {member.date || DASH}
+                        {/* 日本全市場交易日一致，停在更早的日子是排程漏收或已下市，不是休市。 */}
+                        {member.stale && (
+                          <span
+                            className="ml-2 px-1.5 py-0.5 rounded bg-error/10 font-body-sm text-body-sm text-error"
+                            title="這一檔的收盤比榜上更早（排程漏收或已下市），不納入族群統計"
+                          >
+                            資料較舊
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {group.note && (
+                <p className="font-body-sm text-body-sm text-on-surface-variant whitespace-pre-wrap">{group.note}</p>
+              )}
+            </div>
+          </td>
+        </tr>
+      )}
+    </Fragment>
   );
 }
 

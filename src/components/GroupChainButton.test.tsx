@@ -16,6 +16,7 @@ const group = (
     upstream: upstream.map((n) => ({ name: n, inferred: false })),
     downstream: [],
     note: '',
+    jp_symbols: [],
     leaders: leaders.map(([symbol, name]) => ({ symbol, name })),
   },
   members: symbols.map(([symbol, stockName]) => ({ symbol, name: stockName, industry: '', in_watchlist: false })),

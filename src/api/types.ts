@@ -476,6 +476,10 @@ export interface StockGroup {
   // 人工備註，沒寫時是空字串。主要給沒有台股成員的節點（日本的 T-glass、被動元件供應商）：
   // 日東紡、村田不在台灣的月營收表裡，成員清單放不進去，情報只能寫在這裡。
   note: string;
+  // 日本成員的 Yahoo ticker（6981.T），跟 symbols（台股代號）分開存：日本代號也是四碼數字，
+  // 村田 6981 跟台股的 6981 是兩家公司，混在一起只能靠後綴猜。沒有時是空陣列。
+  // 只收後端有在收收盤價的標的（見 JapanStock），所以維護時從清單挑而不是自由輸入。
+  jp_symbols: string[];
   // 龍頭、老二、老三，依序（第一個是龍頭）。依最新月營收由大到小，跟 symbols 的順序無關。
   // 還沒算過、或成員都沒有營收時是空陣列。
   leaders: { symbol: string; name: string }[];
@@ -655,6 +659,58 @@ export interface GroupHeatBoard {
   method: string;
   // 讀這份榜之前必須知道的事。這一欄不是裝飾——「哪個題材在發酵」極容易被讀成
   // 「買哪個會賺」，而兩者之間還隔著一個沒做過的檢定，所以畫面上一定要照著標。
+  caveats: string[];
+}
+
+// ===== 日本熱門族群（/stocks/groups/japan_heat）=====
+
+// 可以填進族群日本成員的個股，也就是後端有在收收盤價的那份清單。
+export interface JapanStock {
+  // Yahoo ticker，例如 6981.T。
+  symbol: string;
+  name: string;
+}
+
+export interface JapanMember {
+  symbol: string;
+  name: string;
+  // 這一檔收盤的交易日 YYYY-MM-DD。沒收集過時是空字串。
+  date: string;
+  // 收盤價，單位日圓。null 是沒收集過，不是 0。
+  close: number | null;
+  // 對前一個交易日的漲跌幅（%）。null 是算不出來，不是 0。
+  change_percent: number | null;
+  // 停在比榜上更早的日子（排程漏收或已下市）。日本全市場交易日一致，所以這不是休市。
+  // 這種成員不納入族群統計，但仍然列出來。
+  stale: boolean;
+}
+
+export interface JapanGroupHeat {
+  name: string;
+  // 族群備註，日本節點的產業情報寫在這裡。
+  note: string;
+  // 在整張榜的名次（1 = 最強）。搜尋後不重新編號。
+  rank: number;
+  // 成員漲幅由大到小；算不出來的與 stale 的排最後。
+  members: JapanMember[];
+  member_count: number;
+  // 其中納入統計的檔數（有漲跌幅且不是 stale）。
+  covered_count: number;
+  // 納入統計的少於兩檔，中位數就是單一檔本身，排在榜尾。
+  thin: boolean;
+  // 成員漲跌幅中位數（%）。全部都算不出來時是 null。
+  median_change: number | null;
+  // 納入統計的成員裡上漲的比例（%）。
+  advance_ratio: number | null;
+}
+
+export interface JapanHeatBoard {
+  // 榜上最新的收盤日 YYYY-MM-DD。一檔都沒收集過時是空字串。
+  date: string;
+  // 沒有搜尋時會有幾個族群。groups 空的時候靠它分辨「還沒有任何日本族群」與「被搜尋篩光了」。
+  total: number;
+  groups: JapanGroupHeat[];
+  // 讀這張榜之前要知道的事，後端給的字串，原樣顯示。
   caveats: string[];
 }
 

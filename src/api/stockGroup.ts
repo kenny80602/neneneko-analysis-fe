@@ -4,6 +4,8 @@ import {
   GroupLink,
   GroupMembersList,
   GroupPeers,
+  JapanHeatBoard,
+  JapanStock,
   RemoveGroupResult,
   StockGroup,
 } from './types';
@@ -29,8 +31,13 @@ export const getStockGroups = () =>
 // upstream 沒帶＝不動既有的上游；帶空陣列才是清空。名稱必須是已建立的族群，不能連自己、不能成環，
 // 違反時後端回 400。下游不能直接寫，由別的族群的上游反推。
 // note 同理：沒帶＝不動既有備註；帶空字串才是清掉。
+// jp_symbols 同理：沒帶＝不動，帶空陣列才是清空；只收 getJapanStocks 回的標的，其餘後端回 400。
 export const saveStockGroup = (
-  group: Pick<StockGroup, 'name' | 'symbols' | 'sort_order'> & { upstream?: GroupLink[]; note?: string }
+  group: Pick<StockGroup, 'name' | 'symbols' | 'sort_order'> & {
+    upstream?: GroupLink[];
+    note?: string;
+    jp_symbols?: string[];
+  }
 ) =>
   request
     .put<ApiResponse<StockGroup>>('/stocks/groups', group)
@@ -63,3 +70,23 @@ export const getGroupPeers = (symbol: string) =>
   request
     .get<ApiResponse<GroupPeers[]>>(`/stocks/groups/peers/${symbol}`)
     .then((res) => res.data.data ?? []);
+
+// 有在收收盤價的日本個股，也就是 jp_symbols 允許填的清單。維護畫面從這份挑，不自由輸入：
+// 填一檔沒收的進去，熱門榜上那一列只會是破折號，看不出是代號打錯還是還沒收。
+export const getJapanStocks = () =>
+  request
+    .get<ApiResponse<JapanStock[]>>('/stocks/groups/japan_stocks')
+    .then((res) => res.data.data ?? []);
+
+// 日本熱門族群榜：有日本成員的族群，依成員最近一個交易日收盤漲跌幅的中位數由熱到冷。
+//
+// q 依族群名、成員名稱或代號搜尋（6981 與 6981.T 都找得到），不帶就是整張榜。
+// 名次不隨搜尋重編；groups 空的時候看 total 才知道意思——0 是還沒有任何族群填過日本成員，
+// 大於 0 是被 q 篩光了。
+//
+// ⚠️ 讀的是每日排程收下來的日 K，**收盤不是即時**，date 一定要顯示。
+// 不打上游，所以 Yahoo 掛掉也答得出來，最壞是停在前一個交易日。
+export const getJapanHeat = (q?: string) =>
+  request
+    .get<ApiResponse<JapanHeatBoard>>('/stocks/groups/japan_heat', { params: q ? { q } : undefined })
+    .then((res) => res.data.data);
