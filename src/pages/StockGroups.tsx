@@ -11,7 +11,7 @@ import {
   removeStockGroup,
   saveStockGroup,
 } from '../api/stockGroup';
-import GroupChainButton, { chainStocksOf } from '../components/GroupChainButton';
+import GroupChainButton, { chainNoteOf, chainStocksOf } from '../components/GroupChainButton';
 import BrokerTargetCell from '../components/BrokerTargetCell';
 import TargetPriceEditor from '../components/TargetPriceEditor';
 import { TargetStore, useTargets } from '../hooks/useTargets';
@@ -117,9 +117,11 @@ interface GroupDraft {
   sortOrder: string;
   // 上游族群。下游不在草稿裡：它由別的族群的上游反推，只能唯讀顯示。
   upstream: GroupLink[];
+  // 人工備註。沒有台股成員的節點（日本上游）靠它交代情報。
+  note: string;
 }
 
-const NEW_GROUP: GroupDraft = { id: '', name: '', symbols: [], sortOrder: '', upstream: [] };
+const NEW_GROUP: GroupDraft = { id: '', name: '', symbols: [], sortOrder: '', upstream: [], note: '' };
 
 function toGroupDraft(group: StockGroup): GroupDraft {
   return {
@@ -128,6 +130,7 @@ function toGroupDraft(group: StockGroup): GroupDraft {
     symbols: [...group.symbols],
     sortOrder: String(group.sort_order),
     upstream: (group.upstream ?? []).map((link) => ({ ...link })),
+    note: group.note ?? '',
   };
 }
 
@@ -164,6 +167,7 @@ function GroupPanel() {
   // 關聯圖用的「名稱＋上游」。維護頁沒載入熱度榜，圖上不標名次與報酬。
   const chainSources = entries.map((entry) => ({ name: entry.group.name, upstream: entry.group.upstream ?? [] }));
   const stocksOf = chainStocksOf(entries);
+  const noteOf = chainNoteOf(entries);
   const targets = useTargets();
 
   // 自選股清單只給新增時的下拉建議用。族群成員不必在自選股裡，
@@ -268,6 +272,7 @@ function GroupPanel() {
         symbols: draft.symbols,
         sort_order: draft.sortOrder === '' ? 0 : Math.trunc(order),
         upstream: draft.upstream,
+        note: draft.note,
       });
       if (isNew) setCreating(NEW_GROUP);
       members.reload();
@@ -341,7 +346,13 @@ function GroupPanel() {
           <div className="flex flex-wrap items-center gap-1">
             <span className="mr-1">上游</span>
             {saved && (saved.upstream.length > 0 || saved.downstream.length > 0) && (
-              <GroupChainButton name={saved.name} sources={chainSources} stocksOf={stocksOf} targets={targets} />
+              <GroupChainButton
+                name={saved.name}
+                sources={chainSources}
+                stocksOf={stocksOf}
+                noteOf={noteOf}
+                targets={targets}
+              />
             )}
             {draft.upstream.length === 0 && <span className="text-outline">沒有</span>}
             {draft.upstream.map((link) => (
@@ -462,6 +473,17 @@ function GroupPanel() {
             )}
           </span>
         </div>
+
+        <label className="flex flex-col gap-1">
+          <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">備註</span>
+          <textarea
+            value={draft.note}
+            onChange={(event) => update({ note: event.target.value })}
+            rows={2}
+            placeholder="例：日東紡（3110.T）T-glass 全球主要供應商。日本公司不在台灣月營收表裡，成員欄放不進去，情報寫這裡"
+            className={`${inputClass} w-full font-body-sm text-body-sm`}
+          />
+        </label>
 
         {renaming && (
           <p className="font-body-sm text-body-sm text-error">
@@ -1092,6 +1114,7 @@ function HeatBoard() {
 
   // 摸圖裡的族群要列股票：完整名單取自成員清單，今天的漲跌取自熱度榜。
   const stocksOf = useMemo(() => chainStocksOf(members.data?.items ?? [], byName), [members.data, byName]);
+  const noteOf = useMemo(() => chainNoteOf(members.data?.items ?? []), [members.data]);
   const [query, setQuery] = useState('');
   // 一次只展開一個族群。展開的內容是整群的逐檔，同時攤開十幾群的話這張表會長到
   // 捲不完，而且「我現在在看哪一群」會消失——那正是點開的人想確認的事。
@@ -1371,6 +1394,7 @@ function HeatBoard() {
                           heat={byName}
                           total={board.items.length}
                           stocksOf={stocksOf}
+                          noteOf={noteOf}
                           targets={targets}
                         />
                       )}

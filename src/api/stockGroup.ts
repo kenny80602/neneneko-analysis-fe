@@ -28,8 +28,9 @@ export const getStockGroups = () =>
 //
 // upstream 沒帶＝不動既有的上游；帶空陣列才是清空。名稱必須是已建立的族群，不能連自己、不能成環，
 // 違反時後端回 400。下游不能直接寫，由別的族群的上游反推。
+// note 同理：沒帶＝不動既有備註；帶空字串才是清掉。
 export const saveStockGroup = (
-  group: Pick<StockGroup, 'name' | 'symbols' | 'sort_order'> & { upstream?: GroupLink[] }
+  group: Pick<StockGroup, 'name' | 'symbols' | 'sort_order'> & { upstream?: GroupLink[]; note?: string }
 ) =>
   request
     .put<ApiResponse<StockGroup>>('/stocks/groups', group)

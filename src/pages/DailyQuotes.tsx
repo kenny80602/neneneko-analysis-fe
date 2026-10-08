@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import GroupChainButton, { chainStocksOf } from '../components/GroupChainButton';
+import GroupChainButton, { chainNoteOf, chainStocksOf } from '../components/GroupChainButton';
 import BrokerTargetCell from '../components/BrokerTargetCell';
 import PageHeader from '../components/PageHeader';
 import TargetPriceEditor from '../components/TargetPriceEditor';
@@ -25,6 +25,7 @@ export default function DailyQuotes() {
     () => groupList.map((entry) => ({ name: entry.group.name, upstream: entry.group.upstream ?? [] })),
     [groupList]
   );
+  const noteOf = useMemo(() => chainNoteOf(groupList), [groupList]);
   const stocksOf = useMemo(() => chainStocksOf(groupList), [groupList]);
   const linkedGroups = useMemo(() => {
     const set = new Set<string>();
@@ -154,7 +155,7 @@ export default function DailyQuotes() {
                       {groups.get(row.symbol)?.map((name) => (
                         <div key={name}>
                           {name}
-                          {linkedGroups.has(name) && <GroupChainButton name={name} sources={chainSources} stocksOf={stocksOf} targets={targets} />}
+                          {linkedGroups.has(name) && <GroupChainButton name={name} sources={chainSources} stocksOf={stocksOf} noteOf={noteOf} targets={targets} />}
                         </div>
                       )) ?? '—'}
                     </td>

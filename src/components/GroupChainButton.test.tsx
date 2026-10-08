@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import GroupChainButton, { chainStocksOf } from './GroupChainButton';
+import GroupChainButton, { chainNoteOf, chainStocksOf } from './GroupChainButton';
 import { GroupMembers } from '../api/types';
 
 const group = (
@@ -15,6 +15,7 @@ const group = (
     sort_order: 0,
     upstream: upstream.map((n) => ({ name: n, inferred: false })),
     downstream: [],
+    note: '',
     leaders: leaders.map(([symbol, name]) => ({ symbol, name })),
   },
   members: symbols.map(([symbol, stockName]) => ({ symbol, name: stockName, industry: '', in_watchlist: false })),
@@ -190,5 +191,16 @@ describe('股票順序從龍頭開始', () => {
       ],
     ]) as unknown as Parameters<typeof chainStocksOf>[1];
     expect(chainStocksOf(roster, heat)('CCL').map((s) => s.symbol)).toEqual(['2', '1', '3', '4']);
+  });
+});
+
+describe('chainNoteOf', () => {
+  it('沒有備註或查無此族群都回空字串，不是 undefined', () => {
+    const withNote = group('日本 T-glass', []);
+    withNote.group.note = '日東紡 3110.T';
+    const noteOf = chainNoteOf([withNote, ...roster]);
+    expect(noteOf('日本 T-glass')).toBe('日東紡 3110.T');
+    expect(noteOf('CCL')).toBe('');
+    expect(noteOf('不存在')).toBe('');
   });
 });

@@ -473,6 +473,9 @@ export interface StockGroup {
   // 下游由後端反推。沒有時是空陣列，不是 null。
   upstream: GroupLink[];
   downstream: GroupLink[];
+  // 人工備註，沒寫時是空字串。主要給沒有台股成員的節點（日本的 T-glass、被動元件供應商）：
+  // 日東紡、村田不在台灣的月營收表裡，成員清單放不進去，情報只能寫在這裡。
+  note: string;
   // 龍頭、老二、老三，依序（第一個是龍頭）。依最新月營收由大到小，跟 symbols 的順序無關。
   // 還沒算過、或成員都沒有營收時是空陣列。
   leaders: { symbol: string; name: string }[];

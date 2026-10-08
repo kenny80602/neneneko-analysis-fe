@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState } from 'react';
-import GroupChainButton, { chainStocksOf } from '../components/GroupChainButton';
+import GroupChainButton, { chainNoteOf, chainStocksOf } from '../components/GroupChainButton';
 import BrokerTargetCell from '../components/BrokerTargetCell';
 import PageHeader from '../components/PageHeader';
 import TargetPriceEditor from '../components/TargetPriceEditor';
@@ -70,6 +70,7 @@ export default function BelowMA() {
     () => groups.map((entry) => ({ name: entry.group.name, upstream: entry.group.upstream ?? [] })),
     [groups]
   );
+  const noteOf = useMemo(() => chainNoteOf(groups), [groups]);
   const stocksOf = useMemo(() => chainStocksOf(groups, heat), [groups, heat]);
   const linkedGroups = useMemo(() => {
     const set = new Set<string>();
@@ -238,7 +239,7 @@ export default function BelowMA() {
                                         sources={chainSources}
                                         heat={heat}
                                         total={heatData.data?.items.length ?? 0}
-                                        stocksOf={stocksOf}
+                                        stocksOf={stocksOf} noteOf={noteOf}
                                         targets={targets}
                                       />
                                     )}

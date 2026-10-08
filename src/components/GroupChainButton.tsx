@@ -93,6 +93,15 @@ export function chainStocksOf(
   };
 }
 
+/**
+ * 組出「族群名稱 → 人工備註」。沒寫備註（或成員清單還沒載入）回空字串。
+ * 備註的用途是給沒有台股成員的節點（日本上游）交代情報，見 StockGroup.note。
+ */
+export function chainNoteOf(roster: GroupMembers[]): (group: string) => string {
+  const notes = new Map(roster.map((entry) => [entry.group.name, entry.group.note ?? '']));
+  return (group) => notes.get(group) ?? '';
+}
+
 interface GroupChainButtonProps {
   /** 要畫哪個族群的鏈。 */
   name: string;
@@ -109,6 +118,8 @@ interface GroupChainButtonProps {
    * 用 chainStocksOf 組。
    */
   stocksOf?: (group: string) => ChainStock[];
+  /** 摸到的族群有備註時顯示在股票表上方。用 chainNoteOf 組。 */
+  noteOf?: (group: string) => string;
   /** 傳了就在每檔股票旁顯示自己設定的目標價，並可就地設定。 */
   targets?: TargetStore;
 }
@@ -119,7 +130,15 @@ interface GroupChainButtonProps {
  * 浮層用 fixed 定位：表格容器有 overflow-x-auto，絕對定位的浮層會被裁掉。
  * 圖本身是 HTML 節點加一層 SVG 箭頭，不引入任何圖表套件。
  */
-export default function GroupChainButton({ name, sources, heat, total = 0, stocksOf, targets }: GroupChainButtonProps) {
+export default function GroupChainButton({
+  name,
+  sources,
+  heat,
+  total = 0,
+  stocksOf,
+  noteOf,
+  targets,
+}: GroupChainButtonProps) {
   const [open, setOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
   // 圖裡目前選中看股票的族群。打開時從自己開始，摸到哪個就換成哪個。
@@ -365,7 +384,13 @@ export default function GroupChainButton({ name, sources, heat, total = 0, stock
           </div>
 
           {stocksOf && (
-            <StockPanel group={focus} stocks={stocksOf(focus)} showReturn={heat !== undefined} targets={targets} />
+            <StockPanel
+              group={focus}
+              stocks={stocksOf(focus)}
+              note={noteOf?.(focus) ?? ''}
+              showReturn={heat !== undefined}
+              targets={targets}
+            />
           )}
         </div>,
         document.body
@@ -378,11 +403,13 @@ export default function GroupChainButton({ name, sources, heat, total = 0, stock
 function StockPanel({
   group,
   stocks,
+  note,
   showReturn,
   targets,
 }: {
   group: string;
   stocks: ChainStock[];
+  note: string;
   showReturn: boolean;
   targets?: TargetStore;
 }) {
@@ -396,8 +423,18 @@ function StockPanel({
         {stocks.length > 0 && `（${stocks.length} 檔）`}
         <span className="ml-2 text-outline">摸圖裡的族群可以換看別的</span>
       </p>
+      {note && (
+        <p
+          className="mb-2 whitespace-pre-wrap rounded bg-surface-container-low px-2 py-1.5 font-body-sm text-body-sm text-on-surface"
+          data-testid="chain-note"
+        >
+          {note}
+        </p>
+      )}
       {stocks.length === 0 ? (
-        <p className="font-body-sm text-body-sm text-outline">成員清單還沒載入，或這個族群沒有成員。</p>
+        <p className="font-body-sm text-body-sm text-outline">
+          {note ? '這個節點沒有台股成員，情報見上方備註。' : '成員清單還沒載入，或這個族群沒有成員。'}
+        </p>
       ) : (
         // 單欄表格而不是卡片格：浮層本來就窄（只有兩欄的圖約 380px），卡片用「視窗寬度」決定分兩欄，
         // 每張只剩一百多 px，代號、名稱、標籤、漲跌、目標價全擠在一起會跑版。
