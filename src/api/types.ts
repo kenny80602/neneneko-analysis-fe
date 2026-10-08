@@ -680,6 +680,8 @@ export interface JapanMember {
   close: number | null;
   // 對前一個交易日的漲跌幅（%）。null 是算不出來，不是 0。
   change_percent: number | null;
+  // 漲幅達到 JapanHeatBoard.surge_pct，畫面要標顯眼的顏色。資料較舊（stale）的不算。
+  surge: boolean;
   // 停在比榜上更早的日子（排程漏收或已下市）。日本全市場交易日一致，所以這不是休市。
   // 這種成員不納入族群統計，但仍然列出來。
   stale: boolean;
@@ -691,6 +693,8 @@ export interface JapanGroupHeat {
   note: string;
   // 在整張榜的名次（1 = 最強）。搜尋後不重新編號。
   rank: number;
+  // 族群中位數漲幅達到 surge_pct。看中位數不是任何一檔，個股大漲看成員自己的 surge。
+  surge: boolean;
   // 成員漲幅由大到小；算不出來的與 stale 的排最後。
   members: JapanMember[];
   member_count: number;
@@ -707,6 +711,8 @@ export interface JapanGroupHeat {
 export interface JapanHeatBoard {
   // 榜上最新的收盤日 YYYY-MM-DD。一檔都沒收集過時是空字串。
   date: string;
+  // 標「大漲」的門檻（%），個股與族群中位數共用。門檻在後端，前端不自己寫一份。
+  surge_pct: number;
   // 沒有搜尋時會有幾個族群。groups 空的時候靠它分辨「還沒有任何日本族群」與「被搜尋篩光了」。
   total: number;
   groups: JapanGroupHeat[];

@@ -1294,6 +1294,7 @@ function JapanHeatBoard() {
                 <JapanGroupRows
                   key={group.name}
                   group={group}
+                  surgePct={board.surge_pct}
                   links={downstreamOf.get(group.name) ?? []}
                   taiwan={{
                     byName: taiwanByName,
@@ -1407,12 +1408,15 @@ interface TaiwanHeatLookup {
 
 function JapanGroupRows({
   group,
+  surgePct,
   links,
   taiwan,
   open,
   onToggle,
 }: {
   group: JapanGroupHeat;
+  /** 標「大漲」的門檻（%），由後端給。 */
+  surgePct: number;
   /** 這個日本族群的下游，也就是對應的台灣族群。 */
   links: GroupLink[];
   taiwan: TaiwanHeatLookup;
@@ -1421,11 +1425,21 @@ function JapanGroupRows({
 }) {
   return (
     <Fragment>
-      <tr className="hover:bg-surface-container-low/50 transition-colors align-top">
+      <tr
+        className={`transition-colors align-top ${
+          group.surge ? 'bg-quote-up/10 hover:bg-quote-up/15' : 'hover:bg-surface-container-low/50'
+        }`}
+      >
         {/* 樣本過少的名次講的是「不可信」不是「比較弱」，用淡色跟前段班區分。 */}
         <td className={`${numCell} pl-4 ${group.thin ? 'text-outline' : 'text-on-surface'}`}>{group.rank}</td>
         <td className="p-2 py-3">
           <span className="font-body-md text-body-md text-on-surface font-semibold">{group.name}</span>
+          {/* 族群中位數達門檻：整列底色加徽章。只換字色在一排數字裡不夠醒目。 */}
+          {group.surge && (
+            <span className="ml-2 inline-block px-1.5 py-0.5 rounded bg-quote-up text-on-primary font-body-sm text-body-sm font-semibold">
+              🔥 漲逾 {surgePct}%
+            </span>
+          )}
           {group.thin && (
             <span className="ml-2 inline-block px-1.5 py-0.5 rounded bg-error/10 font-body-sm text-body-sm text-error">
               樣本過少
@@ -1463,7 +1477,7 @@ function JapanGroupRows({
                 </thead>
                 <tbody className="divide-y divide-outline-variant/50">
                   {group.members.map((member) => (
-                    <tr key={member.symbol}>
+                    <tr key={member.symbol} className={member.surge ? 'bg-quote-up/10' : undefined}>
                       <td className="p-2 py-2 font-data-md text-data-md text-on-surface">{member.symbol}</td>
                       <td className="p-2 py-2 font-body-md text-body-md text-on-surface">
                         {member.name || DASH}
@@ -1471,7 +1485,8 @@ function JapanGroupRows({
                       <td className={`${numCell} text-on-surface`}>
                         {formatNumber(member.close, member.close != null && !Number.isInteger(member.close) ? 1 : 0)}
                       </td>
-                      <td className={`${numCell} ${quoteColor(member.change_percent)}`}>
+                      <td className={`${numCell} ${quoteColor(member.change_percent)} ${member.surge ? 'font-bold' : ''}`}>
+                        {member.surge && <span title={`漲幅達 ${surgePct}%`}>🔺 </span>}
                         {formatSignedPercent(member.change_percent)}
                       </td>
                       <td className="p-2 py-2 font-data-md text-data-md text-on-surface-variant">
