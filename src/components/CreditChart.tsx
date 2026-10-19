@@ -16,6 +16,8 @@ export interface CreditSeries {
   swatchClassName: string;
   /** tooltip 內的數值格式，單位也寫在這裡（「4,020.95 億元」）。 */
   format: (value: number) => string;
+  /** 虛線樣式（SVG stroke-dasharray）。兩條線疊在同一張圖時用來區分，不給就是實線。 */
+  dash?: string;
   /** 在區間最高點打一個標記並寫出數值。 */
   showPeak?: boolean;
   /** 現值離最高點 5% 以內時警示。只用在「部位堆到上限才危險」的線（融資、融券、當日沖銷）。 */
@@ -193,7 +195,14 @@ export default function CreditChart({ dates, series, axisFormat }: CreditChartPr
           });
           if (current.length > 1) segments.push(current.join(' '));
           return segments.map((d, i) => (
-            <path key={`${s.label}-${i}`} d={d} fill="none" strokeWidth="2" className={s.className} />
+            <path
+              key={`${s.label}-${i}`}
+              d={d}
+              fill="none"
+              strokeWidth="2"
+              strokeDasharray={s.dash}
+              className={s.className}
+            />
           ));
         })}
 
