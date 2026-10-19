@@ -231,6 +231,17 @@ export default function CreditChart({ dates, series, axisFormat }: CreditChartPr
           const anchor = px < GUTTER + 60 ? 'start' : px > GUTTER + plotWidth - 60 ? 'end' : 'middle';
           return (
             <g key={`peak-${s.label}`}>
+              {/* 最高點的水平參考線：細、淡、點狀，跟融資本身的虛線分得開。 */}
+              <line
+                x1={GUTTER}
+                y1={py}
+                x2={GUTTER + plotWidth}
+                y2={py}
+                className={s.className}
+                strokeWidth="1.5"
+                strokeDasharray="2 5"
+                opacity="0.55"
+              />
               <circle cx={px} cy={py} r="4" className={`${s.className} fill-surface-container-lowest`} strokeWidth="2" />
               <text
                 x={px}

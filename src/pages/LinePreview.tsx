@@ -148,7 +148,17 @@ export default function LinePreview() {
                         </>
                       )}
                     </p>
-                    <FlexMessage contents={message.contents} text={message.text} />
+                    {message.type === 'image' && message.originalContentUrl ? (
+                      // 圖片訊息：LINE 會依這個網址抓圖，這裡直接顯示同一張。
+                      // 網址是 ngrok 的公開網域，後端沒開或隧道沒起來時會載不出來。
+                      <img
+                        src={message.originalContentUrl}
+                        alt="大盤指數與融資餘額折線圖"
+                        className="max-w-[420px] rounded-xl border border-outline-variant bg-surface-container-lowest"
+                      />
+                    ) : (
+                      <FlexMessage contents={message.contents} text={message.text} />
+                    )}
                   </div>
                 ))}
               </div>

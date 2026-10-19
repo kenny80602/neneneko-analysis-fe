@@ -448,7 +448,7 @@ export interface FlexComponent {
 }
 
 export interface LinePreviewMessage {
-  // 'flex' 或 'text'。
+  // 'flex'、'text' 或 'image'。
   type: string;
   // flex 專用：通知列與不支援 Flex 的環境顯示的替代文字。
   altText?: string;
@@ -456,6 +456,8 @@ export interface LinePreviewMessage {
   contents?: FlexComponent;
   // text 專用。
   text?: string;
+  // image 專用：LINE 抓圖的公開網址（後端畫的折線圖）。
+  originalContentUrl?: string;
 }
 
 export interface LinePreview extends LinePreviewTemplate {
