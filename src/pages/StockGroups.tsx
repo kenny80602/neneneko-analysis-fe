@@ -3,6 +3,8 @@ import PageHeader from '../components/PageHeader';
 import PageState from '../components/PageState';
 import { getGroupHeat } from '../api/groupHeat';
 import { getHoldings } from '../api/portfolio';
+import { getMacroIndicators } from '../api/macroIndicators';
+import MacroCard from '../components/MacroIndicatorCard';
 import { getRealtimeQuote } from '../api/realtimeQuote';
 import { apiErrorMessage } from '../api/request';
 import {
@@ -1517,6 +1519,51 @@ function JapanGroupRows({
   );
 }
 
+// 主題族群頁頂端的黃金與新台幣。
+//
+// 跟族群熱度同一個問題：「今天該不該怕」。黃金是避險需求、台幣升貶是外資進出的背景，
+// 兩者都不是台股資料，日期與時區跟台股不同——卡片自己帶報價時間，不要拿熱度榜的資料日期去套。
+// 這一塊自己抓資料、自己失敗：總經上游掛了不該擋住下面的熱度榜。
+const MACRO_STRIP_SYMBOLS = ['GC=F', 'TWD=X'];
+
+function MacroStrip() {
+  const macro = useAsyncData(() => getMacroIndicators(), []);
+  const items = (macro.data?.items ?? []).filter((item) => MACRO_STRIP_SYMBOLS.includes(item.symbol));
+
+  if (macro.loading && items.length === 0) return null;
+  if (macro.error) {
+    return (
+      <p className="font-body-sm text-body-sm text-error">
+        黃金與台幣這次沒取到：{macro.error}
+        <button type="button" onClick={macro.reload} className="ml-2 underline">
+          重試
+        </button>
+      </p>
+    );
+  }
+  // 兩支都沒有就整塊不畫：上游偶爾取不到，那不是「今天黃金與台幣沒有消息」。
+  if (items.length === 0) return null;
+
+  return (
+    <section className="flex flex-col gap-stack-sm">
+      <h3 className="font-headline-md text-headline-md text-primary flex items-center gap-2">
+        <span className="material-symbols-outlined text-[20px]">public</span>
+        黃金與新台幣
+      </h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-gutter">
+        {items.map((item) => (
+          <MacroCard key={item.symbol} item={item} />
+        ))}
+      </div>
+      <p className="font-body-sm text-body-sm text-on-surface-variant">
+        這兩項是國際報價，不是台股資料，時間以卡片上的報價時間為準。
+        <span className="text-on-surface font-semibold">美元兌新台幣的數字變大是台幣貶值</span>
+        ，所以方向看文字不看正負號，也不套漲紅跌綠。
+      </p>
+    </section>
+  );
+}
+
 function HeatBoard() {
   // 不輪詢：這一支要當天的全市場橫斷面才算得出來，一天只會變一次。
   const heat = useAsyncData(() => getGroupHeat(), []);
@@ -1635,6 +1682,8 @@ function HeatBoard() {
 
   return (
     <div className="flex flex-col gap-stack-md">
+      <MacroStrip />
+
       <div className="flex flex-wrap items-center gap-stack-sm">
         <h3 className="font-headline-md text-headline-md text-primary flex items-center gap-2">
           <span className="material-symbols-outlined text-[20px]">local_fire_department</span>

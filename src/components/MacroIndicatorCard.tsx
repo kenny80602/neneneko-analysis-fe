@@ -22,7 +22,7 @@ export const MACRO_DIGITS = 2;
  */
 export const MACRO_META: Record<
   string,
-  { icon: string; up: string; down: string; note: string }
+  { icon: string; up: string; down: string; note: string; rangeHint?: string }
 > = {
   '^VIX': {
     icon: 'crisis_alert',
@@ -35,6 +35,19 @@ export const MACRO_META: Record<
     up: '油價上漲',
     down: '油價下跌',
     note: '布蘭特是北海原油，國際油價的主要基準之一（美國那邊看的是西德州 WTI）。台灣的油幾乎全靠進口，油價上漲是輸入型通膨壓力，對塑化、航運、航空的成本影響最直接。',
+  },
+  'GC=F': {
+    icon: 'savings',
+    up: '金價上漲',
+    down: '金價下跌',
+    note: '黃金是避險資產，金價上漲常伴隨風險趨避升高或美元實質利率下滑，跟 VIX 的方向不一定同步。這是紐約商品交易所的近月期貨報價（美元／盎司），不是台灣銀行的黃金存摺牌價。',
+  },
+  'TWD=X': {
+    icon: 'currency_exchange',
+    up: '台幣貶值',
+    down: '台幣升值',
+    note: '報價是「一美元值多少新台幣」：數字變大是台幣貶值、變小是台幣升值，所以漲跌方向跟直覺相反，看卡片上的文字不要看正負號。台幣升值通常伴隨外資流入、貶值則是匯出壓力與外資賣超的背景；這只描述現況，不預測走勢。',
+    rangeHint: '位置越高代表台幣越貶、越低代表台幣越升（一年區間內的相對位置）',
   },
 };
 
@@ -143,6 +156,9 @@ function Range52Week({ item }: { item: MacroIndicator }) {
         52 週 {formatNumber(item.week_low_52, MACRO_DIGITS)} ～{' '}
         {formatNumber(item.week_high_52, MACRO_DIGITS)}，現在落在{' '}
         <span className="text-on-surface font-semibold">{formatPercent(percentile, 0)}</span> 的位置
+        {MACRO_META[item.symbol]?.rangeHint && (
+          <span className="block text-outline">{MACRO_META[item.symbol].rangeHint}</span>
+        )}
       </p>
     </div>
   );
