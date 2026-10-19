@@ -227,8 +227,13 @@ export default function CreditChart({ dates, series, axisFormat }: CreditChartPr
           if (!stat || !axis) return null;
           const px = x(stat.peakIndex);
           const py = yOf(axis, stat.peak);
-          // 靠近左右緣時文字改靠邊對齊，不然會被切掉；太靠上時標到點的下方。
-          const anchor = px < GUTTER + 60 ? 'start' : px > GUTTER + plotWidth - 60 ? 'end' : 'middle';
+          // 標示放在最高點水平線的「另一端」、線的上方：最高點那一頭本來就有線經過，
+          // 標在點旁邊會壓住線；水平線以上通常是空的，字放那裡擋不到資料。
+          // 太靠頂端時改放線下方。再加一圈底色描邊，萬一仍跟別條線交疊也讀得到字。
+          const mid = GUTTER + plotWidth / 2;
+          const atRight = px < mid;
+          const labelX = atRight ? GUTTER + plotWidth - 6 : GUTTER + 6;
+          const labelY = py < TOP + 16 ? py + 17 : py - 7;
           return (
             <g key={`peak-${s.label}`}>
               {/* 最高點的水平參考線：細、淡、點狀，跟融資本身的虛線分得開。 */}
@@ -244,12 +249,15 @@ export default function CreditChart({ dates, series, axisFormat }: CreditChartPr
               />
               <circle cx={px} cy={py} r="4" className={`${s.className} fill-surface-container-lowest`} strokeWidth="2" />
               <text
-                x={px}
-                y={py < TOP + 14 ? py + 18 : py - 8}
-                textAnchor={anchor}
-                className="fill-on-surface"
+                x={labelX}
+                y={labelY}
+                textAnchor={atRight ? 'end' : 'start'}
+                className="fill-on-surface stroke-surface-container-lowest"
                 fontSize="12"
                 fontWeight="600"
+                strokeWidth="4"
+                strokeLinejoin="round"
+                paintOrder="stroke"
               >
                 高 {s.format(stat.peak)}
               </text>
