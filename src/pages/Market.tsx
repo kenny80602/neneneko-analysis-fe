@@ -927,6 +927,7 @@ function CreditSection() {
         swatchClassName: 'bg-primary',
         format: (v) => formatNumber(v, 2),
         showPeak: true,
+        showEpisode: true,
       },
     ],
     [items, indexName]
@@ -943,6 +944,7 @@ function CreditSection() {
         swatchClassName: 'bg-quote-up',
         format: (v) => `${formatNumber(v, 2)} 億元`,
         showPeak: true,
+        showEpisode: true,
         warnNearPeak: true,
       },
       {

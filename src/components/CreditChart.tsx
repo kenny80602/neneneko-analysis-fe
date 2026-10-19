@@ -20,12 +20,50 @@ export interface CreditSeries {
   dash?: string;
   /** 在區間最高點打一個標記並寫出數值。 */
   showPeak?: boolean;
+  /** 把區間內「最大一次回落」（高點到其後最低點跌最深的一段）用虛線框起來。 */
+  showEpisode?: boolean;
   /** 現值離最高點 5% 以內時警示。只用在「部位堆到上限才危險」的線（融資、融券、當日沖銷）。 */
   warnNearPeak?: boolean;
 }
 
 /** 現值離最高點 5% 以內算接近高點，跟後端 LINE 推播（marginPeakWarnPct）同一個門檻。 */
 export const NEAR_PEAK_PCT = 5;
+
+export interface EpisodeStat {
+  peakIndex: number;
+  troughIndex: number;
+  peak: number;
+  trough: number;
+  /** 那一波的跌幅（%），負數。 */
+  pct: number;
+}
+
+/**
+ * 區間內最大一次回落：邊掃邊記「到目前為止的最高點」，每個點跟它比，跌最深的那一對。
+ *
+ * 不是「整段最高點之後的最低點」：行情一路創高時最高點就在最近，之後沒有回落，
+ * 中間真正修正過的那一波反而看不到。跟後端 LINE 推播的 calcDrawdown 同一個定義，
+ * 兩邊框出來的才是同一段。整段沒有回落時回 null。
+ */
+export function maxEpisode(values: (number | null)[]): EpisodeStat | null {
+  let runPeak = 0;
+  let runPeakIndex = -1;
+  let best: EpisodeStat | null = null;
+  values.forEach((value, index) => {
+    if (value == null || !Number.isFinite(value)) return;
+    if (runPeakIndex < 0 || value > runPeak) {
+      runPeak = value;
+      runPeakIndex = index;
+      return;
+    }
+    if (runPeak <= 0) return;
+    const pct = (value / runPeak - 1) * 100;
+    if (pct < 0 && (best == null || pct < best.pct)) {
+      best = { peakIndex: runPeakIndex, troughIndex: index, peak: runPeak, trough: value, pct };
+    }
+  });
+  return best;
+}
 
 export interface PeakStat {
   peak: number;
@@ -175,6 +213,51 @@ export default function CreditChart({ dates, series, axisFormat }: CreditChartPr
                   {rightFormat(axes.right.min + t * (axes.right.max - axes.right.min))}
                 </text>
               )}
+            </g>
+          );
+        })}
+
+        {/* 最大一次回落的虛線框：畫在線底下，框內只墊很淡的底色，不蓋住線。 */}
+        {series.map((s) => {
+          const axis = s.axis === 'left' ? axes.left : axes.right;
+          const episode = s.showEpisode && axis ? maxEpisode(s.values) : null;
+          if (!episode || !axis) return null;
+          const x1 = x(episode.peakIndex);
+          const x2 = x(episode.troughIndex);
+          const y1 = yOf(axis, episode.peak);
+          const y2 = yOf(axis, episode.trough);
+          return (
+            <g key={`episode-${s.label}`}>
+              <rect
+                x={x1}
+                y={y1}
+                width={Math.max(x2 - x1, 1)}
+                height={Math.max(y2 - y1, 1)}
+                className={s.className}
+                fill="none"
+                strokeWidth="1.6"
+                strokeDasharray="7 5"
+              />
+              <rect
+                x={x1}
+                y={y1}
+                width={Math.max(x2 - x1, 1)}
+                height={Math.max(y2 - y1, 1)}
+                className={s.swatchClassName.replace('bg-', 'fill-')}
+                opacity="0.08"
+              />
+              <text
+                x={x1}
+                y={y1 - 6}
+                className="fill-on-surface stroke-surface-container-lowest"
+                fontSize="12"
+                fontWeight="600"
+                strokeWidth="4"
+                strokeLinejoin="round"
+                paintOrder="stroke"
+              >
+                {s.label.replace(/\(.*\)/, '')} {episode.pct.toFixed(1)}%
+              </text>
             </g>
           );
         })}
