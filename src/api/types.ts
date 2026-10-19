@@ -260,12 +260,36 @@ export interface MarketMarginSummary {
   short_previous_lots: number;
   // 正數代表看空的部位變多。
   short_lots_change: number;
+
+  // 當日沖銷（資券互抵）張數，只計普通股。null＝這一列沒有這個數字
+  //（上櫃不公布、早期收進來的列沒存），不是 0 張。
+  offset_lots: number | null;
 }
 
 export interface MarketMarginSummaries {
   count: number;
   // 兩個市場的逐日餘額攤平在一起，日期由新到舊、同一天上市在前。
   items: MarketMarginSummary[];
+}
+
+// 大盤信用交易走勢（/stocks/margin/credit）的一天，只有上市。
+// 後端把加權指數、融資融券與當日沖銷併在同一列，前端不必自己對日期。
+export interface MarketCreditDay {
+  date: string;
+  // 加權指數收盤。null＝這一天沒收到指數，不是 0 點。
+  taiex_close: number | null;
+  // 融資餘額金額，單位元（畫面換算成億）。
+  margin_amount: number;
+  // 融券餘額，單位張。
+  short_lots: number;
+  // 當日沖銷張數（普通股的資券互抵加總）。null＝這一天沒有這個數字，不是 0 張。
+  offset_lots: number | null;
+}
+
+export interface MarketCredit {
+  count: number;
+  // 日期由舊到新，畫圖直接用。
+  items: MarketCreditDay[];
 }
 
 // ===== 估值指標（/stocks/valuation）=====

@@ -11,9 +11,10 @@ import {
   macroDirection,
 } from '../components/MacroIndicatorCard';
 import StatCard from '../components/StatCard';
+import CreditChart, { CreditSeries } from '../components/CreditChart';
 import { getMacroIndicators } from '../api/macroIndicators';
 import { getWorldIndices } from '../api/worldIndex';
-import { getMarketMarginSummaries } from '../api/margin';
+import { getMarketCredit, getMarketMarginSummaries } from '../api/margin';
 import {
   getTPExAmountRanks,
   getTPExMarketHighlight,
@@ -33,6 +34,7 @@ import { useAsyncData } from '../hooks/useAsyncData';
 import { useStockScores } from '../hooks/useStockScores';
 import {
   DASH,
+  daysAgo,
   formatAmount,
   formatNumber,
   formatPercent,
@@ -542,6 +544,8 @@ export default function Market() {
           )}
         </section>
 
+        <CreditSection />
+
         <section className="flex flex-col gap-stack-md">
           <h2 className="font-headline-md text-headline-md text-primary">個股排行</h2>
 
@@ -880,6 +884,171 @@ export default function Market() {
         </section>
       </div>
     </>
+  );
+}
+
+type CreditRange = 'm3' | 'm6' | 'y1';
+
+const CREDIT_RANGES: { key: CreditRange; label: string; days: number }[] = [
+  { key: 'm3', label: '3 個月', days: 92 },
+  { key: 'm6', label: '6 個月', days: 183 },
+  { key: 'y1', label: '1 年', days: 366 },
+];
+
+const YI = 100_000_000;
+
+/**
+ * 大盤信用交易：加權指數、融資餘額與融券餘額（雙軸）、當日沖銷三張圖。
+ *
+ * 只有上市：當日沖銷是後端從上市逐檔明細的「資券互抵」加總出來的，上櫃的合計列沒有這一欄。
+ * 三張圖共用同一條日期軸，是後端把指數與融資融券併好才回的，前端不自己對日期。
+ *
+ * 自己抓資料、自己處理失敗：這一區讀的是後端落地的歷史，跟上面那幾區即時打上游的來源不同，
+ * 一邊掛掉不該拖垮另一邊。
+ */
+function CreditSection() {
+  const [range, setRange] = useState<CreditRange>('y1');
+  const days = CREDIT_RANGES.find((r) => r.key === range)?.days ?? 366;
+  const from = daysAgo(days);
+
+  const credit = useAsyncData(() => getMarketCredit({ from }), [from]);
+  const items = useMemo(() => credit.data?.items ?? [], [credit.data]);
+
+  const dates = useMemo(() => items.map((d) => d.date), [items]);
+  const taiex = useMemo<CreditSeries[]>(
+    () => [
+      {
+        label: '加權指數',
+        values: items.map((d) => d.taiex_close),
+        axis: 'left',
+        className: 'stroke-primary',
+        swatchClassName: 'bg-primary',
+        format: (v) => formatNumber(v, 2),
+      },
+    ],
+    [items]
+  );
+  // 融資紅、融券綠：沿用看盤軟體的習慣（融資＝看多加碼、融券＝看空），
+  // 但它們不是漲跌，單純借用同一組色票，所以圖例一定要寫出名稱與單位。
+  const balances = useMemo<CreditSeries[]>(
+    () => [
+      {
+        label: '融資餘額(億元)',
+        values: items.map((d) => d.margin_amount / YI),
+        axis: 'left',
+        className: 'stroke-quote-up',
+        swatchClassName: 'bg-quote-up',
+        format: (v) => `${formatNumber(v, 2)} 億元`,
+      },
+      {
+        label: '融券餘額(張)',
+        values: items.map((d) => d.short_lots),
+        axis: 'right',
+        className: 'stroke-quote-down',
+        swatchClassName: 'bg-quote-down',
+        format: (v) => `${formatNumber(v)} 張`,
+      },
+    ],
+    [items]
+  );
+  const dayTrade = useMemo<CreditSeries[]>(
+    () => [
+      {
+        label: '當日沖銷',
+        values: items.map((d) => d.offset_lots),
+        axis: 'left',
+        className: 'stroke-outline',
+        swatchClassName: 'bg-outline',
+        format: (v) => `${formatNumber(v)} 張`,
+      },
+    ],
+    [items]
+  );
+
+  const latest = items[items.length - 1];
+  const missingDayTrade = items.filter((d) => d.offset_lots == null).length;
+  const missingIndex = items.filter((d) => d.taiex_close == null).length;
+
+  return (
+    <section className="flex flex-col gap-stack-md">
+      <div className="flex flex-wrap justify-between items-end gap-stack-sm">
+        <h2 className="font-headline-md text-headline-md text-primary">
+          大盤信用交易（上市{latest ? ` · ${latest.date}` : ''}）
+        </h2>
+        <div className="flex gap-1">
+          {CREDIT_RANGES.map((r) => (
+            <button
+              key={r.key}
+              type="button"
+              onClick={() => setRange(r.key)}
+              aria-pressed={range === r.key}
+              className={tabClass(range === r.key)}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {credit.loading && items.length === 0 && <PageState kind="loading" />}
+      {credit.error && <PageState kind="error" message={credit.error} onRetry={credit.reload} />}
+      {!credit.loading && !credit.error && items.length === 0 && (
+        <PageState
+          kind="empty"
+          message="這段期間還沒有大盤信用交易資料"
+          hint="這組圖讀的是後端已經收集下來的融資融券與指數日 K，不是即時查詢。排程還沒跑、或還沒回補過歷史就會是空的（後端 cmd/notify 的 -backfill-margin 與 -backfill-market-index）。"
+        />
+      )}
+
+      {items.length >= 2 && (
+        <div className="grid grid-cols-1 gap-gutter">
+          {[
+            { title: '加權指數', series: taiex },
+            { title: '融資餘額與融券餘額', series: balances },
+            { title: '當日沖銷', series: dayTrade },
+          ].map((panel) => (
+            <div key={panel.title} className={`${cardClass} p-4 flex flex-col gap-stack-sm`}>
+              <div className="flex flex-wrap items-center gap-stack-md">
+                <h3 className="font-body-md text-body-md text-on-surface font-semibold">
+                  {panel.title}
+                </h3>
+                {panel.series.map((s) => (
+                  <span key={s.label} className="flex items-center gap-1.5">
+                    <span className={`inline-block h-2 w-2 rounded-sm ${s.swatchClassName}`} />
+                    <span className="font-body-sm text-body-sm text-on-surface-variant">
+                      {s.label}
+                    </span>
+                  </span>
+                ))}
+              </div>
+              <CreditChart
+                dates={dates}
+                series={panel.series}
+                axisFormat={
+                  panel.series.length === 2
+                    ? { left: (v) => formatNumber(v), right: (v) => formatNumber(v) }
+                    : undefined
+                }
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {items.length > 0 && (
+        <p className="font-body-sm text-body-sm text-on-surface-variant">
+          游標移到圖上看每一天的數字。融資餘額單位億元（左軸）、融券餘額單位張（右軸），兩條線量級不同所以分左右軸，
+          <span className="text-on-surface font-semibold">交叉的位置沒有意義</span>。
+          當日沖銷是上市普通股「資券互抵」的張數加總（不含 ETF 與權證），
+          只代表信用帳戶的資券當沖，不等於全市場的現股當沖。
+          {missingDayTrade > 0 &&
+            `　有 ${missingDayTrade} 天沒有當日沖銷（還沒回補或上游沒給），線會在那裡斷開，不是 0 張。`}
+          {missingIndex > 0 &&
+            `　有 ${missingIndex} 天沒有指數收盤，同樣斷線不補值。`}
+          這一區讀已落地的資料，上市融資融券要等當日晚間才公布，所以最新一天通常是前一個交易日。
+        </p>
+      )}
+    </section>
   );
 }
 

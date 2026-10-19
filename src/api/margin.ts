@@ -4,6 +4,7 @@ import {
   HistoryParams,
   MarginByDate,
   MarginHistory,
+  MarketCredit,
   MarketMarginSummaries,
 } from './types';
 
@@ -27,4 +28,12 @@ export const getMarginByDate = (date?: string) =>
 export const getMarketMarginSummaries = (params?: { from?: string; to?: string }) =>
   request
     .get<ApiResponse<MarketMarginSummaries>>('/stocks/margin/summaries', { params })
+    .then((res) => res.data.data);
+
+// 大盤信用交易走勢（上市）：加權指數、融資餘額、融券餘額、當日沖銷，日期由舊到新。
+// 不帶 from／to 時後端回最近一年。只讀已落地的資料不打上游；空清單代表後端還沒收，
+// 要先跑 cmd/notify 的 -backfill-margin 與 -backfill-market-index。
+export const getMarketCredit = (params?: { from?: string; to?: string }) =>
+  request
+    .get<ApiResponse<MarketCredit>>('/stocks/margin/credit', { params })
     .then((res) => res.data.data);
