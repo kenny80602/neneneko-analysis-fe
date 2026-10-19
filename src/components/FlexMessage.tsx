@@ -11,7 +11,7 @@ import { FlexComponent } from '../api/types';
 // ⚠️ 這裡的顏色與尺寸刻意**不用**本站的設計 token（同 LineMessagePreview 的取捨）：
 // 預覽的重點是「LINE 上會長怎樣」，套本站色票只會讓預覽跟實際訊息對不起來。
 //
-// 沒有做的部分（後端目前一個都沒用到，用到再加）：image、video、icon、button、
+// 沒有做的部分（後端目前一個都沒用到，用到再加）：video、icon、button、
 // action（點擊行為預覽不了）、carousel 的滑動。
 
 // LINE 聊天室的底色，跟 LineMessagePreview 同一個值。
@@ -199,6 +199,22 @@ function FlexNode({
         <div
           style={{
             borderTop: `1px solid ${str(component.color) ?? '#E0E0E0'}`,
+            ...marginStyle(component, parentLayout),
+          }}
+        />
+      );
+    case 'image':
+      // 融資融券月報嵌的折線圖。url 是後端經公開網域提供的 PNG；aspectRatio 是「寬:高」，
+      // 先撐出版面再載圖，不然圖載入前後整則訊息會跳一下。
+      return (
+        <img
+          src={str(component.url)}
+          alt=""
+          style={{
+            width: '100%',
+            aspectRatio: str(component.aspectRatio)?.replace(':', ' / '),
+            objectFit: component.aspectMode === 'cover' ? 'cover' : 'contain',
+            display: 'block',
             ...marginStyle(component, parentLayout),
           }}
         />
