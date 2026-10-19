@@ -16,6 +16,39 @@ export interface CreditSeries {
   swatchClassName: string;
   /** tooltip 內的數值格式，單位也寫在這裡（「4,020.95 億元」）。 */
   format: (value: number) => string;
+  /** 在區間最高點打一個標記並寫出數值。 */
+  showPeak?: boolean;
+  /** 現值離最高點 5% 以內時警示。只用在「部位堆到上限才危險」的線（融資、融券、當日沖銷）。 */
+  warnNearPeak?: boolean;
+}
+
+/** 現值離最高點 5% 以內算接近高點，跟後端 LINE 推播（marginPeakWarnPct）同一個門檻。 */
+export const NEAR_PEAK_PCT = 5;
+
+export interface PeakStat {
+  peak: number;
+  peakIndex: number;
+  /** 最後一個有值的點。最新一天常常還沒公布，所以不是 values 的最後一格。 */
+  current: number;
+  /** 現值相對最高點的幅度（%）。在高點以下是負數，剛好在高點是 0。 */
+  pct: number;
+}
+
+/** 區間最高點與現值的位置。整段都沒有值、或最高點不是正數（沒有分母）時回 null。 */
+export function peakStat(values: (number | null)[]): PeakStat | null {
+  let peak = -Infinity;
+  let peakIndex = -1;
+  let current: number | null = null;
+  values.forEach((value, index) => {
+    if (value == null || !Number.isFinite(value)) return;
+    if (value > peak) {
+      peak = value;
+      peakIndex = index;
+    }
+    current = value;
+  });
+  if (current == null || peakIndex < 0 || peak <= 0) return null;
+  return { peak, peakIndex, current, pct: (current / peak - 1) * 100 };
 }
 
 interface CreditChartProps {
@@ -178,6 +211,31 @@ export default function CreditChart({ dates, series, axisFormat }: CreditChartPr
             </text>
           ) : null
         )}
+
+        {series.map((s) => {
+          const axis = s.axis === 'left' ? axes.left : axes.right;
+          const stat = s.showPeak && axis ? peakStat(s.values) : null;
+          if (!stat || !axis) return null;
+          const px = x(stat.peakIndex);
+          const py = yOf(axis, stat.peak);
+          // 靠近左右緣時文字改靠邊對齊，不然會被切掉；太靠上時標到點的下方。
+          const anchor = px < GUTTER + 60 ? 'start' : px > GUTTER + plotWidth - 60 ? 'end' : 'middle';
+          return (
+            <g key={`peak-${s.label}`}>
+              <circle cx={px} cy={py} r="4" className={`${s.className} fill-surface-container-lowest`} strokeWidth="2" />
+              <text
+                x={px}
+                y={py < TOP + 14 ? py + 18 : py - 8}
+                textAnchor={anchor}
+                className="fill-on-surface"
+                fontSize="12"
+                fontWeight="600"
+              >
+                高 {s.format(stat.peak)}
+              </text>
+            </g>
+          );
+        })}
 
         {hover != null && (
           <g>

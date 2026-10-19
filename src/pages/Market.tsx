@@ -11,7 +11,7 @@ import {
   macroDirection,
 } from '../components/MacroIndicatorCard';
 import StatCard from '../components/StatCard';
-import CreditChart, { CreditSeries } from '../components/CreditChart';
+import CreditChart, { CreditSeries, NEAR_PEAK_PCT, peakStat } from '../components/CreditChart';
 import { getMacroIndicators } from '../api/macroIndicators';
 import { getWorldIndices } from '../api/worldIndex';
 import { getMarketCredit, getMarketMarginSummaries } from '../api/margin';
@@ -924,6 +924,7 @@ function CreditSection() {
         className: 'stroke-primary',
         swatchClassName: 'bg-primary',
         format: (v) => formatNumber(v, 2),
+        showPeak: true,
       },
     ],
     [items]
@@ -939,6 +940,8 @@ function CreditSection() {
         className: 'stroke-quote-up',
         swatchClassName: 'bg-quote-up',
         format: (v) => `${formatNumber(v, 2)} 億元`,
+        showPeak: true,
+        warnNearPeak: true,
       },
       {
         label: '融券餘額(張)',
@@ -947,6 +950,8 @@ function CreditSection() {
         className: 'stroke-quote-down',
         swatchClassName: 'bg-quote-down',
         format: (v) => `${formatNumber(v)} 張`,
+        showPeak: true,
+        warnNearPeak: true,
       },
     ],
     [items]
@@ -966,6 +971,8 @@ function CreditSection() {
         className: 'stroke-outline',
         swatchClassName: 'bg-outline',
         format: (v) => `${formatNumber(v)} 張`,
+        showPeak: true,
+        warnNearPeak: true,
       },
     ],
     [items]
@@ -1028,6 +1035,7 @@ function CreditSection() {
                   </span>
                 ))}
               </div>
+              <PeakSummary dates={dates} series={panel.series} />
               <CreditChart
                 dates={dates}
                 series={panel.series}
@@ -1056,6 +1064,57 @@ function CreditSection() {
         </p>
       )}
     </section>
+  );
+}
+
+/**
+ * 每條線的「區間最高、現在、離高點多少」。
+ *
+ * 範圍是目前選的區間（預設 1 年），所以叫區間最高而不是歷史高點。
+ * 融資、融券、當日沖銷離高點 5% 以內標警示：那代表部位堆到接近上限，回落時賣壓較重；
+ * 這是警示不是預測。加權指數只列數字不警示，指數創高本身不是風險訊號。
+ */
+function PeakSummary({ dates, series }: { dates: string[]; series: CreditSeries[] }) {
+  const rows = series
+    .filter((s) => s.showPeak)
+    .map((s) => ({ s, stat: peakStat(s.values) }))
+    .filter((row) => row.stat != null);
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-1">
+      {rows.map(({ s, stat }) => {
+        const near = !!s.warnNearPeak && stat!.pct >= -NEAR_PEAK_PCT;
+        return (
+          <p
+            key={s.label}
+            className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-body-sm text-body-sm text-on-surface-variant"
+          >
+            <span className="flex items-center gap-1.5">
+              <span className={`inline-block h-2 w-2 rounded-sm ${s.swatchClassName}`} />
+              {s.label}
+            </span>
+            <span>
+              區間最高{' '}
+              <span className="font-data-md text-data-md text-on-surface">
+                {s.format(stat!.peak)}
+              </span>
+              （{dates[stat!.peakIndex].slice(5).replace('-', '/')}）
+            </span>
+            <span>
+              現在{' '}
+              <span className="font-data-md text-data-md text-on-surface">
+                {s.format(stat!.current)}
+              </span>
+            </span>
+            <span className={near ? 'font-bold text-quote-up' : undefined}>
+              {stat!.pct === 0 ? '創高' : `離高點 ${formatSignedPercent(stat!.pct, 1)}`}
+              {near && ' ⚠️ 接近高點，留意回落風險'}
+            </span>
+          </p>
+        );
+      })}
+    </div>
   );
 }
 
