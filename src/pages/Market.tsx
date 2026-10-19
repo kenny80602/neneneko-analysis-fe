@@ -28,7 +28,7 @@ import {
   getTWSETradeValueRanks,
   getTWSEVolumeRanks,
 } from '../api/twse';
-import { MarketMarginSummary, TWSEVolumeRank } from '../api/types';
+import { Market as MarketCode, MarketMarginSummary, TWSEVolumeRank } from '../api/types';
 import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { useStockScores } from '../hooks/useStockScores';
@@ -908,17 +908,19 @@ const YI = 100_000_000;
  */
 function CreditSection() {
   const [range, setRange] = useState<CreditRange>('y1');
+  const [market, setMarket] = useState<MarketCode>('TWSE');
+  const indexName = market === 'TWSE' ? '加權指數' : '櫃買指數';
   const days = CREDIT_RANGES.find((r) => r.key === range)?.days ?? 366;
   const from = daysAgo(days);
 
-  const credit = useAsyncData(() => getMarketCredit({ from }), [from]);
+  const credit = useAsyncData(() => getMarketCredit({ market, from }), [market, from]);
   const items = useMemo(() => credit.data?.items ?? [], [credit.data]);
 
   const dates = useMemo(() => items.map((d) => d.date), [items]);
   const taiex = useMemo<CreditSeries[]>(
     () => [
       {
-        label: '加權指數',
+        label: indexName,
         values: items.map((d) => d.taiex_close),
         axis: 'left',
         className: 'stroke-primary',
@@ -927,7 +929,7 @@ function CreditSection() {
         showPeak: true,
       },
     ],
-    [items]
+    [items, indexName]
   );
   // 融資紅、融券綠：沿用看盤軟體的習慣（融資＝看多加碼、融券＝看空），
   // 但它們不是漲跌，單純借用同一組色票，所以圖例一定要寫出名稱與單位。
@@ -986,8 +988,23 @@ function CreditSection() {
     <section className="flex flex-col gap-stack-md">
       <div className="flex flex-wrap justify-between items-end gap-stack-sm">
         <h2 className="font-headline-md text-headline-md text-primary">
-          大盤信用交易（上市{latest ? ` · ${latest.date}` : ''}）
+          大盤信用交易（{market === 'TWSE' ? '上市' : '上櫃'}
+          {latest ? ` · ${latest.date}` : ''}）
         </h2>
+        <div className="flex flex-wrap gap-stack-sm">
+        <div className="flex gap-1">
+          {(['TWSE', 'TPEx'] as MarketCode[]).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setMarket(m)}
+              aria-pressed={market === m}
+              className={tabClass(market === m)}
+            >
+              {m === 'TWSE' ? '上市' : '上櫃'}
+            </button>
+          ))}
+        </div>
         <div className="flex gap-1">
           {CREDIT_RANGES.map((r) => (
             <button
@@ -1000,6 +1017,7 @@ function CreditSection() {
               {r.label}
             </button>
           ))}
+        </div>
         </div>
       </div>
 
@@ -1017,9 +1035,10 @@ function CreditSection() {
         <div className="grid grid-cols-1 gap-gutter">
           {[
             { title: '加權指數', series: taiex },
-            { title: '加權指數與融資餘額', series: indexVsMargin },
+            { title: `${indexName}與融資餘額`, series: indexVsMargin },
             { title: '融資餘額與融券餘額', series: balances },
-            { title: '當日沖銷', series: dayTrade },
+            // 當日沖銷只有上市有：上櫃整排是 null，畫出來只會是一張空圖。
+            ...(market === 'TWSE' ? [{ title: '當日沖銷', series: dayTrade }] : []),
           ].map((panel) => (
             <div key={panel.title} className={`${cardClass} p-4 flex flex-col gap-stack-sm`}>
               <div className="flex flex-wrap items-center gap-stack-md">
@@ -1054,9 +1073,10 @@ function CreditSection() {
         <p className="font-body-sm text-body-sm text-on-surface-variant">
           游標移到圖上看每一天的數字。融資餘額單位億元（左軸）、融券餘額單位張（右軸），兩條線量級不同所以分左右軸，
           <span className="text-on-surface font-semibold">交叉的位置沒有意義</span>。
-          當日沖銷是上市普通股「資券互抵」的張數加總（不含 ETF 與權證），
-          只代表信用帳戶的資券當沖，不等於全市場的現股當沖。
-          {missingDayTrade > 0 &&
+          {market === 'TWSE'
+            ? '當日沖銷是上市普通股「資券互抵」的張數加總（不含 ETF 與權證），只代表信用帳戶的資券當沖，不等於全市場的現股當沖。'
+            : '上櫃沒有當日沖銷：櫃買公布的融資融券合計列沒有資券互抵，所以這一頁不畫那張圖。'}
+          {market === 'TWSE' && missingDayTrade > 0 &&
             `　有 ${missingDayTrade} 天沒有當日沖銷（還沒回補或上游沒給），線會在那裡斷開，不是 0 張。`}
           {missingIndex > 0 &&
             `　有 ${missingIndex} 天沒有指數收盤，同樣斷線不補值。`}
