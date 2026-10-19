@@ -951,6 +951,12 @@ function CreditSection() {
     ],
     [items]
   );
+  // 指數（左軸）與融資（右軸）疊在同一張：兩者量級不同所以分軸，
+  // 這張看的是「指數漲跌時融資怎麼動」，單位與圖例都不能省。
+  const indexVsMargin = useMemo<CreditSeries[]>(
+    () => [taiex[0], { ...balances[0], axis: 'right' }],
+    [taiex, balances]
+  );
   const dayTrade = useMemo<CreditSeries[]>(
     () => [
       {
@@ -1004,6 +1010,7 @@ function CreditSection() {
         <div className="grid grid-cols-1 gap-gutter">
           {[
             { title: '加權指數', series: taiex },
+            { title: '加權指數與融資餘額', series: indexVsMargin },
             { title: '融資餘額與融券餘額', series: balances },
             { title: '當日沖銷', series: dayTrade },
           ].map((panel) => (
