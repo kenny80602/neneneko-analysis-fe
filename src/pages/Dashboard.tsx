@@ -8,7 +8,7 @@ import PriceChart from '../components/PriceChart';
 import SymbolSearch from '../components/SymbolSearch';
 import TrendChart from '../components/TrendChart';
 import { getAnnouncementHistory } from '../api/announcement';
-import { getDailyQuoteHistory } from '../api/dailyQuote';
+import { getChartPatterns, getDailyQuoteHistory } from '../api/dailyQuote';
 import { getInstitutionalHistory } from '../api/institutional';
 import { getPortfolioValuation } from '../api/portfolio';
 import { getRealtimeQuote } from '../api/realtimeQuote';
@@ -129,6 +129,11 @@ export default function Dashboard() {
   });
 
   const history = useAsyncData(() => getDailyQuoteHistory(symbol, { limit: CHART_LIMIT }), [symbol], {
+    enabled,
+  });
+
+  // 型態用跟 K 線同樣的根數，日期才對得上圖。失敗只是少了疊圖，不影響 K 線本身。
+  const patterns = useAsyncData(() => getChartPatterns(symbol, { limit: CHART_LIMIT }), [symbol], {
     enabled,
   });
 
@@ -581,7 +586,13 @@ export default function Dashboard() {
             {history.error && (
               <PageState kind="error" message={history.error} onRetry={history.reload} />
             )}
-            {!history.loading && !history.error && <PriceChart quotes={history.data?.quotes ?? []} />}
+            {!history.loading && !history.error && (
+              <PriceChart
+                quotes={history.data?.quotes ?? []}
+                patterns={patterns.data}
+                patternsError={patterns.error}
+              />
+            )}
 
             <section className={`${cardClass} p-6 flex flex-col gap-stack-md`}>
               <h3 className="font-headline-md text-headline-md text-primary flex items-center gap-2">

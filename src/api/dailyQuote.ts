@@ -2,6 +2,7 @@ import request from './request';
 import {
   ApiResponse,
   BelowMA,
+  ChartPatterns,
   CollectResult,
   DailyQuoteByDate,
   DailyQuoteHistory,
@@ -16,6 +17,14 @@ import {
 export const getDailyQuoteHistory = (symbol: string, params?: HistoryParams) =>
   request
     .get<ApiResponse<DailyQuoteHistory>>(`/stocks/daily/${symbol}`, { params })
+    .then((res) => res.data.data);
+
+// 偵測單一檔的 W 底與 M 頭（含已確認的歷史型態與目前形成中的）。讀已落地的日 K，不打上游。
+// 後端是機械規則，結果是現況描述不是買賣訊號。limit 要跟畫面上 K 線載入的根數一致，
+// 不然型態的日期會對不上圖；不帶時後端用 500 根，上限 1000。
+export const getChartPatterns = (symbol: string, params?: HistoryParams) =>
+  request
+    .get<ApiResponse<ChartPatterns>>(`/stocks/daily/${symbol}/patterns`, { params })
     .then((res) => res.data.data);
 
 // 查某一個交易日的全部收盤行情。不帶 date 時回目前收集到最新的那一天

@@ -63,6 +63,61 @@ export interface DailyQuoteHistory {
   quotes: DailyQuote[];
 }
 
+// ===== 價格型態（/stocks/daily/:symbol/patterns）=====
+
+// 一個轉折點。高點取當日最高價、低點取當日最低價。
+export interface PatternPivot {
+  kind: 'high' | 'low';
+  date: string;
+  price: number;
+}
+
+// 型態確認之後實際走了什麼。
+// after_5_pct／after_20_pct 為 null 是資料還沒走到那麼遠，不是 0。
+export interface PatternOutcome {
+  // 確認日收盤之後第 5、20 個交易日的收盤報酬（%）。
+  after_5_pct: number | null;
+  after_20_pct: number | null;
+  // 確認之後價格有沒有碰到量測目標；沒碰到時 target_hit_at 是空字串。
+  target_hit: boolean;
+  target_hit_at: string;
+  // 確認日之後已經過了幾個交易日。
+  elapsed: number;
+}
+
+// 後端機械規則偵測到的一個型態。是現況描述，不是買賣訊號；門檻是經驗值，沒檢定過。
+export interface ChartPattern {
+  // double_bottom＝W 底（看漲反轉）、double_top＝M 頭（看跌反轉）。
+  kind: 'double_bottom' | 'double_top';
+  // forming＝形狀出來、還沒收盤突破頸線；confirmed＝已收盤突破（跌破）頸線。
+  status: 'forming' | 'confirmed';
+  // 三個轉折點，依時間：W 底是 低、高、低，M 頭是 高、低、高。
+  pivots: PatternPivot[];
+  // 頸線：W 底取中間的高點，M 頭取中間的低點。
+  neckline: number;
+  // 頸線到腳的落差（%）。
+  depth_pct: number;
+  // 傳統量測目標（頸線再往突破方向走一個落差）。只是慣例上的算術，沒有驗證過。
+  target: number;
+  // 確認日與當日收盤；forming 時是空字串與 null。
+  confirmed_at: string;
+  confirm_close: number | null;
+  // forming 時是 null。
+  outcome: PatternOutcome | null;
+  // 型態期間有除權息日：日 K 沒有還原權值，除息的跳空會被當成一次下跌，轉折點與落差會失真。
+  spans_ex_dividend: boolean;
+}
+
+export interface ChartPatterns {
+  symbol: string;
+  // 這次分析的有成交日 K 根數與涵蓋區間。根數太少時偵測不到是正常的。
+  bars: number;
+  from: string;
+  to: string;
+  count: number;
+  patterns: ChartPattern[];
+}
+
 export interface DailyQuoteByDate {
   // 實際查到的交易日。沒帶 date 時是目前收集到最新的那一天。
   date: string;
