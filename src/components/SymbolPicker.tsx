@@ -1,5 +1,5 @@
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { getHoldings } from '../api/portfolio';
+import { getTrackedStocks } from '../api/trackedStock';
 import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { DASH, marketLabel } from '../utils/format';
@@ -17,10 +17,11 @@ interface SymbolPickerProps {
 }
 
 /**
- * 代號輸入框 + 自選股下拉。
+ * 代號輸入框 + 個股清單下拉。
  *
  * 兩種用法並存是刻意的：清單裡的檔用選的（多數情況），不在清單裡的直接打代號查
- * ——行情與 K 線只有自選股才落地，但即時報價任何代號都查得到。
+ * ——行情與 K 線只有個股清單（含自選股）才落地，但即時報價任何代號都查得到。
+ * 下拉列的是個股而不是自選股：自選股是它的子集，只列自選股會看不到單純登記收資料的檔。
  *
  * 選定後一律寫回 SymbolContext，所以頁首選的跟頁內選的是同一個代號。
  */
@@ -43,7 +44,7 @@ export default function SymbolPicker({
   const [filtering, setFiltering] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const holdings = useAsyncData(() => getHoldings(), [], { enabled: everOpened });
+  const holdings = useAsyncData(() => getTrackedStocks(), [], { enabled: everOpened });
 
   // 從頁首搜尋或其他頁改了代號時，輸入框要跟著更新。
   useEffect(() => {
@@ -158,8 +159,8 @@ export default function SymbolPicker({
           <button
             type="button"
             onClick={() => (open ? setOpen(false) : browseAll())}
-            title="自選股清單"
-            aria-label="展開自選股清單"
+            title="個股清單"
+            aria-label="展開個股清單"
             className="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-outline hover:text-primary transition-colors"
           >
             <span className="material-symbols-outlined text-[18px]">
@@ -181,7 +182,7 @@ export default function SymbolPicker({
       {open && (
         <div className="absolute right-0 top-full mt-1 z-40 w-72 max-w-[calc(100vw-2rem)] bg-surface-container-lowest border border-outline-variant rounded-xl shadow-lg overflow-hidden">
           <p className="px-3 py-2 font-label-caps text-label-caps uppercase text-on-surface-variant bg-surface-container-low border-b border-outline-variant">
-            自選股
+            個股
           </p>
 
           {holdings.loading && (
@@ -193,14 +194,14 @@ export default function SymbolPicker({
 
           {!holdings.loading && !holdings.error && (holdings.data?.length ?? 0) === 0 && (
             <p className="px-3 py-3 font-body-sm text-body-sm text-on-surface-variant">
-              自選股清單是空的。增刪目前走 LINE 聊天室，輸入「加 2330」即可加入。
+              個股清單是空的。到「個股管理」登記一檔，或在自選股加入也會自動登記。
             </p>
           )}
 
           {!holdings.loading && !!holdings.data?.length && matches.length === 0 && filtering && (
             <p className="px-3 py-3 font-body-sm text-body-sm text-on-surface-variant">
-              自選股裡沒有符合「{draft.trim()}」的檔。按 Enter 仍可直接查這個代號——
-              即時報價任何代號都查得到，只是 K 線與法人只有自選股才有。
+              個股清單裡沒有符合「{draft.trim()}」的檔。按 Enter 仍可直接查這個代號——
+              即時報價任何代號都查得到，只是 K 線與法人要先到「個股管理」登記才會收。
             </p>
           )}
 
@@ -224,12 +225,17 @@ export default function SymbolPicker({
                         {row.name}
                       </span>
                     </span>
-                    {/* 從 LINE 或匯入進來的自選股常常沒有市場別，孤零零一個破折號只是噪音。 */}
-                    {marketLabel(row.market) !== DASH && (
-                      <span className="font-body-sm text-body-sm text-outline shrink-0">
-                        {marketLabel(row.market)}
-                      </span>
-                    )}
+                    <span className="flex items-center gap-2 shrink-0">
+                      {row.in_watchlist && (
+                        <span className="font-body-sm text-body-sm text-secondary">自選</span>
+                      )}
+                      {/* 登記時認不出市場別的話，孤零零一個破折號只是噪音。 */}
+                      {marketLabel(row.market) !== DASH && (
+                        <span className="font-body-sm text-body-sm text-outline">
+                          {marketLabel(row.market)}
+                        </span>
+                      )}
+                    </span>
                   </button>
                 </li>
               ))}

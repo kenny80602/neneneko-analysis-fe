@@ -21,6 +21,7 @@ import Margin from './pages/Margin';
 import Market from './pages/Market';
 import PaperTrading from './pages/PaperTrading';
 import Portfolio from './pages/Portfolio';
+import TrackedStocks from './pages/TrackedStocks';
 import Reports from './pages/Reports';
 import Schedules from './pages/Schedules';
 import Ranks from './pages/Ranks';
@@ -50,6 +51,7 @@ function App() {
               <Route path="/market" element={<Market />} />
               <Route path="/portfolio" element={<Portfolio />} />
               <Route path="/holdings" element={<Holdings />} />
+              <Route path="/tracked" element={<TrackedStocks />} />
               <Route path="/quotes" element={<DailyQuotes />} />
               <Route path="/paper" element={<PaperTrading />} />
               <Route path="/calendar" element={<Calendar />} />

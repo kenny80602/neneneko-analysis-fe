@@ -57,6 +57,7 @@ const NAV_GROUPS: NavGroup[] = [
     key: 'symbol',
     title: '個股',
     items: [
+      { icon: 'playlist_add', label: '個股管理', path: '/tracked' },
       { icon: 'candlestick_chart', label: '個股總覽', path: '/dashboard' },
       { icon: 'show_chart', label: '技術指標', path: '/indicators' },
       { icon: 'groups', label: '三大法人', path: '/institutional' },

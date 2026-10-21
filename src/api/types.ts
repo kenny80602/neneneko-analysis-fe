@@ -2639,3 +2639,67 @@ export interface StockScores {
   method: string;
   caveats: string[];
 }
+
+// ── 個股清單（/stocks/tracked）──
+// 自選股一定是個股，個股不一定在自選股裡。想先收資料觀察、又不想進收盤彙總與推播的檔登記在這裡。
+
+// 一檔個股的補資料狀態。補一檔要打一百多次上游、約五到十分鐘，前端輪詢 running。
+export interface TrackedStockWarmup {
+  // 這一檔現在正在補。
+  running: boolean;
+  // 別檔正在補。同時只補一檔（上游有限流），這時按「補資料」會被拒絕。
+  busy: boolean;
+  // 最近一次補完的時間（RFC3339）。null 代表這個後端行程沒補過它（重啟會清掉），
+  // 不代表資料是空的——看 latest_quote_date。
+  last_finished_at: string | null;
+  // 最近一次三段各新增幾列。0 不一定是失敗：已經補過的日子不重寫。
+  last_quote_rows: number | null;
+  last_trading_rows: number | null;
+  last_margin_rows: number | null;
+  // 最近一次失敗幾次（單月、單日各算一次）。
+  last_failures: number | null;
+}
+
+export interface TrackedStock {
+  symbol: string;
+  name: string;
+  // TWSE／TPEx，空字串代表登記時認不出市場。
+  market: string;
+  // 同時在自選股裡。在的話不能從個股清單移除（後端回 409）。
+  in_watchlist: boolean;
+  // 已落地的最新收盤日（YYYY-MM-DD）。null 代表一筆收盤都沒有：
+  // 還沒補、補失敗，或這檔是興櫃（兩個交易所的 OpenAPI 都不含）。
+  latest_quote_date: string | null;
+  // 登記時間（RFC3339）。
+  added_at: string;
+  warmup: TrackedStockWarmup;
+}
+
+export interface TrackedStockList {
+  count: number;
+  items: TrackedStock[];
+}
+
+// 新增個股的結果（POST /stocks/tracked）。
+export interface AddTrackedStockResult {
+  symbol: string;
+  name: string;
+  // 本來就在個股清單裡，這次沒有新登記，也沒有重新補資料。不是錯誤。
+  already_exists: boolean;
+  // 這次有排進背景補歷史。新登記卻是 false，代表別檔正在補而放棄，之後按「補資料」重補即可。
+  warming: boolean;
+}
+
+// 移出個股清單的結果（DELETE /stocks/tracked/:symbol）。
+export interface RemoveTrackedStockResult {
+  symbol: string;
+  // 刪掉幾列（0 或 1）。0 代表本來就不在，不是錯誤。
+  removed: number;
+}
+
+// 補資料的結果（POST /stocks/tracked/:symbol/backfill）。
+export interface BackfillTrackedStockResult {
+  symbol: string;
+  // false 代表別檔正在補（同時只補一檔），稍後再按；不是錯誤。
+  started: boolean;
+}
