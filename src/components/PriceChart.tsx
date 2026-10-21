@@ -206,7 +206,7 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
               const mid = Math.floor(idx.length / 2);
               return {
                 key: `p${id}`,
-                text: `${patternName(pattern.kind, pattern.box_size)}${pattern.kind === 'rectangle' ? ` ${pattern.span_bars}日` : ''}${pattern.status === 'confirmed' ? '' : '?'}`,
+                text: `${patternName(pattern.kind, pattern.box_size)}${pattern.kind === 'rectangle' ? ` ${formatNumber(pattern.depth_pct, 0)}% ${pattern.span_bars}日` : ''}${pattern.status === 'confirmed' ? '' : '?'}`,
                 x: centerX(idx[mid] - start),
                 y: scale.y(pattern.pivots[mid].price) + (pattern.pivots[mid].kind === 'low' ? 20 : -10),
                 className: directionClasses(pattern.direction).fill,
