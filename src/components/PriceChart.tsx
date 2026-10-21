@@ -79,6 +79,8 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
   const [showPatterns, setShowPatterns] = useState(true);
   const [showGaps, setShowGaps] = useState(true);
   const [showBands, setShowBands] = useState(false);
+  // 量測目標線：型態確認後傳統上預期走到的價位（頸線再走一個落差）。慣例上的算術，不是預測。
+  const [showTargets, setShowTargets] = useState(true);
   // 型態分類：圖上與清單一起篩，型態一多（十八種）全畫會蓋住 K 棒。
   const [family, setFamily] = useState<PatternFamily | 'all'>('all');
   // 表格點選的那一個型態（patterns.patterns 的索引），圖上加粗、其他淡化。
@@ -195,6 +197,37 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
   // x 軸最多標六個日期，等距挑；每根都標會疊在一起。
   const labelStep = Math.max(1, Math.ceil(view.length / 6));
 
+  // 量測目標線：已確認的型態從確認日畫到碰到目標那天（沒碰到就畫到右緣）；形成中而且方向已定的畫淡一點、
+  // 標「若確認」。目標價超出目前的價格刻度時不畫線（畫出去會壓到成交量區），只在邊緣標箭頭與價位。
+  const targets = showPatterns && showTargets
+    ? overlay.shapes
+        .filter(
+          (shape) =>
+            shape.visible &&
+            (family === 'all' || patternFamily(shape.pattern.kind) === family) &&
+            shape.pattern.target != null &&
+            (shape.pattern.status === 'confirmed' || shape.pattern.direction !== 'neutral')
+        )
+        .map(({ id, pattern, confirmIdx }) => {
+          const price = pattern.target as number;
+          const hitIdx = pattern.outcome?.target_hit ? candles.findIndex((c) => c.date >= pattern.outcome!.target_hit_at) : -1;
+          const fromIdx = confirmIdx >= start ? confirmIdx : overlay.last;
+          const endX = hitIdx >= start && hitIdx <= overlay.last ? centerX(hitIdx - start) : LEFT + PLOT_WIDTH - 6;
+          const y = scale.y(price);
+          return {
+            id,
+            pattern,
+            price,
+            y,
+            inRange: y >= PRICE_TOP && y <= PRICE_BOTTOM,
+            x1: centerX(Math.max(fromIdx, start) - start),
+            x2: endX,
+            hit: hitIdx >= 0,
+            tentative: pattern.status !== 'confirmed',
+          };
+        })
+    : [];
+
   // 型態與缺口的文字標籤：一個一個放，跟已經放好的框重疊就上下挪開，挪不開的不畫。
   // 擠在一起的標籤互相蓋住比少一個標籤更難讀；完整資訊都在底下的清單與滑鼠提示裡。
   const labels = placeLabels(
@@ -214,6 +247,14 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
               };
             })
         : []),
+      ...targets.map((item) => ({
+        key: `t${item.id}`,
+        text: `${item.y < PRICE_TOP ? '↑ ' : item.y > PRICE_BOTTOM ? '↓ ' : ''}${item.tentative ? '若確認 ' : ''}目標 ${formatPrice(item.price)}${item.hit ? ' 達成' : ''}`,
+        x: item.x2 - 60,
+        y: item.y - 6,
+        className: directionClasses(item.pattern.direction).fill,
+        priority: selected === item.id ? 2 : 0,
+      })),
       ...(showGaps
         ? overlay.gaps
             .filter((item) => item.visible && item.gap.kind !== 'common')
@@ -260,6 +301,15 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
             className={`${intervalButton(showPatterns)} border border-outline-variant`}
           >
             型態{patterns ? `（${patterns.count}）` : ''}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowTargets((value) => !value)}
+            aria-pressed={showTargets}
+            title="量測目標線：頸線（突破線）再往突破方向走一個型態高度。只是慣例上的算術，沒有驗證過價格真的會走到"
+            className={`${intervalButton(showTargets)} border border-outline-variant`}
+          >
+            目標線
           </button>
           <button
             type="button"
@@ -328,7 +378,7 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
             </>
           )}
           {showGaps && <LegendSwatch className="bg-pattern-gap" label="跳空缺口" />}
-          <span>實線已確認、虛線形成中</span>
+          <span>實線已確認、虛線形成中{showPatterns && showTargets && '、點劃線是量測目標（慣例上的算術，不是預測）'}</span>
         </div>
       )}
 
@@ -568,6 +618,28 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
                 </g>
               );
             })}
+
+        {targets
+          .filter((item) => item.inRange)
+          .map((item) => {
+            const color = directionClasses(item.pattern.direction);
+            const dimmed = selected != null && selected !== item.id;
+            return (
+              <g key={`target-${item.id}`} opacity={dimmed ? 0.2 : item.tentative ? 0.55 : 0.9}>
+                <title>{`量測目標 ${formatPrice(item.price)}（頸線再走一個型態高度，慣例上的算術，不是預測）`}</title>
+                <line
+                  x1={item.x1}
+                  y1={item.y}
+                  x2={item.x2}
+                  y2={item.y}
+                  strokeWidth="1.6"
+                  strokeDasharray="8 3 2 3"
+                  className={color.stroke}
+                />
+                <circle cx={item.x2} cy={item.y} r="3.5" className={item.hit ? color.fill : 'fill-surface-container-lowest ' + color.stroke} strokeWidth="1.6" />
+              </g>
+            );
+          })}
 
         {labels.map((label) => (
           <text
