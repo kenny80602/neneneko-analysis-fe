@@ -63,13 +63,21 @@ export interface DailyQuoteHistory {
   quotes: DailyQuote[];
 }
 
-// ===== 價格型態（/stocks/daily/:symbol/patterns）=====
+// ===== 價格型態與跳空缺口（/stocks/daily/:symbol/patterns）=====
 
-// 一個轉折點。高點取當日最高價、低點取當日最低價。
-export interface PatternPivot {
-  kind: 'high' | 'low';
+// 圖上的一個點。kind 只有轉折點才有：高點取當日最高價、低點取當日最低價。
+export interface PatternPoint {
+  kind?: 'high' | 'low';
   date: string;
   price: number;
+}
+
+// 型態的一條邊界線（頸線、壓力、支撐、三角形上下緣…），from 到 to 已經延伸到確認日
+// （還沒確認就到資料最後一天）。
+export interface PatternLine {
+  label: string;
+  from: PatternPoint;
+  to: PatternPoint;
 }
 
 // 型態確認之後實際走了什麼。
@@ -79,33 +87,94 @@ export interface PatternOutcome {
   after_5_pct: number | null;
   after_20_pct: number | null;
   // 確認之後價格有沒有碰到量測目標；沒碰到時 target_hit_at 是空字串。
+  // 沒有量測目標的型態（target 為 null）一律是 false。
   target_hit: boolean;
   target_hit_at: string;
   // 確認日之後已經過了幾個交易日。
   elapsed: number;
 }
 
+// 型態的量能。傳統的量價紀律：底部型態突破要有量才算真突破，頭部型態跌破不需要量（無量下跌更可怕）。
+// 後端只給數字與有沒有達門檻，是否採信由使用者判斷。
+export interface PatternVolume {
+  // 關鍵那一天的量除以前 20 日平均量：確認日；V 型與倒 V 取轉折日前後最大的。
+  // null 是前面的資料不夠算平均。
+  key_ratio: number | null;
+  // key_ratio 是否達到 1.5 倍。
+  heavy: boolean;
+  // 後一個峰（腳、肩）附近的量是否比前一個小。雙底雙頂、三重、頭肩才有，其他是 null。
+  second_lighter: boolean | null;
+}
+
+export type PatternKind =
+  // 底部反轉
+  | 'double_bottom'
+  | 'head_shoulders_bottom'
+  | 'triple_bottom'
+  | 'rounded_bottom'
+  | 'v_bottom'
+  | 'spring'
+  // 頭部反轉
+  | 'double_top'
+  | 'head_shoulders_top'
+  | 'triple_top'
+  | 'rounded_top'
+  | 'spire_top'
+  // 中繼整理
+  | 'rectangle'
+  | 'triangle_symmetrical'
+  | 'triangle_ascending'
+  | 'triangle_descending'
+  | 'flag_bull'
+  | 'flag_bear'
+  | 'broadening';
+
 // 後端機械規則偵測到的一個型態。是現況描述，不是買賣訊號；門檻是經驗值，沒檢定過。
 export interface ChartPattern {
-  // double_bottom＝W 底（看漲反轉）、double_top＝M 頭（看跌反轉）。
-  kind: 'double_bottom' | 'double_top';
-  // forming＝形狀出來、還沒收盤突破頸線；confirmed＝已收盤突破（跌破）頸線。
+  kind: PatternKind;
+  // forming＝形狀出來、還沒收盤突破關鍵線；confirmed＝已收盤突破（跌破）。確認之前不預設立場。
   status: 'forming' | 'confirmed';
-  // 三個轉折點，依時間：W 底是 低、高、低，M 頭是 高、低、高。
-  pivots: PatternPivot[];
-  // 頸線：W 底取中間的高點，M 頭取中間的低點。
+  // 預期的方向，確認之後是實際突破的方向。neutral 是還沒突破的對稱三角、喇叭、箱型。
+  direction: 'up' | 'down' | 'neutral';
+  // 構成型態的轉折點，依時間。
+  pivots: PatternPoint[];
+  // 邊界線。
+  lines: PatternLine[];
+  // 圓弧型態的擬合曲線取樣點，其他型態是空陣列。
+  curve: PatternPoint[];
+  // 關鍵價位：頸線／壓力／支撐在確認日（還沒確認就是最後一天）的價位。
   neckline: number;
-  // 頸線到腳的落差（%）。
+  // 型態的高度（%）：頸線到腳、箱高、旗桿、三角形開口…
   depth_pct: number;
-  // 傳統量測目標（頸線再往突破方向走一個落差）。只是慣例上的算術，沒有驗證過。
-  target: number;
+  // 傳統量測目標；null 是這個型態沒有慣用的目標價。只是慣例上的算術，沒有驗證過價格真的會走到。
+  target: number | null;
   // 確認日與當日收盤；forming 時是空字串與 null。
   confirmed_at: string;
   confirm_close: number | null;
   // forming 時是 null。
   outcome: PatternOutcome | null;
+  // 資料不夠算時是 null。
+  volume: PatternVolume | null;
   // 型態期間有除權息日：日 K 沒有還原權值，除息的跳空會被當成一次下跌，轉折點與落差會失真。
   spans_ex_dividend: boolean;
+}
+
+export type GapKind = 'breakaway' | 'runaway' | 'exhaustion' | 'common';
+
+// 一個跳空缺口。分類是機械規則判斷的，邊界很主觀；竭盡缺口要等幾天看有沒有被回補，
+// 太新的缺口之後可能改判。
+export interface ChartGap {
+  kind: GapKind;
+  direction: 'up' | 'down';
+  date: string;
+  // 缺口的範圍。
+  low: number;
+  high: number;
+  // 缺口那天的量除以前 20 日平均量；null 是前面的資料不夠。
+  volume_ratio: number | null;
+  // 缺口有沒有被回補；沒回補時 filled_at 是空字串。
+  filled: boolean;
+  filled_at: string;
 }
 
 export interface ChartPatterns {
@@ -116,6 +185,8 @@ export interface ChartPatterns {
   to: string;
   count: number;
   patterns: ChartPattern[];
+  // 跳空缺口，依日期由舊到新。
+  gaps: ChartGap[];
 }
 
 export interface DailyQuoteByDate {

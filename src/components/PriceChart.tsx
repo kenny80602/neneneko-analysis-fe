@@ -1,16 +1,19 @@
 import { useMemo, useState } from 'react';
 import ChartControls from './ChartControls';
-import { ChartPattern, ChartPatterns, DailyQuote } from '../api/types';
+import { ChartPatterns, DailyQuote } from '../api/types';
+import PatternPanel from './PatternPanel';
 import { useChartViewport } from '../hooks/useChartViewport';
 import { CandleInterval, movingAverage, toCandles } from '../utils/chart';
+import { formatNumber, formatPrice, formatShareToLot } from '../utils/format';
 import {
-  DASH,
-  formatNumber,
-  formatPrice,
-  formatShareToLot,
-  formatSignedPercent,
-  quoteColor,
-} from '../utils/format';
+  directionClasses,
+  gapClasses,
+  gapName,
+  PATTERN_INFO,
+  PatternFamily,
+  patternFamily,
+  patternName,
+} from '../utils/patterns';
 
 interface PriceChartProps {
   /** 每日收盤，日期由新到舊（後端原樣）。併週併月與均線都在前端算。 */
@@ -71,14 +74,12 @@ function axisLabel(date: string, interval: CandleInterval): string {
   return interval === 'month' ? date.slice(0, 7) : date.slice(5).replace('-', '/');
 }
 
-const PATTERN_LABEL: Record<ChartPattern['kind'], { name: string; bullish: boolean }> = {
-  double_bottom: { name: 'W 底', bullish: true },
-  double_top: { name: 'M 頭', bullish: false },
-};
-
 export default function PriceChart({ quotes, patterns, patternsError }: PriceChartProps) {
   const [interval, setInterval] = useState<CandleInterval>('day');
   const [showPatterns, setShowPatterns] = useState(true);
+  const [showGaps, setShowGaps] = useState(true);
+  // 型態分類：圖上與清單一起篩，型態一多（十八種）全畫會蓋住 K 棒。
+  const [family, setFamily] = useState<PatternFamily | 'all'>('all');
   // 表格點選的那一個型態（patterns.patterns 的索引），圖上加粗、其他淡化。
   const [selected, setSelected] = useState<number | null>(null);
 
@@ -130,20 +131,30 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
     };
   }, [view, averages]);
 
-  // 把每個型態對到目前週期的 K 棒：日期取「第一根收盤日 ≥ 該日」的 K 棒，
+  // 把型態與缺口對到目前週期的 K 棒：日期取「第一根收盤日 ≥ 該日」的 K 棒，
   // 週線與月線的 K 棒日期是那一週／那一月最後一個交易日，所以轉折點會落在它所屬的那一根。
-  // 三個轉折點都在可視範圍內才畫：只畫一半的型態比不畫更容易讓人讀錯。
-  const patternShapes = useMemo(() => {
-    if (!patterns) return [];
+  // 型態的第一個與最後一個轉折點都在可視範圍內才畫：只畫一半的型態比不畫更容易讓人讀錯。
+  const overlay = useMemo(() => {
     const indexOf = (date: string) => candles.findIndex((candle) => candle.date >= date);
     const last = start + count - 1;
-    return patterns.patterns.map((pattern, id) => {
+    const shapes = (patterns?.patterns ?? []).map((pattern, id) => {
       const idx = pattern.pivots.map((pivot) => indexOf(pivot.date));
       const confirmIdx = pattern.confirmed_at ? indexOf(pattern.confirmed_at) : -1;
-      const visible = idx.length === 3 && idx.every((i) => i >= start && i <= last);
+      const visible = idx.length > 0 && idx[0] >= start && idx[idx.length - 1] <= last && idx.every((i) => i >= 0);
       return { id, pattern, idx, confirmIdx, visible };
     });
+    const gaps = (patterns?.gaps ?? []).map((gap) => {
+      const idx = indexOf(gap.date);
+      const fillIdx = gap.filled ? indexOf(gap.filled_at) : candles.length - 1;
+      return { gap, idx, fillIdx, visible: idx >= start && idx <= last };
+    });
+    return { shapes, gaps, last };
   }, [patterns, candles, start, count]);
+
+  const visibleIds = useMemo(
+    () => new Set(overlay.shapes.filter((shape) => shape.visible).map((shape) => shape.id)),
+    [overlay]
+  );
 
   const intervalButton = (active: boolean) =>
     active
@@ -198,10 +209,19 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
             type="button"
             onClick={() => setShowPatterns((value) => !value)}
             aria-pressed={showPatterns}
-            title="W 底與 M 頭是後端用機械規則偵測的，包含已確認的歷史型態與目前形成中的"
+            title="價格型態是後端用機械規則偵測的，包含已確認的歷史型態與目前形成中的"
             className={`${intervalButton(showPatterns)} border border-outline-variant`}
           >
             型態{patterns ? `（${patterns.count}）` : ''}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowGaps((value) => !value)}
+            aria-pressed={showGaps}
+            title="跳空缺口：突破、逃逸、竭盡、普通"
+            className={`${intervalButton(showGaps)} border border-outline-variant`}
+          >
+            缺口{patterns ? `（${patterns.gaps.length}）` : ''}
           </button>
           <div className="flex gap-1 bg-surface-container-low p-1 rounded-xl border border-outline-variant">
           {INTERVALS.map((item) => (
@@ -340,55 +360,131 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
           );
         })}
 
+        {showGaps &&
+          overlay.gaps
+            .filter((item) => item.visible)
+            .map(({ gap, idx, fillIdx }) => {
+              const color = gapClasses(gap);
+              const endIdx = Math.min(Math.max(fillIdx, idx), overlay.last);
+              const x1 = centerX(idx - start) - step / 2;
+              const x2 = centerX(endIdx - start) + step / 2;
+              const yTop = scale.y(gap.high);
+              const yBottom = scale.y(gap.low);
+              const notable = gap.kind !== 'common';
+              return (
+                <g key={gap.date} opacity={gap.filled ? 0.55 : 1}>
+                  <title>{`${gap.date} ${gapName(gap.kind)}（${gap.direction === 'up' ? '向上' : '向下'}）${formatPrice(
+                    gap.low
+                  )} ～ ${formatPrice(gap.high)}${gap.filled ? `，${gap.filled_at} 回補` : '，尚未回補'}`}</title>
+                  <rect
+                    x={x1}
+                    y={yTop}
+                    width={Math.max(2, x2 - x1)}
+                    height={Math.max(2, yBottom - yTop)}
+                    className={`${color.fill} ${color.stroke}`}
+                    fillOpacity={notable ? 0.22 : 0.1}
+                    strokeWidth="1"
+                    strokeDasharray={gap.filled ? '3 3' : undefined}
+                  />
+                  {notable && (
+                    <text
+                      x={x1}
+                      y={gap.direction === 'up' ? yBottom + 14 : yTop - 5}
+                      fontSize="12"
+                      className={`font-body-sm ${color.fill}`}
+                    >
+                      {gapName(gap.kind)}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+
         {showPatterns &&
-          patternShapes
-            .filter((shape) => shape.visible)
+          overlay.shapes
+            .filter((shape) => shape.visible && (family === 'all' || patternFamily(shape.pattern.kind) === family))
             .map(({ id, pattern, idx, confirmIdx }) => {
-              const { name, bullish } = PATTERN_LABEL[pattern.kind];
-              // 看漲的 W 底用漲色、看跌的 M 頭用跌色，跟 K 棒同一組色票。
-              const stroke = bullish ? 'stroke-quote-up' : 'stroke-quote-down';
-              const fill = bullish ? 'fill-quote-up' : 'fill-quote-down';
+              const info = PATTERN_INFO[pattern.kind];
+              const color = directionClasses(pattern.direction);
               const isSelected = selected === id;
               const dimmed = selected != null && !isSelected;
-              const lastIdx = start + count - 1;
+              const confirmed = pattern.status === 'confirmed';
+              const lastIdx = overlay.last;
               const xs = idx.map((i) => centerX(i - start));
               const ys = pattern.pivots.map((pivot) => scale.y(pivot.price));
-              const neckEnd = confirmIdx >= 0 ? Math.min(confirmIdx, lastIdx) : lastIdx;
-              const neckY = scale.y(pattern.neckline);
-              const confirmed = pattern.status === 'confirmed';
+              const mid = Math.floor(xs.length / 2);
+              const labelAbove = pattern.pivots[mid].kind !== 'low';
+              const candleIndexOf = (date: string) => candles.findIndex((candle) => candle.date >= date);
+
+              // 邊界線：端點若超出可視範圍就裁在邊界上，價位照直線內插，不然線會畫到圖外。
+              const lines = pattern.lines
+                .map((line) => {
+                  const fi = candleIndexOf(line.from.date);
+                  const ti = candleIndexOf(line.to.date);
+                  if (fi < 0 || ti < 0 || ti < start || fi > lastIdx) return null;
+                  const priceAt = (i: number) =>
+                    ti === fi ? line.from.price : line.from.price + ((line.to.price - line.from.price) * (i - fi)) / (ti - fi);
+                  const a = Math.max(fi, start);
+                  const b = Math.min(ti, lastIdx);
+                  return { label: line.label, x1: centerX(a - start), y1: scale.y(priceAt(a)), x2: centerX(b - start), y2: scale.y(priceAt(b)) };
+                })
+                .filter((line): line is NonNullable<typeof line> => line != null);
+
+              const curve = pattern.curve
+                .map((point) => ({ i: candleIndexOf(point.date), price: point.price }))
+                .filter((point) => point.i >= start && point.i <= lastIdx)
+                .map((point) => `${centerX(point.i - start)},${scale.y(point.price)}`)
+                .join(' ');
+
               return (
                 <g key={id} opacity={dimmed ? 0.25 : 1}>
                   <title>
-                    {`${name}${confirmed ? '（已確認）' : '（形成中）'} 頸線 ${formatPrice(pattern.neckline)} 目標 ${formatPrice(pattern.target)}`}
+                    {`${patternName(pattern.kind)}${confirmed ? '（已確認）' : '（形成中）'} 關鍵價 ${formatPrice(
+                      pattern.neckline
+                    )}${pattern.target != null ? ` 目標 ${formatPrice(pattern.target)}` : ''}`}
                   </title>
-                  <line
-                    x1={xs[0]}
-                    y1={neckY}
-                    x2={centerX(neckEnd - start)}
-                    y2={neckY}
-                    strokeWidth="1.5"
-                    strokeDasharray="3 4"
-                    className={stroke}
-                  />
-                  <polyline
-                    points={xs.map((x, i) => `${x},${ys[i]}`).join(' ')}
-                    fill="none"
-                    strokeWidth={isSelected ? 3.5 : 2.2}
-                    strokeLinejoin="round"
-                    strokeDasharray={confirmed ? undefined : '7 5'}
-                    className={stroke}
-                  />
+                  {lines.map((line) => (
+                    <line
+                      key={line.label}
+                      x1={line.x1}
+                      y1={line.y1}
+                      x2={line.x2}
+                      y2={line.y2}
+                      strokeWidth={isSelected ? 2 : 1.5}
+                      strokeDasharray="3 4"
+                      className={color.stroke}
+                    />
+                  ))}
+                  {curve && (
+                    <polyline
+                      points={curve}
+                      fill="none"
+                      strokeWidth={isSelected ? 3.5 : 2.2}
+                      strokeDasharray={confirmed ? undefined : '7 5'}
+                      className={color.stroke}
+                    />
+                  )}
+                  {info?.line !== false && !curve && (
+                    <polyline
+                      points={xs.map((x, i) => `${x},${ys[i]}`).join(' ')}
+                      fill="none"
+                      strokeWidth={isSelected ? 3.5 : 2.2}
+                      strokeLinejoin="round"
+                      strokeDasharray={confirmed ? undefined : '7 5'}
+                      className={color.stroke}
+                    />
+                  )}
                   {xs.map((x, i) => (
-                    <circle key={i} cx={x} cy={ys[i]} r={isSelected ? 5 : 3.5} className={fill} />
+                    <circle key={i} cx={x} cy={ys[i]} r={isSelected ? 5 : 3.5} className={color.fill} />
                   ))}
                   <text
-                    x={xs[1]}
-                    y={bullish ? ys[1] - 10 : ys[1] + 20}
+                    x={xs[mid]}
+                    y={labelAbove ? ys[mid] - 10 : ys[mid] + 20}
                     fontSize="13"
                     textAnchor="middle"
-                    className={`font-body-sm ${fill}`}
+                    className={`font-body-sm ${color.fill}`}
                   >
-                    {name}
+                    {patternName(pattern.kind)}
                     {confirmed ? '' : '?'}
                   </text>
                   {confirmed && confirmIdx >= start && confirmIdx <= lastIdx && pattern.confirm_close != null && (
@@ -397,7 +493,7 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
                       cy={scale.y(pattern.confirm_close)}
                       r="6"
                       strokeWidth="2.5"
-                      className={`fill-surface-container-lowest ${stroke}`}
+                      className={`fill-surface-container-lowest ${color.stroke}`}
                     />
                   )}
                 </g>
@@ -444,8 +540,15 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
       {patternsError && (
         <p className="font-body-sm text-body-sm text-error">型態偵測失敗：{patternsError}（K 線不受影響）</p>
       )}
-      {showPatterns && patterns && (
-        <PatternTable patterns={patterns} shapes={patternShapes} selected={selected} onSelect={setSelected} />
+      {(showPatterns || showGaps) && patterns && (
+        <PatternPanel
+          patterns={patterns}
+          visibleIds={visibleIds}
+          family={family}
+          onFamily={setFamily}
+          selected={selected}
+          onSelect={setSelected}
+        />
       )}
 
       <p className="font-body-sm text-body-sm text-on-surface-variant">
@@ -453,130 +556,5 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
         當日無成交的交易日不畫，收盤價未還原權值，跨除權息日的均線與漲幅會有落差。
       </p>
     </section>
-  );
-}
-
-interface PatternShape {
-  id: number;
-  pattern: ChartPattern;
-  visible: boolean;
-}
-
-interface PatternTableProps {
-  patterns: ChartPatterns;
-  shapes: PatternShape[];
-  selected: number | null;
-  onSelect: (id: number | null) => void;
-}
-
-/**
- * 型態清單：最近的排最前面。圖上只畫得出目前視窗裡的，這張表列出整段資料偵測到的全部，
- * 點一列會在圖上加粗那個型態（不在視窗內的要先縮放或拖曳過去）。
- */
-function PatternTable({ patterns, shapes, selected, onSelect }: PatternTableProps) {
-  const rows = [...shapes].reverse();
-  const th = 'p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap';
-  const td = 'p-2 py-2 text-right font-data-md text-data-md whitespace-nowrap';
-
-  return (
-    <div className="flex flex-col gap-stack-sm">
-      <h4 className="font-body-md text-body-md text-on-surface font-semibold">
-        價格型態（W 底／M 頭）
-        <span className="font-body-sm text-body-sm text-on-surface-variant font-normal">
-          　分析 {patterns.bars} 根日 K{patterns.from && `（${patterns.from} ～ ${patterns.to}）`}
-        </span>
-      </h4>
-
-      {rows.length === 0 ? (
-        <p className="font-body-sm text-body-sm text-on-surface-variant">
-          這段資料沒有偵測到型態。這很常見，不代表系統壞了：一個型態動輒幾十到上百根日 K 才成形，
-          落地的收盤行情又只有自選股、且從開始收集那天才有，根數不夠或這段走勢本來就沒有符合規則的雙底雙頂，都會是空的。
-        </p>
-      ) : (
-        <div className="overflow-x-auto rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm">
-          <table className="w-full text-left border-collapse">
-            <thead className="bg-surface-container-low border-b border-outline-variant">
-              <tr>
-                <th className={`${th} pl-4`}>型態</th>
-                <th className={th}>兩隻腳</th>
-                <th className={`${th} text-right`}>頸線</th>
-                <th className={`${th} text-right`}>落差</th>
-                <th className={th}>確認日</th>
-                <th className={`${th} text-right`}>確認後 5 日</th>
-                <th className={`${th} text-right`}>確認後 20 日</th>
-                <th className={`${th} text-right`}>量測目標</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-outline-variant/50">
-              {rows.map(({ id, pattern, visible }) => {
-                const { name, bullish } = PATTERN_LABEL[pattern.kind];
-                const outcome = pattern.outcome;
-                const confirmed = pattern.status === 'confirmed';
-                return (
-                  <tr
-                    key={id}
-                    onClick={() => onSelect(selected === id ? null : id)}
-                    className={`cursor-pointer hover:bg-surface-container-low/50 transition-colors ${
-                      selected === id ? 'bg-surface-container-low' : ''
-                    }`}
-                  >
-                    <td className="p-2 pl-4 py-2 font-body-md text-body-md whitespace-nowrap">
-                      <span className={bullish ? 'text-quote-up' : 'text-quote-down'}>{name}</span>
-                      <span className="text-on-surface-variant font-body-sm text-body-sm">
-                        {bullish ? '（看漲）' : '（看跌）'}
-                      </span>
-                      {!confirmed && (
-                        <span className="ml-2 px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant font-body-sm text-body-sm">
-                          形成中
-                        </span>
-                      )}
-                      {pattern.spans_ex_dividend && (
-                        <span
-                          className="ml-2 px-1.5 py-0.5 rounded bg-surface-container text-error font-body-sm text-body-sm"
-                          title="收盤價未還原權值，除息的跳空會被當成一次下跌，轉折點與落差會失真"
-                        >
-                          含除權息
-                        </span>
-                      )}
-                      {!visible && (
-                        <span className="ml-2 text-outline font-body-sm text-body-sm">不在目前顯示範圍</span>
-                      )}
-                    </td>
-                    <td className="p-2 py-2 font-data-md text-data-md whitespace-nowrap">
-                      {pattern.pivots[0].date.slice(5)} ～ {pattern.pivots[2].date.slice(5)}
-                    </td>
-                    <td className={td}>{formatPrice(pattern.neckline)}</td>
-                    <td className={td}>{formatNumber(pattern.depth_pct, 1)}%</td>
-                    <td className="p-2 py-2 font-data-md text-data-md whitespace-nowrap">
-                      {confirmed ? pattern.confirmed_at : DASH}
-                    </td>
-                    <td className={`${td} ${outcome ? quoteColor(outcome.after_5_pct) : ''}`}>
-                      {outcome ? formatSignedPercent(outcome.after_5_pct) : DASH}
-                    </td>
-                    <td className={`${td} ${outcome ? quoteColor(outcome.after_20_pct) : ''}`}>
-                      {outcome ? formatSignedPercent(outcome.after_20_pct) : DASH}
-                    </td>
-                    <td className={td}>
-                      {formatPrice(pattern.target)}
-                      <span className="text-on-surface-variant font-body-sm text-body-sm">
-                        {!outcome ? '' : outcome.target_hit ? `　${outcome.target_hit_at.slice(5)} 達成` : '　未達成'}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <p className="font-body-sm text-body-sm text-on-surface-variant">
-        型態是後端用機械規則從日 K 的轉折點偵測的：W 底／M 頭要兩隻腳接近、頸線落差夠深、之前有一段反向趨勢，
-        並以<span className="text-on-surface">收盤價</span>突破（跌破）頸線才算確認；實線是已確認、虛線加問號是形成中，
-        圓圈是確認那天的收盤。破折號代表資料還沒走到那麼遠或尚未確認，不是 0。
-        這是現況描述，不是買賣訊號：門檻是經驗值、沒有檢定過出現後的表現，單一檔的幾次結果沒有統計意義，
-        「量測目標」只是慣例上的算術（頸線再走一個落差），不保證會到。
-      </p>
-    </div>
   );
 }
