@@ -187,6 +187,25 @@ export default function PatternPanel({
   );
 }
 
+/**
+ * 一句話交代「用了幾天」：箱型整理看從頭到突破（或到今天）整理了幾個交易日，其他型態看成形用了幾個交易日。
+ * 交易日不是日曆天——週末與休市不算，所以比兩個日期相減的天數少。
+ */
+function durationText(pattern: ChartPattern): string {
+  if (pattern.kind === 'rectangle') {
+    return pattern.status === 'confirmed'
+      ? `整理 ${pattern.span_bars} 個交易日後突破`
+      : `已整理 ${pattern.span_bars} 個交易日`;
+  }
+  return `成形 ${pattern.duration_bars} 個交易日`;
+}
+
+function durationHint(pattern: ChartPattern): string {
+  return `轉折點之間 ${pattern.duration_bars} 個交易日；從第一個轉折點算到${
+    pattern.status === 'confirmed' ? '確認日' : '資料最後一天'
+  }共 ${pattern.span_bars} 個交易日（交易日，不含週末與休市）`;
+}
+
 interface PatternRowProps {
   pattern: ChartPattern;
   visible: boolean;
@@ -229,6 +248,9 @@ function PatternRow({ pattern, visible, selected, onClick }: PatternRowProps) {
       </td>
       <td className="p-2 py-2 font-data-md text-data-md whitespace-nowrap">
         {first.date.slice(5)} ～ {last.date.slice(5)}
+        <div className="font-body-sm text-body-sm text-on-surface-variant" title={durationHint(pattern)}>
+          {durationText(pattern)}
+        </div>
       </td>
       <td className={TD}>{formatPrice(pattern.neckline)}</td>
       <td className={TD}>{formatNumber(pattern.depth_pct, 1)}%</td>

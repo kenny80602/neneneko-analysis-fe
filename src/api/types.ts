@@ -155,6 +155,11 @@ export interface ChartPattern {
   lines: PatternLine[];
   // 圓弧型態的擬合曲線取樣點，其他型態是空陣列。
   curve: PatternPoint[];
+  // 型態成形用了幾個交易日（第一個到最後一個轉折點）；span_bars 是從第一個轉折點到確認日
+  // （還沒確認就到資料最後一天）共幾個交易日。箱型整理「整理了幾天」看 span_bars，
+  // 形成中的箱子會隨新的交易日增加。
+  duration_bars: number;
+  span_bars: number;
   // 箱型整理的大小分級：narrow 窄幅約 3～8%、normal 一般 8～15%、wide 寬幅 15～25%、large 大型 25% 以上。
   // 依箱高分級，是實務上的粗略參考不是固定標準；其他型態是空字串。
   box_size: '' | 'narrow' | 'normal' | 'wide' | 'large';
