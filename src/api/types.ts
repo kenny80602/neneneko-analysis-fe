@@ -302,6 +302,26 @@ export interface ChipPeriod {
   reasons: string[];
 }
 
+// 一個壓力或支撐價位（一個區間）。做法是把已確認的轉折點（高點低點一起）依價位聚成區間，碰過至少兩次才算。
+// 歷史統計不是預測：碰過幾次不代表這次會擋住，突破或跌破要看收盤。
+export interface PriceLevel {
+  // resistance＝壓力（在最新收盤上方）、support＝支撐（下方）。被跌破的支撐會變成壓力，反之亦然，
+  // 所以是壓力還是支撐只看它現在在收盤價的哪一邊。
+  kind: 'resistance' | 'support';
+  // 區間內轉折點價位的平均；low／high 是區間的下緣與上緣。
+  price: number;
+  low: number;
+  high: number;
+  // 這個區間被轉折過幾次，第一次與最近一次的日期。
+  touches: number;
+  first_touch: string;
+  last_touch: string;
+  // 相對最新收盤的距離（%）：壓力是正的、支撐是負的。
+  distance_pct: number;
+  // 最新收盤落在這個區間裡面。
+  in_zone: boolean;
+}
+
 export interface ChartPatterns {
   symbol: string;
   // 這次分析的有成交日 K 根數與涵蓋區間。根數太少時偵測不到是正常的。
@@ -312,6 +332,9 @@ export interface ChartPatterns {
   patterns: ChartPattern[];
   // 跳空缺口，依日期由舊到新。
   gaps: ChartGap[];
+  // 最新收盤價，與現在的壓力與支撐（上下各最多兩個，離現價近的先）。沒有碰過兩次以上的價位時 levels 是空陣列。
+  last_close: number;
+  levels: PriceLevel[];
   // 跌破前低與下跌趨勢的期間。機械規則的現況描述，不是賣出建議。
   trend_breaks: TrendBreak[];
   downtrends: TrendPeriod[];

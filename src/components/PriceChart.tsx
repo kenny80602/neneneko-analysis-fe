@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import ChartControls from './ChartControls';
-import { ChartPatterns, DailyQuote } from '../api/types';
+import { ChartPatterns, DailyQuote, PriceLevel } from '../api/types';
 import PatternPanel from './PatternPanel';
 import { useChartViewport } from '../hooks/useChartViewport';
 import { bollinger, CandleInterval, movingAverage, toCandles } from '../utils/chart';
@@ -83,6 +83,8 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
   const [showChip, setShowChip] = useState(true);
   // 下跌趨勢與跌破前低：機械規則的現況描述，不是賣出建議。
   const [showTrend, setShowTrend] = useState(true);
+  // 現在的壓力與支撐：歷史轉折點聚出來的價位區間，不是預測。
+  const [showLevels, setShowLevels] = useState(true);
   // 量測目標線：型態確認後傳統上預期走到的價位（頸線再走一個落差）。慣例上的算術，不是預測。
   const [showTargets, setShowTargets] = useState(true);
   // 型態分類：圖上與清單一起篩，型態一多（十八種）全畫會蓋住 K 棒。
@@ -334,6 +336,15 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
           </button>
           <button
             type="button"
+            onClick={() => setShowLevels((value) => !value)}
+            aria-pressed={showLevels}
+            title="現在的壓力與支撐：把已確認的高低轉折點依價位聚成區間，碰過至少兩次才算，取離最新收盤最近的上下各兩個。歷史統計不是預測，突破或跌破要看收盤"
+            className={`${intervalButton(showLevels)} border border-outline-variant`}
+          >
+            支撐壓力
+          </button>
+          <button
+            type="button"
             onClick={() => setShowTrend((value) => !value)}
             aria-pressed={showTrend}
             title="下跌趨勢：高點越來越低、低點越來越低、收盤在 60 日均線之下且均線下彎。跌破前低：收盤跌破最近一個已確認的波段低點。機械規則的現況描述，不是賣出建議；全市場回測只有「已在下跌趨勢中又跌破前低」之後明顯偏弱，其餘差距小"
@@ -416,7 +427,7 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
         })}
       </div>
 
-      {patterns && (showPatterns || showGaps || showChip || showTrend) && (
+      {patterns && (showPatterns || showGaps || showChip || showTrend || showLevels) && (
         <div className="flex flex-wrap items-center gap-stack-md font-body-sm text-body-sm text-on-surface-variant">
           {showPatterns && (
             <>
@@ -426,6 +437,8 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
             </>
           )}
           {showGaps && <LegendSwatch className="bg-pattern-gap" label="跳空缺口" />}
+          {showLevels && <LegendSwatch className="bg-level-resistance" label="壓力" />}
+          {showLevels && <LegendSwatch className="bg-level-support" label="支撐" />}
           {showTrend && <LegendSwatch className="bg-pattern-down/30" label="下跌趨勢（▼＝跌破前低）" />}
           {showChip && <LegendSwatch className="bg-primary/30" label="籌碼亂的期間" />}
           <span>實線已確認、虛線形成中{showPatterns && showTargets && '、點劃線是量測目標（慣例上的算術，不是預測）'}</span>
@@ -463,6 +476,52 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
             </text>
           </g>
         ))}
+
+        {showLevels &&
+          (patterns?.levels ?? [])
+            .filter((level) => level.low <= scale.max && level.high >= scale.min)
+            .map((level) => {
+              const isRes = level.kind === 'resistance';
+              const yTop = Math.max(PRICE_TOP, scale.y(level.high));
+              const yBottom = Math.min(PRICE_BOTTOM, scale.y(level.low));
+              const y = scale.y(level.price);
+              return (
+                <g key={`level-${level.kind}-${level.price}`}>
+                  <title>{`${isRes ? '壓力' : '支撐'} ${formatPrice(level.price)}（區間 ${formatPrice(level.low)} ～ ${formatPrice(
+                    level.high
+                  )}），碰過 ${level.touches} 次，最近一次 ${level.last_touch}，距離最新收盤 ${level.distance_pct > 0 ? '+' : ''}${level.distance_pct.toFixed(1)}%`}</title>
+                  <rect
+                    x={LEFT}
+                    y={yTop}
+                    width={PLOT_WIDTH}
+                    height={Math.max(2, yBottom - yTop)}
+                    className={isRes ? 'fill-level-resistance' : 'fill-level-support'}
+                    fillOpacity="0.1"
+                  />
+                  <line
+                    x1={LEFT}
+                    y1={y}
+                    x2={LEFT + PLOT_WIDTH}
+                    y2={y}
+                    strokeWidth="1.4"
+                    strokeDasharray="10 4"
+                    className={isRes ? 'stroke-level-resistance' : 'stroke-level-support'}
+                    opacity="0.85"
+                  />
+                  <text
+                    x={LEFT + 4}
+                    y={y - 5}
+                    fontSize="12"
+                    paintOrder="stroke"
+                    strokeWidth="3"
+                    strokeLinejoin="round"
+                    className={`font-body-sm stroke-surface-container-lowest ${isRes ? 'fill-level-resistance' : 'fill-level-support'}`}
+                  >
+                    {`${isRes ? '壓力' : '支撐'} ${formatPrice(level.price)} ×${level.touches}`}
+                  </text>
+                </g>
+              );
+            })}
 
         {showTrend &&
           overlay.downtrends
@@ -846,6 +905,7 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
       {patternsError && (
         <p className="font-body-sm text-body-sm text-error">型態偵測失敗：{patternsError}（K 線不受影響）</p>
       )}
+      {showLevels && patterns && <LevelPanel patterns={patterns} />}
       {(showPatterns || showGaps) && patterns && (
         <PatternPanel
           patterns={patterns}
@@ -908,4 +968,54 @@ function placeLabels(items: LabelInput[], minX: number, maxX: number, minY: numb
     }
   }
   return placed;
+}
+
+/**
+ * 現在的壓力與支撐清單：離最新收盤最近的上下各最多兩個，附距離、碰過幾次、最近一次。
+ * 被跌破的支撐會變成壓力，所以是壓力還是支撐只看它現在在收盤價的哪一邊。
+ */
+function LevelPanel({ patterns }: { patterns: ChartPatterns }) {
+  const resistances = patterns.levels.filter((level) => level.kind === 'resistance');
+  const supports = patterns.levels.filter((level) => level.kind === 'support');
+  const row = (level: PriceLevel) => {
+    const isRes = level.kind === 'resistance';
+    return (
+      <li key={`${level.kind}-${level.price}`} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+        <span className={`font-body-md text-body-md font-semibold ${isRes ? 'text-level-resistance' : 'text-level-support'}`}>
+          {isRes ? '壓力' : '支撐'}
+        </span>
+        <span className="font-data-md text-data-md text-on-surface">{formatPrice(level.price)}</span>
+        <span className="font-body-sm text-body-sm text-on-surface-variant">
+          區間 {formatPrice(level.low)} ～ {formatPrice(level.high)}，距離 {level.distance_pct > 0 ? '+' : ''}
+          {level.distance_pct.toFixed(1)}%，碰過 {level.touches} 次（{level.first_touch.slice(2)} ～ {level.last_touch.slice(2)}）
+          {level.in_zone && '，現價就在這個區間裡'}
+        </span>
+      </li>
+    );
+  };
+  return (
+    <div className="flex flex-col gap-stack-sm">
+      <h4 className="font-body-md text-body-md text-on-surface font-semibold">
+        現在的壓力與支撐
+        <span className="font-body-sm text-body-sm text-on-surface-variant font-normal">
+          　最新收盤 {formatPrice(patterns.last_close)}
+        </span>
+      </h4>
+      {patterns.levels.length === 0 ? (
+        <p className="font-body-sm text-body-sm text-on-surface-variant">
+          找不到碰過兩次以上的價位——資料太短，或這一段走勢沒有在同一個價位反覆轉折過（例如一路創高沒有壓力、一路探底沒有支撐）。
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-1">
+          {resistances.slice().reverse().map(row)}
+          {supports.map(row)}
+        </ul>
+      )}
+      <p className="font-body-sm text-body-sm text-on-surface-variant">
+        做法是把已確認的高低轉折點依價位聚成區間（區間寬度跟著這一檔的波動走），碰過至少兩次才算，上下各取離現價最近的兩個。
+        高點與低點放在一起聚：被跌破的支撐會變成壓力、被突破的壓力會變成支撐。這是歷史轉折點的統計，不是預測——
+        碰過幾次不代表這次會擋住，突破或跌破要看收盤；日 K 沒有還原權值，很久以前的價位（跨過除權息）要保留一點懷疑。
+      </p>
+    </div>
+  );
 }

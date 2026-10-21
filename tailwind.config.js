@@ -44,6 +44,8 @@ module.exports = {
         "on-tertiary-container": "rgb(var(--c-on-tertiary-container) / <alpha-value>)",
         "on-tertiary-fixed": "rgb(var(--c-on-tertiary-fixed) / <alpha-value>)",
         "on-tertiary-fixed-variant": "rgb(var(--c-on-tertiary-fixed-variant) / <alpha-value>)",
+        "level-resistance": "rgb(var(--c-level-resistance) / <alpha-value>)",
+        "level-support": "rgb(var(--c-level-support) / <alpha-value>)",
         "outline": "rgb(var(--c-outline) / <alpha-value>)",
         "outline-variant": "rgb(var(--c-outline-variant) / <alpha-value>)",
         "primary": "rgb(var(--c-primary) / <alpha-value>)",

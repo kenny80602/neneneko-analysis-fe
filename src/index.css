@@ -62,6 +62,9 @@
     --c-pattern-down: 200 80 0;
     --c-pattern-neutral: 123 31 162;
     --c-pattern-gap: 176 112 0;
+    /* 壓力支撐：靛藍與洋紅，避開 K 棒的紅綠與型態用的青、橘、紫、琥珀 */
+    --c-level-support: 37 99 235;
+    --c-level-resistance: 192 38 122;
     --c-secondary: 0 109 55;
     --c-secondary-container: 123 248 161;
     --c-secondary-fixed: 126 251 164;
@@ -122,6 +125,8 @@
     --c-pattern-down: 255 171 64;
     --c-pattern-neutral: 206 147 216;
     --c-pattern-gap: 255 202 40;
+    --c-level-support: 130 177 255;
+    --c-level-resistance: 255 128 171;
     --c-secondary: 95 219 150;
     --c-secondary-container: 0 82 42;
     --c-secondary-fixed: 126 251 164;
