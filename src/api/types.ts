@@ -197,6 +197,13 @@ export interface ChartPattern {
   chip: PatternChip | null;
   // 型態期間有除權息日：日 K 沒有還原權值，除息的跳空會被當成一次下跌，轉折點與落差會失真。
   spans_ex_dividend: boolean;
+  // 確認之後 10 個交易日內收盤又回到突破線的另一側（超過一個跟波動連動的門檻）：型態失敗。
+  // status 仍是 confirmed（確認過是事實），只是後來失敗；failed_at 是第一次回去的那天，沒失敗是空字串。
+  failed: boolean;
+  failed_at: string;
+  // 是不是「主要判讀」：同一類別同一方向、涵蓋日期重疊過半的型態，只有最晚結束的那個是主要的，
+  // 其餘是同一段走勢的不同名字；失敗的一律不是。畫面預設只顯示主要判讀。
+  primary: boolean;
 }
 
 export type GapKind = 'breakaway' | 'runaway' | 'exhaustion' | 'common';

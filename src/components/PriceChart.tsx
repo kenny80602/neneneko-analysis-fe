@@ -87,6 +87,9 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
   const [showLevels, setShowLevels] = useState(true);
   // 量測目標線：型態確認後傳統上預期走到的價位（頸線再走一個落差）。慣例上的算術，不是預測。
   const [showTargets, setShowTargets] = useState(true);
+  // 預設只畫「主要判讀」：同一段走勢常被好幾個型態名稱重複認出來，全畫會蓋成一團。
+  // 展開看全部時，失敗的型態用灰色淡化。
+  const [showAllPatterns, setShowAllPatterns] = useState(false);
   // 型態分類：圖上與清單一起篩，型態一多（十八種）全畫會蓋住 K 棒。
   const [family, setFamily] = useState<PatternFamily | 'all'>('all');
   // 表格點選的那一個型態（patterns.patterns 的索引），圖上加粗、其他淡化。
@@ -225,6 +228,8 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
           (shape) =>
             shape.visible &&
             (family === 'all' || patternFamily(shape.pattern.kind) === family) &&
+            (showAllPatterns || shape.pattern.primary) &&
+            !shape.pattern.failed && // 失敗的型態目標已經不成立，不畫
             shape.pattern.target != null &&
             (shape.pattern.status === 'confirmed' || shape.pattern.direction !== 'neutral')
         )
@@ -254,16 +259,17 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
     [
       ...(showPatterns
         ? overlay.shapes
-            .filter((shape) => shape.visible && (family === 'all' || patternFamily(shape.pattern.kind) === family))
+            .filter((shape) => shape.visible && (family === 'all' || patternFamily(shape.pattern.kind) === family) &&
+              (showAllPatterns || shape.pattern.primary))
             .map(({ id, pattern, idx }) => {
               const mid = Math.floor(idx.length / 2);
               return {
                 key: `p${id}`,
-                text: `${patternName(pattern.kind, pattern.box_size)}${pattern.kind === 'rectangle' ? ` ${formatNumber(pattern.depth_pct, 0)}% ${pattern.span_bars}日` : ''}${pattern.status === 'confirmed' ? '' : '?'}`,
+                text: `${patternName(pattern.kind, pattern.box_size)}${pattern.kind === 'rectangle' ? ` ${formatNumber(pattern.depth_pct, 0)}% ${pattern.span_bars}日` : ''}${pattern.failed ? '·失敗' : pattern.status === 'confirmed' ? '' : '?'}`,
                 x: centerX(idx[mid] - start),
                 y: scale.y(pattern.pivots[mid].price) + (pattern.pivots[mid].kind === 'low' ? 20 : -10),
-                className: directionClasses(pattern.direction).fill,
-                priority: selected === id ? 2 : 1,
+                className: pattern.failed ? 'fill-outline' : directionClasses(pattern.direction).fill,
+                priority: selected === id ? 2 : pattern.failed ? 0 : 1,
               };
             })
         : []),
@@ -713,10 +719,14 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
 
         {showPatterns &&
           overlay.shapes
-            .filter((shape) => shape.visible && (family === 'all' || patternFamily(shape.pattern.kind) === family))
+            .filter((shape) => shape.visible && (family === 'all' || patternFamily(shape.pattern.kind) === family) &&
+              (showAllPatterns || shape.pattern.primary))
             .map(({ id, pattern, idx, confirmIdx }) => {
               const info = PATTERN_INFO[pattern.kind];
-              const color = directionClasses(pattern.direction);
+              // 失敗的型態（只有展開全部時才會畫）用灰色淡化：確認過，但後來被打回來了。
+              const color = pattern.failed
+                ? { stroke: 'stroke-outline', fill: 'fill-outline', text: 'text-outline' }
+                : directionClasses(pattern.direction);
               const isSelected = selected === id;
               const dimmed = selected != null && !isSelected;
               const confirmed = pattern.status === 'confirmed';
@@ -746,9 +756,9 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
                 .join(' ');
 
               return (
-                <g key={id} opacity={dimmed ? 0.25 : 1}>
+                <g key={id} opacity={dimmed ? 0.25 : pattern.failed ? 0.5 : 1}>
                   <title>
-                    {`${patternName(pattern.kind, pattern.box_size)}${confirmed ? '（已確認）' : '（形成中）'} 關鍵價 ${formatPrice(
+                    {`${patternName(pattern.kind, pattern.box_size)}${pattern.failed ? `（已確認後失敗 ${pattern.failed_at}）` : confirmed ? '（已確認）' : '（形成中）'} 關鍵價 ${formatPrice(
                       pattern.neckline
                     )}${pattern.target != null ? ` 目標 ${formatPrice(pattern.target)}` : ''}`}
                   </title>
@@ -912,6 +922,8 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
           visibleIds={visibleIds}
           family={family}
           onFamily={setFamily}
+          showAll={showAllPatterns}
+          onShowAll={setShowAllPatterns}
           selected={selected}
           onSelect={setSelected}
         />

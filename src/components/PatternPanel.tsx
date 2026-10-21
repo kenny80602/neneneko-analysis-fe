@@ -26,6 +26,9 @@ interface PatternPanelProps {
   visibleIds: Set<number>;
   family: PatternFamily | 'all';
   onFamily: (family: PatternFamily | 'all') => void;
+  /** 顯示全部型態（含同一段走勢的重複名字與失敗的）；預設只列主要判讀。 */
+  showAll: boolean;
+  onShowAll: (value: boolean) => void;
   selected: number | null;
   onSelect: (id: number | null) => void;
 }
@@ -39,13 +42,18 @@ export default function PatternPanel({
   visibleIds,
   family,
   onFamily,
+  showAll,
+  onShowAll,
   selected,
   onSelect,
 }: PatternPanelProps) {
   const rows = patterns.patterns
     .map((pattern, id) => ({ pattern, id }))
     .filter(({ pattern }) => family === 'all' || patternFamily(pattern.kind) === family)
+    .filter(({ pattern }) => showAll || pattern.primary)
     .reverse();
+  const primaryCount = patterns.patterns.filter((pattern) => pattern.primary).length;
+  const failedCount = patterns.patterns.filter((pattern) => pattern.failed).length;
   const gaps = [...patterns.gaps].reverse();
 
   return (
@@ -56,8 +64,24 @@ export default function PatternPanel({
             價格型態
             <span className="font-body-sm text-body-sm text-on-surface-variant font-normal">
               　分析 {patterns.bars} 根日 K{patterns.from && `（${patterns.from} ～ ${patterns.to}）`}
+              {failedCount > 0 && `，其中 ${failedCount} 個確認後失敗`}
             </span>
           </h4>
+          <button
+            type="button"
+            onClick={() => onShowAll(!showAll)}
+            aria-pressed={showAll}
+            title="同一段走勢常被好幾個型態名稱重複認出來（例如頸線相同的 M 頭與三重頂），預設只列「主要判讀」：同一類別同一方向、涵蓋日期重疊過半的只留最晚結束的一個，失敗的型態也收起來"
+            className={
+              showAll
+                ? 'px-3 py-1 rounded font-body-sm text-body-sm bg-primary text-on-primary border border-outline-variant transition-colors'
+                : 'px-3 py-1 rounded font-body-sm text-body-sm text-on-surface-variant border border-outline-variant hover:text-primary hover:bg-surface-container transition-colors'
+            }
+          >
+            {showAll
+              ? `顯示全部（${patterns.count}）`
+              : `只看主要判讀（${primaryCount}／${patterns.count}）`}
+          </button>
           <div className="flex gap-1 bg-surface-container-low p-1 rounded-xl border border-outline-variant">
             {FAMILIES.map((item) => (
               <button
@@ -81,7 +105,9 @@ export default function PatternPanel({
           <p className="font-body-sm text-body-sm text-on-surface-variant">
             {patterns.count === 0
               ? '這段資料沒有偵測到型態。這很常見，不代表系統壞了：型態動輒幾十到上百根日 K 才成形，落地的收盤行情又只有自選股、且從開始收集那天才有，根數不夠或這段走勢本來就沒有符合規則的型態，都會是空的。'
-              : '這個分類沒有偵測到型態，換一個分類看看。'}
+              : !showAll && patterns.patterns.every((pattern) => !pattern.primary)
+                ? '沒有主要判讀（偵測到的型態不是已經失敗，就是同一段走勢被更晚結束的型態取代）。按「顯示全部」看完整清單。'
+                : '這個分類沒有偵測到型態，換一個分類看看。'}
           </p>
         ) : (
           <div className={TABLE_WRAP}>
@@ -160,6 +186,12 @@ export default function PatternPanel({
       )}
 
       <div className="font-body-sm text-body-sm text-on-surface-variant flex flex-col gap-1">
+        <p>
+          「只看主要判讀」：同一類別同一方向、涵蓋日期重疊過半的型態只留最晚結束的一個（頸線相同的 M 頭與三重頂是同一段走勢的兩個名字），
+          失敗的型態也收起來；「顯示全部」可以看完整清單。<span className="text-on-surface">失敗</span>
+          ＝確認之後 10 個交易日內收盤又回到突破線的另一側，超過一個跟這一檔波動連動的門檻（至少 1.5%），
+          確認過是事實，所以仍標已確認，只是後來被打回來。
+        </p>
         <p>
           型態是後端用機械規則從日 K 的轉折點偵測的。<span className="text-on-surface">確認之前不預設立場</span>
           ：實線是已收盤突破（跌破）關鍵線，虛線加問號是形成中，圖畫得再漂亮，沒有收盤突破之前都還沒確立。圓圈是確認那天的收盤。
@@ -265,7 +297,7 @@ function PatternRow({ pattern, visible, selected, onClick }: PatternRowProps) {
       onClick={onClick}
       className={`cursor-pointer hover:bg-surface-container-low/50 transition-colors ${
         selected ? 'bg-surface-container-low' : ''
-      }`}
+      } ${pattern.failed ? 'opacity-60' : ''}`}
     >
       <td className="p-2 pl-4 py-2 font-body-md text-body-md whitespace-nowrap">
         <span className={color.text}>{patternName(pattern.kind, pattern.box_size)}</span>
@@ -273,6 +305,14 @@ function PatternRow({ pattern, visible, selected, onClick }: PatternRowProps) {
         {!confirmed && (
           <span className="ml-2 px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant font-body-sm text-body-sm">
             形成中
+          </span>
+        )}
+        {pattern.failed && (
+          <span
+            className="ml-2 px-1.5 py-0.5 rounded bg-surface-container text-error font-body-sm text-body-sm"
+            title="確認之後 10 個交易日內收盤又回到突破線的另一側（超過一個跟這一檔波動連動的門檻），不再當成有效型態"
+          >
+            失敗 {pattern.failed_at.slice(5)}
           </span>
         )}
         {pattern.spans_ex_dividend && (
