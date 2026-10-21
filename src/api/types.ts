@@ -570,6 +570,13 @@ export interface MarketCreditDay {
   short_lots: number;
   // 當日沖銷張數（普通股的資券互抵加總）。null＝這一天沒有這個數字，不是 0 張。
   offset_lots: number | null;
+  // 全市場整戶擔保維持率（%），證交所臺股儀表板的官方口徑：融資融券合併、上市上櫃合計、
+  // 含已補繳擔保品。不是民間「融資股票市值÷融資餘額」的估算（兩者差約三十個百分點）。
+  // null＝這一天沒有：官方只有 2026-08-03 以後，更早的補不回來，不是 0%。
+  // 不分 market，上市與上櫃的圖帶的是同一條線。
+  keep_rate: number | null;
+  // 整戶維持率低於 130%（追繳門檻）的戶數，null 的意思同 keep_rate。
+  call_accounts: number | null;
 }
 
 export interface MarketCredit {

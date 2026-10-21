@@ -967,6 +967,23 @@ function CreditSection() {
     () => [taiex[0], { ...balances[0], axis: 'right', dash: '6 4' }],
     [taiex, balances]
   );
+  // 維持率是官方的全市場整戶數字（見 MarketCreditDay.keep_rate），官方只有 2026-08-03 以後，
+  // 之前整段是 null、線會從有資料那天才開始畫。指數在左軸、維持率在右軸。
+  const indexVsKeepRate = useMemo<CreditSeries[]>(
+    () => [
+      taiex[0],
+      {
+        label: '整戶擔保維持率(%)',
+        values: items.map((d) => d.keep_rate),
+        axis: 'right',
+        className: 'stroke-secondary',
+        swatchClassName: 'bg-secondary',
+        format: (v) => `${formatNumber(v, 2)}%`,
+        dash: '6 4',
+      },
+    ],
+    [taiex, items]
+  );
   const dayTrade = useMemo<CreditSeries[]>(
     () => [
       {
@@ -986,6 +1003,8 @@ function CreditSection() {
   const latest = items[items.length - 1];
   const missingDayTrade = items.filter((d) => d.offset_lots == null).length;
   const missingIndex = items.filter((d) => d.taiex_close == null).length;
+  const keepRateDays = items.filter((d) => d.keep_rate != null);
+  const latestKeep = keepRateDays[keepRateDays.length - 1];
 
   return (
     <section className="flex flex-col gap-stack-md">
@@ -1039,6 +1058,7 @@ function CreditSection() {
           {[
             { title: '加權指數', series: taiex },
             { title: `${indexName}與融資餘額`, series: indexVsMargin },
+            { title: `${indexName}與整戶擔保維持率`, series: indexVsKeepRate },
             { title: '融資餘額與融券餘額', series: balances },
             // 當日沖銷只有上市有：上櫃整排是 null，畫出來只會是一張空圖。
             ...(market === 'TWSE' ? [{ title: '當日沖銷', series: dayTrade }] : []),
@@ -1083,6 +1103,14 @@ function CreditSection() {
             `　有 ${missingDayTrade} 天沒有當日沖銷（還沒回補或上游沒給），線會在那裡斷開，不是 0 張。`}
           {missingIndex > 0 &&
             `　有 ${missingIndex} 天沒有指數收盤，同樣斷線不補值。`}
+          <span className="text-on-surface font-semibold">整戶擔保維持率</span>
+          是證交所臺股儀表板的官方數字：全市場（上市＋上櫃）融資融券合併計算，所以不分上市上櫃、兩邊的圖是同一條線；
+          低於 130% 的戶會被追繳。它跟民間平台估的「融資股票市值÷融資餘額」口徑不同，同一天差約三十個百分點，不能互相比較。
+          官方只提供 2026-08-03 以後，更早的（例如 7 月大跌）補不回來，線從有資料那天才開始。
+          {latestKeep &&
+            `　最新 ${formatNumber(latestKeep.keep_rate, 2)}%（${latestKeep.date}），低於 130% 的戶數 ${formatNumber(latestKeep.call_accounts)} 戶。`}
+          {keepRateDays.length === 0 &&
+            '　這段期間還沒有維持率資料（後端 cmd/notify 的 -backfill-keep-rate）。'}
           這一區讀已落地的資料，上市融資融券要等當日晚間才公布，所以最新一天通常是前一個交易日。
         </p>
       )}
