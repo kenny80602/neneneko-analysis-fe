@@ -358,6 +358,23 @@ const GAPS = [
   },
 ];
 
+// 回測快照。數字抄自後端 `cmd/patternstudy` 的 -launch 與 -downtrend，跑的時間與條件寫在畫面上：
+// 資料一更新數字就會不一樣，這是「那一天跑出來的結果」不是會自己更新的統計，重跑要回來改。
+const BACKTEST_DATE = '2026-10-21';
+
+const LAUNCH_ROWS = [
+  { name: '全部', n: '約 1,300', x5: '-0.10%', w5: '44%', x20: '+0.19%', w20: '41%' },
+  { name: '突破日有量（量比 ≥ 1.5 倍）', n: '約 830', x5: '-0.14%', w5: '43%', x20: '+0.17%', w20: '41%' },
+  { name: '突破日量比 ≥ 2 倍', n: '約 660', x5: '-0.16%', w5: '42%', x20: '-0.19%', w20: '40%' },
+  { name: '突破日沒量（量比 < 1.5 倍）', n: '約 490', x5: '-0.07%', w5: '44%', x20: '+0.04%', w20: '41%' },
+];
+
+const BREAK_ROWS = [
+  { name: '全部跌破前低', n: '約 1,150', x5: '-0.66%', w5: '59%', x20: '-1.74%', w20: '62%' },
+  { name: '跌破時已在下跌趨勢中', n: '約 155', x5: '-1.19%', w5: '59%', x20: '-5.01%', w20: '73%' },
+  { name: '跌破時還不在下跌趨勢', n: '約 990', x5: '-0.57%', w5: '59%', x20: '-1.23%', w20: '61%' },
+];
+
 const cardClass = 'bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm';
 
 /** 示意圖：100 × 50 的小圖，顏色跟個股總覽疊圖用同一組（看漲青藍、看跌橘、方向未定紫）。 */
@@ -401,6 +418,65 @@ function Diagram({ schematic }: { schematic: Schematic }) {
       {!schematic.curve &&
         schematic.points.map(([x, y], i) => <circle key={i} cx={x} cy={y} r="1.6" className={color.fill} />)}
     </svg>
+  );
+}
+
+interface BacktestRow {
+  name: string;
+  n: string;
+  x5: string;
+  w5: string;
+  x20: string;
+  w20: string;
+}
+
+function BacktestTable({
+  title,
+  rows,
+  note,
+  weakColumns = false,
+}: {
+  title: string;
+  rows: BacktestRow[];
+  note: string;
+  weakColumns?: boolean;
+}) {
+  const th = 'p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap text-right';
+  const td = 'p-2 py-3 text-right font-data-md text-data-md whitespace-nowrap';
+  const winLabel = weakColumns ? '弱於大盤' : '贏大盤';
+  return (
+    <div className="flex flex-col gap-stack-sm">
+      <h3 className="font-body-md text-body-md text-on-surface font-semibold">{title}</h3>
+      <div className="overflow-x-auto rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm">
+        <table className="w-full text-left border-collapse">
+          <thead className="bg-surface-container-low border-b border-outline-variant">
+            <tr>
+              <th className="p-2 pl-4 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">
+                分組
+              </th>
+              <th className={th}>件數</th>
+              <th className={th}>5 日超額</th>
+              <th className={th}>{winLabel}</th>
+              <th className={th}>20 日超額</th>
+              <th className={th}>{winLabel}</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-outline-variant/50">
+            {rows.map((row) => (
+              <tr key={row.name} className="hover:bg-surface-container-low/50 transition-colors">
+                <td className="p-2 pl-4 py-3 font-body-md text-body-md">{row.name}</td>
+                <td className={td}>{row.n}</td>
+                <td className={td}>{row.x5}</td>
+                <td className={td}>{row.w5}</td>
+                <td className={td}>{row.x20}</td>
+                <td className={td}>{row.w20}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="font-body-sm text-body-sm text-on-surface-variant">{note}</p>
+    </div>
   );
 }
 
@@ -525,6 +601,39 @@ export default function ChartPatterns() {
           <p className="font-body-sm text-body-sm text-on-surface-variant">
             缺口分類是機械規則判斷的，邊界很主觀（多久算長期趨勢、多少算帶量），門檻沒有檢定過。圖上缺口用琥珀色塊標出範圍，已回補的用虛線淡化，箭頭表示方向（↑ 向上、↓ 向下）。
           </p>
+        </section>
+
+        <section className="flex flex-col gap-stack-md">
+          <h2 className="font-headline-md text-headline-md text-primary">
+            全市場回測
+            <span className="font-body-sm text-body-sm text-on-surface-variant font-normal">　{BACKTEST_DATE} 快照</span>
+          </h2>
+          <BacktestTable
+            title="看漲型態確認當天（「剛突破」）"
+            rows={LAUNCH_ROWS}
+            note="事件＝看漲型態收盤突破確認的那一天，同一檔同一天只算一次，共約 1,350 件。用確認當天收盤往後看第 5、20 個交易日的報酬，扣掉同一天全部股票往後同樣天數的平均（超額）。「贏大盤」是事件中超額為正的比例。"
+          />
+          <BacktestTable
+            title="跌破前低（「破底」）"
+            rows={BREAK_ROWS}
+            note="事件＝收盤跌破最近一個已確認的波段低點（第一次跌破）。超額為負代表之後比大盤弱，「弱於大盤」欄位是超額為負的比例，數字越高越偏弱。"
+            weakColumns
+          />
+          <div className="font-body-sm text-body-sm text-on-surface-variant flex flex-col gap-1">
+            <p>
+              <span className="text-on-surface">怎麼讀：</span>
+              剛突破的事件，有量與沒量的差別很小（20 日超額 +0.17% 對 +0.04%），量比 ≥ 2 倍反而是 -0.19%；
+              全部事件的「贏大盤」比例（41%～44%）跟一般股票隨便挑一天的基準差不多——這段資料偏多頭、報酬右偏，
+              隨便挑一檔股票的一天，贏過當天平均的機率本來就只有約 41%。所以看不出「型態確認＋有量」能事先挑出之後比較強的股票。
+              相對有區別的只有「已經在下跌趨勢中又跌破前低」：之後 20 日平均弱於大盤約 5%，73% 的事件偏弱（一般日子約 59%）。
+            </p>
+            <p>
+              <span className="text-on-surface">限制：</span>
+              自選股 262 檔、同一段多頭期間、只有現在還有資料的股票（存活者偏誤）、同一檔的事件互相重疊、沒做顯著性檢定，
+              不能當結論。只用確認當天看得到的條件，沒有拿「突破後三根站穩」分組，因為那要等三天，拿來分組會偷看未來。
+              這是快照，資料更新後數字會變，重跑用後端的 <code>patternstudy -launch</code> 與 <code>-downtrend</code>。
+            </p>
+          </div>
         </section>
 
         <section className={`${cardClass} p-6 flex flex-col gap-stack-sm`}>
