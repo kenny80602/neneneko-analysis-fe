@@ -119,6 +119,17 @@ export interface PatternBands {
   flat: boolean;
 }
 
+// 型態同期的籌碼：站在型態確認那天（形成中的是最新一天）看，這一檔算不算籌碼亂。
+// 規則同個股三面向的「籌碼亂」。籌碼資料的歷史很短（集保約十週、法人與融資只落地自選股），
+// 型態確認得更早時 messy 是 null——資料不足，不能讀成「籌碼穩」。
+export interface PatternChip {
+  // true＝籌碼亂；false＝沒有籌碼亂的跡象；null＝資料不足。
+  messy: boolean | null;
+  reasons: string[];
+  // 站在哪一天看。
+  as_of: string;
+}
+
 export type PatternKind =
   // 底部反轉
   | 'double_bottom'
@@ -182,6 +193,8 @@ export interface ChartPattern {
   held_bars: number;
   // 箱型整理的布林通道輔助判斷；只有箱型才有，其他是 null。
   bands: PatternBands | null;
+  // 同期的籌碼；後端沒有接籌碼來源時是 null。
+  chip: PatternChip | null;
   // 型態期間有除權息日：日 K 沒有還原權值，除息的跳空會被當成一次下跌，轉折點與落差會失真。
   spans_ex_dividend: boolean;
 }

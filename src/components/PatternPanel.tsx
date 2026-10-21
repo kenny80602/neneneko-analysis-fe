@@ -94,6 +94,7 @@ export default function PatternPanel({
                   <th className={`${TH} text-right`}>高度</th>
                   <th className={TH}>確認日</th>
                   <th className={TH}>量能</th>
+                  <th className={TH}>同期籌碼</th>
                   <th className={`${TH} text-right`}>確認後 5 日</th>
                   <th className={`${TH} text-right`}>確認後 20 日</th>
                   <th className={`${TH} text-right`}>量測目標</th>
@@ -179,6 +180,11 @@ export default function PatternPanel({
           「量測目標」只是慣例上的算術。破折號代表資料還沒走到那麼遠、尚未確認或這個型態沒有慣用目標，不是 0。
         </p>
         <p>
+          「同期籌碼」站在型態確認那天（形成中的是最新一天）看這一檔算不算<span className="text-on-surface">籌碼亂</span>
+          ：集保大戶減、散戶增，而且有法人賣超或融資增加佐證，規則同個股三面向。籌碼資料的歷史很短（集保只有約十週、
+          法人與融資只落地自選股），型態確認得更早的會顯示「資料不足」——那是沒資料可判斷，不是籌碼穩。
+        </p>
+        <p>
           缺口分類也是機械規則：突破缺口要整理箱之後帶量；竭盡缺口要長期趨勢之後幾天內被回補，太新的缺口之後可能改判；
           除權息當天的缺口不算（收盤價沒有還原權值，那是價格調整不是市場行為）。
         </p>
@@ -204,6 +210,39 @@ function durationHint(pattern: ChartPattern): string {
   return `轉折點之間 ${pattern.duration_bars} 個交易日；從第一個轉折點算到${
     pattern.status === 'confirmed' ? '確認日' : '資料最後一天'
   }共 ${pattern.span_bars} 個交易日（交易日，不含週末與休市）`;
+}
+
+/**
+ * 型態同期的籌碼：籌碼亂／沒有跡象／資料不足三態分開顯示。
+ * 資料不足（null）要說出來而且不能畫成「沒問題」：籌碼資料的歷史很短，型態確認得早就沒資料可判斷。
+ * 籌碼亂跟型態方向的關係只陳述事實：頭部型態配籌碼亂是同向，底部型態配籌碼亂是背離。
+ */
+function ChipCell({ pattern }: { pattern: ChartPattern }) {
+  const chip = pattern.chip;
+  if (!chip) return <span>{DASH}</span>;
+  const title = `${chip.as_of} 當天的籌碼：${chip.reasons.join('；') || '沒有細項'}`;
+  if (chip.messy == null) {
+    return (
+      <span className="text-outline" title={title}>
+        資料不足
+      </span>
+    );
+  }
+  if (!chip.messy) {
+    return (
+      <span className="text-on-surface-variant" title={title}>
+        沒有籌碼亂的跡象
+      </span>
+    );
+  }
+  const relation =
+    pattern.direction === 'down' ? '與看跌型態同向' : pattern.direction === 'up' ? '與看漲型態背離' : '';
+  return (
+    <span title={title}>
+      <span className="text-error font-semibold">籌碼亂</span>
+      {relation && <span className="ml-1 text-on-surface-variant">{relation}</span>}
+    </span>
+  );
 }
 
 interface PatternRowProps {
@@ -286,6 +325,9 @@ function PatternRow({ pattern, visible, selected, onClick }: PatternRowProps) {
             {pattern.volume.second_lighter ? '第二峰量縮' : '第二峰量增'}
           </span>
         )}
+      </td>
+      <td className="p-2 py-2 font-body-sm text-body-sm whitespace-nowrap">
+        <ChipCell pattern={pattern} />
       </td>
       <td className={`${TD} ${outcome ? quoteColor(outcome.after_5_pct) : ''}`}>
         {outcome ? formatSignedPercent(outcome.after_5_pct) : DASH}
