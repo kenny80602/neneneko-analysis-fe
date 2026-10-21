@@ -106,6 +106,19 @@ export interface PatternVolume {
   second_lighter: boolean | null;
 }
 
+// 箱型整理的布林通道（20 日、2 倍標準差）輔助判斷：通道走平、寬度收窄代表波動縮小、真的在整理。
+// 不要直接拿上下軌當箱頂與箱底——軌道是統計出來的，不是價格碰過的支撐壓力。
+export interface PatternBands {
+  // 通道寬度（占中軌的 %）：箱子第一個與最後一個轉折點那天。
+  width_start: number;
+  width_end: number;
+  // 結束時的寬度不到開始時的八成。
+  narrowing: boolean;
+  // 中軌從箱子開始到結束的變化（%）；flat 是絕對值在 3% 以內。
+  mid_slope_pct: number;
+  flat: boolean;
+}
+
 export type PatternKind =
   // 底部反轉
   | 'double_bottom'
@@ -158,6 +171,12 @@ export interface ChartPattern {
   outcome: PatternOutcome | null;
   // 資料不夠算時是 null。
   volume: PatternVolume | null;
+  // 確認之後的收盤有沒有站穩在突破線外側（最多看 held_bars 根）：false 是收回線內，假突破的跡象。
+  // null 是確認之後還沒有資料，或這個型態沒有可比的邊界線。
+  held: boolean | null;
+  held_bars: number;
+  // 箱型整理的布林通道輔助判斷；只有箱型才有，其他是 null。
+  bands: PatternBands | null;
   // 型態期間有除權息日：日 K 沒有還原權值，除息的跳空會被當成一次下跌，轉折點與落差會失真。
   spans_ex_dividend: boolean;
 }

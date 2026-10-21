@@ -3,7 +3,7 @@ import ChartControls from './ChartControls';
 import { ChartPatterns, DailyQuote } from '../api/types';
 import PatternPanel from './PatternPanel';
 import { useChartViewport } from '../hooks/useChartViewport';
-import { CandleInterval, movingAverage, toCandles } from '../utils/chart';
+import { bollinger, CandleInterval, movingAverage, toCandles } from '../utils/chart';
 import { formatNumber, formatPrice, formatShareToLot } from '../utils/format';
 import {
   directionClasses,
@@ -78,6 +78,7 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
   const [interval, setInterval] = useState<CandleInterval>('day');
   const [showPatterns, setShowPatterns] = useState(true);
   const [showGaps, setShowGaps] = useState(true);
+  const [showBands, setShowBands] = useState(false);
   // 型態分類：圖上與清單一起篩，型態一多（十八種）全畫會蓋住 K 棒。
   const [family, setFamily] = useState<PatternFamily | 'all'>('all');
   // 表格點選的那一個型態（patterns.patterns 的索引），圖上加粗、其他淡化。
@@ -94,6 +95,7 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
   const series = useMemo(() => {
     const end = start + count;
     return {
+      bands: bollinger(candles).slice(start, end),
       view: candles.slice(start, end),
       averages: MA_SERIES.map((ma) => ({
         ...ma,
@@ -102,7 +104,7 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
     };
   }, [candles, start, count]);
 
-  const { view, averages } = series;
+  const { view, averages, bands } = series;
 
   const scale = useMemo(() => {
     const values: number[] = [];
@@ -112,6 +114,13 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
         if (value != null) values.push(value);
       })
     );
+    // 開著布林通道時上下軌也要納入刻度，不然軌道會畫出圖外。
+    if (showBands) {
+      bands.forEach((band) => {
+        if (band.upper != null) values.push(band.upper);
+        if (band.lower != null) values.push(band.lower);
+      });
+    }
 
     const rawMin = values.length ? Math.min(...values) : 0;
     const rawMax = values.length ? Math.max(...values) : 0;
@@ -129,7 +138,7 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
       y: (value: number) => PRICE_BOTTOM - ((value - min) / (max - min)) * (PRICE_BOTTOM - PRICE_TOP),
       volumeY: (value: number) => VOLUME_BOTTOM - (value / volumeMax) * (VOLUME_BOTTOM - VOLUME_TOP),
     };
-  }, [view, averages]);
+  }, [view, averages, bands, showBands]);
 
   // 把型態與缺口對到目前週期的 K 棒：日期取「第一根收盤日 ≥ 該日」的 K 棒，
   // 週線與月線的 K 棒日期是那一週／那一月最後一個交易日，所以轉折點會落在它所屬的那一根。
@@ -254,6 +263,15 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
           </button>
           <button
             type="button"
+            onClick={() => setShowBands((value) => !value)}
+            aria-pressed={showBands}
+            title="布林通道（20 日、2 倍標準差）：輔助辨認盤整期間，通道走平、寬度收窄代表波動縮小。不要直接拿上下軌當箱頂箱底"
+            className={`${intervalButton(showBands)} border border-outline-variant`}
+          >
+            布林
+          </button>
+          <button
+            type="button"
             onClick={() => setShowGaps((value) => !value)}
             aria-pressed={showGaps}
             title="跳空缺口：突破、逃逸、竭盡、普通"
@@ -345,6 +363,27 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
             </text>
           </g>
         ))}
+
+        {showBands &&
+          (['upper', 'lower'] as const).map((edge) => {
+            const points = bands
+              .map((band, index) => (band[edge] == null ? '' : `${centerX(index)},${scale.y(band[edge] as number)}`))
+              .filter(Boolean)
+              .join(' ');
+            if (!points) return null;
+            return (
+              <polyline
+                key={edge}
+                points={points}
+                fill="none"
+                strokeWidth="1.2"
+                strokeDasharray="1 4"
+                strokeLinecap="round"
+                className="stroke-on-surface-variant"
+                opacity="0.7"
+              />
+            );
+          })}
 
         {averages.map((ma) => {
           const points = ma.values

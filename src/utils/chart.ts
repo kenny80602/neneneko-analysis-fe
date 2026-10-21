@@ -101,6 +101,28 @@ export function movingAverage(candles: Candle[], period: number): (number | null
 }
 
 /**
+ * 布林通道：中軌是 period 日均線，上下軌是中軌加減 multiplier 倍標準差（母體公式，除以 n，跟券商軟體一致）。
+ * 前 period − 1 根是 null，不是 0。
+ *
+ * ⚠️ 只拿來輔助辨認盤整（通道走平、寬度收窄）；軌道是統計出來的，不是價格碰過的支撐壓力，
+ * 不要直接當箱頂與箱底。
+ */
+export function bollinger(
+  candles: Candle[],
+  period = 20,
+  multiplier = 2
+): { upper: number | null; middle: number | null; lower: number | null }[] {
+  return candles.map((_, i) => {
+    if (i < period - 1) return { upper: null, middle: null, lower: null };
+    const window = candles.slice(i - period + 1, i + 1);
+    const mean = window.reduce((sum, c) => sum + c.close, 0) / period;
+    const variance = window.reduce((sum, c) => sum + (c.close - mean) ** 2, 0) / period;
+    const sd = Math.sqrt(variance);
+    return { upper: mean + multiplier * sd, middle: mean, lower: mean - multiplier * sd };
+  });
+}
+
+/**
  * 最後一根相對 span 根之前的漲跌幅（%）。資料不足回 null——不足是「不知道」，不是 0。
  *
  * ⚠️ 收盤價沒有還原權值，區間內若有除權息，這個數字會把配息當成下跌。

@@ -169,6 +169,11 @@ export default function PatternPanel({
           無量下跌更可怕。量能只陳述數字與傳統說法，沒有拿它當確認條件。
         </p>
         <p>
+          找箱型的流程：先用日 K 的高低點結構定箱頂與箱底（至少兩個相近高點、兩個相近低點），再用「布林」按鈕開通道看是否走平、
+          收窄來輔助確認是盤整——<span className="text-on-surface">不要直接拿布林上下軌當箱頂與箱底</span>；
+          最後看突破箱頂時有沒有量增、收盤有沒有站穩，突破無量或收回箱內，要防範假突破。
+        </p>
+        <p>
           這是現況描述，不是買賣訊號：門檻是經驗值、沒有檢定過出現後的表現（全市場回測見後端
           <code>cmd/patternstudy</code>，底部型態確認後的超額報酬多數沒有正面表現），單一檔的幾次結果沒有統計意義，
           「量測目標」只是慣例上的算術。破折號代表資料還沒走到那麼遠、尚未確認或這個型態沒有慣用目標，不是 0。
@@ -235,6 +240,24 @@ function PatternRow({ pattern, visible, selected, onClick }: PatternRowProps) {
           </span>
         ) : (
           DASH
+        )}
+        {pattern.held != null && (
+          <div
+            className={pattern.held ? 'text-on-surface-variant' : 'text-error'}
+            title="確認之後最多看三根收盤有沒有站穩在突破線外側"
+          >
+            {pattern.held
+              ? `突破後 ${pattern.held_bars} 日站穩`
+              : '突破後收回線內，假突破跡象'}
+          </div>
+        )}
+        {pattern.bands && (
+          <div
+            className="text-on-surface-variant"
+            title={`布林通道寬度 ${pattern.bands.width_start.toFixed(1)}% → ${pattern.bands.width_end.toFixed(1)}%，中軌變化 ${pattern.bands.mid_slope_pct.toFixed(1)}%`}
+          >
+            布林：{pattern.bands.narrowing ? '收窄' : '未收窄'}、中軌{pattern.bands.flat ? '走平' : '有斜率'}
+          </div>
         )}
         {pattern.volume?.second_lighter != null && (
           <span className="ml-2 text-on-surface-variant" title="後一個峰（腳、肩）附近的量跟前一個比">
