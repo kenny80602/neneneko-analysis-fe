@@ -1,6 +1,6 @@
 // 價格型態與跳空缺口的顯示用常數與判斷。純函式，不碰畫面也不碰 api。
 
-import { ChartGap, ChartPattern, GapKind, PatternKind } from '../api/types';
+import { ChartPattern, GapKind, PatternKind } from '../api/types';
 
 export type PatternFamily = 'bottom' | 'top' | 'continuation';
 
@@ -44,13 +44,17 @@ export function patternName(kind: string): string {
 }
 
 /**
- * 依預期方向決定線的顏色：看漲用漲色、看跌用跌色（跟 K 棒同一組色票），還沒突破的中性型態用灰。
+ * 依預期方向決定型態的顏色：看漲青藍、看跌橘、方向未定紫。
+ *
+ * 刻意不用漲跌的紅綠：型態疊在紅綠 K 棒上，同樣是紅綠的話分不出哪條線是型態、哪根是 K 棒。
  * 回傳 stroke／fill／text 三種 class，圖上與表格共用。
  */
 export function directionClasses(direction: string): { stroke: string; fill: string; text: string } {
-  if (direction === 'up') return { stroke: 'stroke-quote-up', fill: 'fill-quote-up', text: 'text-quote-up' };
-  if (direction === 'down') return { stroke: 'stroke-quote-down', fill: 'fill-quote-down', text: 'text-quote-down' };
-  return { stroke: 'stroke-outline', fill: 'fill-outline', text: 'text-on-surface-variant' };
+  if (direction === 'up') return { stroke: 'stroke-pattern-up', fill: 'fill-pattern-up', text: 'text-pattern-up' };
+  if (direction === 'down') {
+    return { stroke: 'stroke-pattern-down', fill: 'fill-pattern-down', text: 'text-pattern-down' };
+  }
+  return { stroke: 'stroke-pattern-neutral', fill: 'fill-pattern-neutral', text: 'text-pattern-neutral' };
 }
 
 export function directionLabel(direction: string): string {
@@ -100,7 +104,5 @@ export function gapHint(kind: string): string {
   return GAP_INFO[kind as GapKind]?.hint ?? '';
 }
 
-/** 缺口的框：向上跳空用漲色、向下用跌色。 */
-export function gapClasses(gap: ChartGap): { stroke: string; fill: string; text: string } {
-  return directionClasses(gap.direction);
-}
+/** 缺口一律用琥珀色，方向用箭頭區分；跟型態的青藍、橘、紫與 K 棒的紅綠都不同色。 */
+export const GAP_CLASSES = { stroke: 'stroke-pattern-gap', fill: 'fill-pattern-gap', text: 'text-pattern-gap' };

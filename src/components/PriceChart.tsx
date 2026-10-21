@@ -7,7 +7,7 @@ import { CandleInterval, movingAverage, toCandles } from '../utils/chart';
 import { formatNumber, formatPrice, formatShareToLot } from '../utils/format';
 import {
   directionClasses,
-  gapClasses,
+  GAP_CLASSES,
   gapName,
   PATTERN_INFO,
   PatternFamily,
@@ -186,6 +186,44 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
   // x 軸最多標六個日期，等距挑；每根都標會疊在一起。
   const labelStep = Math.max(1, Math.ceil(view.length / 6));
 
+  // 型態與缺口的文字標籤：一個一個放，跟已經放好的框重疊就上下挪開，挪不開的不畫。
+  // 擠在一起的標籤互相蓋住比少一個標籤更難讀；完整資訊都在底下的清單與滑鼠提示裡。
+  const labels = placeLabels(
+    [
+      ...(showPatterns
+        ? overlay.shapes
+            .filter((shape) => shape.visible && (family === 'all' || patternFamily(shape.pattern.kind) === family))
+            .map(({ id, pattern, idx }) => {
+              const mid = Math.floor(idx.length / 2);
+              return {
+                key: `p${id}`,
+                text: `${patternName(pattern.kind)}${pattern.status === 'confirmed' ? '' : '?'}`,
+                x: centerX(idx[mid] - start),
+                y: scale.y(pattern.pivots[mid].price) + (pattern.pivots[mid].kind === 'low' ? 20 : -10),
+                className: directionClasses(pattern.direction).fill,
+                priority: selected === id ? 2 : 1,
+              };
+            })
+        : []),
+      ...(showGaps
+        ? overlay.gaps
+            .filter((item) => item.visible && item.gap.kind !== 'common')
+            .map(({ gap, idx }) => ({
+              key: `g${gap.date}`,
+              text: `${gap.direction === 'up' ? '↑' : '↓'}${gapName(gap.kind)}`,
+              x: centerX(idx - start),
+              y: scale.y(gap.direction === 'up' ? gap.low : gap.high) + (gap.direction === 'up' ? 16 : -6),
+              className: GAP_CLASSES.fill,
+              priority: 0,
+            }))
+        : []),
+    ],
+    LEFT + 16,
+    LEFT + PLOT_WIDTH - 16,
+    PRICE_TOP + 10,
+    PRICE_BOTTOM - 2
+  );
+
   return (
     <section className="bg-surface-container-lowest border border-outline-variant rounded-xl p-4 sm:p-6 shadow-sm flex flex-col gap-stack-md">
       <div className="flex flex-wrap justify-between items-center gap-stack-sm">
@@ -261,6 +299,20 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
           );
         })}
       </div>
+
+      {patterns && (showPatterns || showGaps) && (
+        <div className="flex flex-wrap items-center gap-stack-md font-body-sm text-body-sm text-on-surface-variant">
+          {showPatterns && (
+            <>
+              <LegendSwatch className="bg-pattern-up" label="看漲型態" />
+              <LegendSwatch className="bg-pattern-down" label="看跌型態" />
+              <LegendSwatch className="bg-pattern-neutral" label="方向未定" />
+            </>
+          )}
+          {showGaps && <LegendSwatch className="bg-pattern-gap" label="跳空缺口" />}
+          <span>實線已確認、虛線形成中</span>
+        </div>
+      )}
 
       <div
         {...viewport.containerProps}
@@ -364,7 +416,7 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
           overlay.gaps
             .filter((item) => item.visible)
             .map(({ gap, idx, fillIdx }) => {
-              const color = gapClasses(gap);
+              const color = GAP_CLASSES;
               const endIdx = Math.min(Math.max(fillIdx, idx), overlay.last);
               const x1 = centerX(idx - start) - step / 2;
               const x2 = centerX(endIdx - start) + step / 2;
@@ -386,16 +438,6 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
                     strokeWidth="1"
                     strokeDasharray={gap.filled ? '3 3' : undefined}
                   />
-                  {notable && (
-                    <text
-                      x={x1}
-                      y={gap.direction === 'up' ? yBottom + 14 : yTop - 5}
-                      fontSize="12"
-                      className={`font-body-sm ${color.fill}`}
-                    >
-                      {gapName(gap.kind)}
-                    </text>
-                  )}
                 </g>
               );
             })}
@@ -412,8 +454,6 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
               const lastIdx = overlay.last;
               const xs = idx.map((i) => centerX(i - start));
               const ys = pattern.pivots.map((pivot) => scale.y(pivot.price));
-              const mid = Math.floor(xs.length / 2);
-              const labelAbove = pattern.pivots[mid].kind !== 'low';
               const candleIndexOf = (date: string) => candles.findIndex((candle) => candle.date >= date);
 
               // 邊界線：端點若超出可視範圍就裁在邊界上，價位照直線內插，不然線會畫到圖外。
@@ -477,16 +517,6 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
                   {xs.map((x, i) => (
                     <circle key={i} cx={x} cy={ys[i]} r={isSelected ? 5 : 3.5} className={color.fill} />
                   ))}
-                  <text
-                    x={xs[mid]}
-                    y={labelAbove ? ys[mid] - 10 : ys[mid] + 20}
-                    fontSize="13"
-                    textAnchor="middle"
-                    className={`font-body-sm ${color.fill}`}
-                  >
-                    {patternName(pattern.kind)}
-                    {confirmed ? '' : '?'}
-                  </text>
                   {confirmed && confirmIdx >= start && confirmIdx <= lastIdx && pattern.confirm_close != null && (
                     <circle
                       cx={centerX(confirmIdx - start)}
@@ -499,6 +529,22 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
                 </g>
               );
             })}
+
+        {labels.map((label) => (
+          <text
+            key={label.key}
+            x={label.x}
+            y={label.y}
+            fontSize="12"
+            textAnchor="middle"
+            paintOrder="stroke"
+            strokeWidth="3"
+            strokeLinejoin="round"
+            className={`font-body-sm stroke-surface-container-lowest ${label.className}`}
+          >
+            {label.text}
+          </text>
+        ))}
 
         <line
           x1={LEFT}
@@ -557,4 +603,49 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
       </p>
     </section>
   );
+}
+
+function LegendSwatch({ className, label }: { className: string; label: string }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className={`inline-block w-3 h-3 rounded-sm ${className}`} aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
+
+interface LabelInput {
+  key: string;
+  text: string;
+  x: number;
+  y: number;
+  className: string;
+  /** 數字大的先放（先搶到位置）。選中的型態優先。 */
+  priority: number;
+}
+
+/**
+ * 標籤防重疊：依優先序與位置一個一個放，跟已放好的標籤重疊就依序試上下挪開，都不行就不畫。
+ * 文字寬度用字數估（中日韓字 12 像素、半形 7 像素），不量測 DOM：量測要等 render 之後，
+ * 而標籤位置又是 render 的輸入。
+ */
+function placeLabels(items: LabelInput[], minX: number, maxX: number, minY: number, maxY: number): LabelInput[] {
+  const width = (text: string) =>
+    Array.from(text).reduce((sum, ch) => sum + (ch.charCodeAt(0) > 255 ? 12 : 7), 0) + 6;
+  const placed: (LabelInput & { w: number })[] = [];
+  const order = [...items].sort((a, b) => b.priority - a.priority || a.x - b.x);
+  const offsets = [0, -15, 15, -30, 30, -45, 45];
+  for (const item of order) {
+    const w = width(item.text);
+    const x = Math.min(Math.max(item.x, minX + w / 2), maxX - w / 2);
+    for (const offset of offsets) {
+      const y = Math.min(Math.max(item.y + offset, minY), maxY);
+      const clash = placed.some((o) => Math.abs(o.y - y) < 14 && Math.abs(o.x - x) < (o.w + w) / 2);
+      if (!clash) {
+        placed.push({ ...item, x, y, w });
+        break;
+      }
+    }
+  }
+  return placed;
 }

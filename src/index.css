@@ -57,6 +57,11 @@
     --c-primary-fixed-dim: 183 200 222;
     --c-quote-down: 0 121 74;
     --c-quote-up: 204 34 34;
+    /* 價格型態疊圖專用：刻意避開漲跌的紅綠，不然疊在紅綠 K 棒上分不出哪個是型態 */
+    --c-pattern-up: 0 131 143;
+    --c-pattern-down: 200 80 0;
+    --c-pattern-neutral: 123 31 162;
+    --c-pattern-gap: 176 112 0;
     --c-secondary: 0 109 55;
     --c-secondary-container: 123 248 161;
     --c-secondary-fixed: 126 251 164;
@@ -113,6 +118,10 @@
     --c-primary-fixed-dim: 183 200 222;
     --c-quote-down: 32 192 132;
     --c-quote-up: 255 125 125;
+    --c-pattern-up: 77 208 225;
+    --c-pattern-down: 255 171 64;
+    --c-pattern-neutral: 206 147 216;
+    --c-pattern-gap: 255 202 40;
     --c-secondary: 95 219 150;
     --c-secondary-container: 0 82 42;
     --c-secondary-fixed: 126 251 164;

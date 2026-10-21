@@ -4,7 +4,7 @@ import {
   directionClasses,
   directionLabel,
   FAMILIES,
-  gapClasses,
+  GAP_CLASSES,
   gapHint,
   gapName,
   PatternFamily,
@@ -136,12 +136,11 @@ export default function PatternPanel({
               </thead>
               <tbody className="divide-y divide-outline-variant/50">
                 {gaps.slice(0, GAP_ROWS).map((gap) => {
-                  const color = gapClasses(gap);
                   return (
                     <tr key={gap.date} className="hover:bg-surface-container-low/50 transition-colors">
                       <td className="p-2 pl-4 py-2 font-data-md text-data-md whitespace-nowrap">{gap.date}</td>
                       <td className="p-2 py-2 font-body-md text-body-md whitespace-nowrap" title={gapHint(gap.kind)}>
-                        <span className={color.text}>{gap.direction === 'up' ? '↑' : '↓'}</span> {gapName(gap.kind)}
+                        <span className={GAP_CLASSES.text}>{gap.direction === 'up' ? '↑' : '↓'}</span> {gapName(gap.kind)}
                       </td>
                       <td className={TD}>
                         {formatPrice(gap.low)} ～ {formatPrice(gap.high)}
