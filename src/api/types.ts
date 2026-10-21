@@ -142,6 +142,9 @@ export interface ChartPattern {
   lines: PatternLine[];
   // 圓弧型態的擬合曲線取樣點，其他型態是空陣列。
   curve: PatternPoint[];
+  // 箱型整理的大小分級：narrow 窄幅約 3～8%、normal 一般 8～15%、wide 寬幅 15～25%、large 大型 25% 以上。
+  // 依箱高分級，是實務上的粗略參考不是固定標準；其他型態是空字串。
+  box_size: '' | 'narrow' | 'normal' | 'wide' | 'large';
   // 關鍵價位：頸線／壓力／支撐在確認日（還沒確認就是最後一天）的價位。
   neckline: number;
   // 型態的高度（%）：頸線到腳、箱高、旗桿、三角形開口…

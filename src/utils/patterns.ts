@@ -38,9 +38,21 @@ export const PATTERN_INFO: Record<PatternKind, { name: string; family: PatternFa
   broadening: { name: '喇叭波', family: 'continuation', line: false },
 };
 
-/** 型態名稱。後端新增了前端還不認得的種類時照原碼顯示，不要因為沒翻譯就藏起來。 */
-export function patternName(kind: string): string {
-  return PATTERN_INFO[kind as PatternKind]?.name ?? kind;
+const BOX_SIZE_LABEL: Record<string, string> = {
+  narrow: '窄幅',
+  normal: '一般',
+  wide: '寬幅',
+  large: '大型',
+};
+
+/**
+ * 型態名稱。箱型整理帶大小分級（例如「箱型整理·寬幅」）。
+ * 後端新增了前端還不認得的種類時照原碼顯示，不要因為沒翻譯就藏起來。
+ */
+export function patternName(kind: string, boxSize?: string): string {
+  const name = PATTERN_INFO[kind as PatternKind]?.name ?? kind;
+  const size = boxSize ? BOX_SIZE_LABEL[boxSize] : undefined;
+  return size ? `${name}·${size}` : name;
 }
 
 /**

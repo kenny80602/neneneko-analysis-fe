@@ -205,7 +205,7 @@ function PatternRow({ pattern, visible, selected, onClick }: PatternRowProps) {
       }`}
     >
       <td className="p-2 pl-4 py-2 font-body-md text-body-md whitespace-nowrap">
-        <span className={color.text}>{patternName(pattern.kind)}</span>
+        <span className={color.text}>{patternName(pattern.kind, pattern.box_size)}</span>
         <span className="text-on-surface-variant font-body-sm text-body-sm">（{directionLabel(pattern.direction)}）</span>
         {!confirmed && (
           <span className="ml-2 px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant font-body-sm text-body-sm">

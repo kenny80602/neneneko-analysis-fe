@@ -197,7 +197,7 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
               const mid = Math.floor(idx.length / 2);
               return {
                 key: `p${id}`,
-                text: `${patternName(pattern.kind)}${pattern.status === 'confirmed' ? '' : '?'}`,
+                text: `${patternName(pattern.kind, pattern.box_size)}${pattern.status === 'confirmed' ? '' : '?'}`,
                 x: centerX(idx[mid] - start),
                 y: scale.y(pattern.pivots[mid].price) + (pattern.pivots[mid].kind === 'low' ? 20 : -10),
                 className: directionClasses(pattern.direction).fill,
@@ -479,7 +479,7 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
               return (
                 <g key={id} opacity={dimmed ? 0.25 : 1}>
                   <title>
-                    {`${patternName(pattern.kind)}${confirmed ? '（已確認）' : '（形成中）'} 關鍵價 ${formatPrice(
+                    {`${patternName(pattern.kind, pattern.box_size)}${confirmed ? '（已確認）' : '（形成中）'} 關鍵價 ${formatPrice(
                       pattern.neckline
                     )}${pattern.target != null ? ` 目標 ${formatPrice(pattern.target)}` : ''}`}
                   </title>
