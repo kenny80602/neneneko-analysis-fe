@@ -274,6 +274,24 @@ export interface ChipDisorder {
   breakouts_60: FalseBreakouts;
 }
 
+// 一次跌破前低（破底）：收盤跌破最近一個已確認的波段低點（第一次跌破）。只用當時已確認的轉折點判斷，不偷看後面。
+export interface TrendBreak {
+  date: string;
+  close: number;
+  // 被跌破的那個波段低點的價位與日期。
+  level: number;
+  level_date: string;
+  // 跌破當天是否已處在下跌趨勢中（高點越來越低、低點越來越低、收盤在 60 日均線之下且均線下彎）。
+  in_downtrend: boolean;
+}
+
+// 一段連續的下跌趨勢（至少 5 天）。
+export interface TrendPeriod {
+  from: string;
+  to: string;
+  days: number;
+}
+
 // 籌碼亂的一段連續期間（含兩端，都是有成交的交易日）。規則同個股三面向：集保近 4 週大戶減、散戶增，
 // 而且有法人賣超或融資增加佐證。集保只有約十週的歷史，更早的日子是資料不足，不會出現在這裡，
 // 也不代表當時籌碼穩。reasons 是第一天的判斷依據。
@@ -294,6 +312,9 @@ export interface ChartPatterns {
   patterns: ChartPattern[];
   // 跳空缺口，依日期由舊到新。
   gaps: ChartGap[];
+  // 跌破前低與下跌趨勢的期間。機械規則的現況描述，不是賣出建議。
+  trend_breaks: TrendBreak[];
+  downtrends: TrendPeriod[];
   // 籌碼亂的連續期間，圖上框出來用。
   chip_periods: ChipPeriod[];
 }

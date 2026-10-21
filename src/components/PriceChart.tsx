@@ -81,6 +81,8 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
   const [showBands, setShowBands] = useState(false);
   // 籌碼亂的期間：框出來提醒「那段時間大戶在出、散戶在接」。不是賣出訊號。
   const [showChip, setShowChip] = useState(true);
+  // 下跌趨勢與跌破前低：機械規則的現況描述，不是賣出建議。
+  const [showTrend, setShowTrend] = useState(true);
   // 量測目標線：型態確認後傳統上預期走到的價位（頸線再走一個落差）。慣例上的算術，不是預測。
   const [showTargets, setShowTargets] = useState(true);
   // 型態分類：圖上與清單一起篩，型態一多（十八種）全畫會蓋住 K 棒。
@@ -166,7 +168,16 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
       const toIdx = indexOf(period.to);
       return { period, fromIdx, toIdx, visible: fromIdx >= 0 && toIdx >= start && fromIdx <= last };
     });
-    return { shapes, gaps, chip, last };
+    const breaks = (patterns?.trend_breaks ?? []).map((item) => {
+      const idx = indexOf(item.date);
+      return { item, idx, levelIdx: indexOf(item.level_date), visible: idx >= start && idx <= last };
+    });
+    const downtrends = (patterns?.downtrends ?? []).map((period) => {
+      const fromIdx = indexOf(period.from);
+      const toIdx = indexOf(period.to);
+      return { period, fromIdx, toIdx, visible: fromIdx >= 0 && toIdx >= start && fromIdx <= last };
+    });
+    return { shapes, gaps, chip, breaks, downtrends, last };
   }, [patterns, candles, start, count]);
 
   const visibleIds = useMemo(
@@ -254,6 +265,18 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
               };
             })
         : []),
+      ...(showTrend
+        ? overlay.breaks
+            .filter((entry) => entry.visible)
+            .map(({ item, idx }) => ({
+              key: `b${item.date}`,
+              text: item.in_downtrend ? '下跌中破前低' : '破前低',
+              x: centerX(idx - start),
+              y: scale.y(candles[idx].low) + 26,
+              className: 'fill-pattern-down',
+              priority: item.in_downtrend ? 1 : 0,
+            }))
+        : []),
       ...targets.map((item) => ({
         key: `t${item.id}`,
         text: `${item.y < PRICE_TOP ? '↑ ' : item.y > PRICE_BOTTOM ? '↓ ' : ''}${item.tentative ? '若確認 ' : ''}目標 ${formatPrice(item.price)}${item.hit ? ' 達成' : ''}`,
@@ -308,6 +331,15 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
             className={`${intervalButton(showPatterns)} border border-outline-variant`}
           >
             型態{patterns ? `（${patterns.count}）` : ''}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowTrend((value) => !value)}
+            aria-pressed={showTrend}
+            title="下跌趨勢：高點越來越低、低點越來越低、收盤在 60 日均線之下且均線下彎。跌破前低：收盤跌破最近一個已確認的波段低點。機械規則的現況描述，不是賣出建議；全市場回測只有「已在下跌趨勢中又跌破前低」之後明顯偏弱，其餘差距小"
+            className={`${intervalButton(showTrend)} border border-outline-variant`}
+          >
+            趨勢
           </button>
           <button
             type="button"
@@ -384,7 +416,7 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
         })}
       </div>
 
-      {patterns && (showPatterns || showGaps || showChip) && (
+      {patterns && (showPatterns || showGaps || showChip || showTrend) && (
         <div className="flex flex-wrap items-center gap-stack-md font-body-sm text-body-sm text-on-surface-variant">
           {showPatterns && (
             <>
@@ -394,6 +426,7 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
             </>
           )}
           {showGaps && <LegendSwatch className="bg-pattern-gap" label="跳空缺口" />}
+          {showTrend && <LegendSwatch className="bg-pattern-down/30" label="下跌趨勢（▼＝跌破前低）" />}
           {showChip && <LegendSwatch className="bg-primary/30" label="籌碼亂的期間" />}
           <span>實線已確認、虛線形成中{showPatterns && showTargets && '、點劃線是量測目標（慣例上的算術，不是預測）'}</span>
         </div>
@@ -430,6 +463,40 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
             </text>
           </g>
         ))}
+
+        {showTrend &&
+          overlay.downtrends
+            .filter((item) => item.visible)
+            .map(({ period, fromIdx, toIdx }) => {
+              const a = Math.max(fromIdx, start);
+              const b = Math.min(toIdx, overlay.last);
+              const x1 = centerX(a - start) - step / 2;
+              const x2 = centerX(b - start) + step / 2;
+              return (
+                <g key={`down-${period.from}`}>
+                  <title>{`下跌趨勢 ${period.from} ～ ${period.to}（${period.days} 個交易日）：高點越來越低、低點越來越低、收盤在 60 日均線之下且均線下彎`}</title>
+                  <rect
+                    x={x1}
+                    y={PRICE_TOP}
+                    width={Math.max(2, x2 - x1)}
+                    height={PRICE_BOTTOM - PRICE_TOP}
+                    className="fill-pattern-down"
+                    fillOpacity="0.09"
+                  />
+                  <text
+                    x={x1 + 4}
+                    y={PRICE_BOTTOM - 6}
+                    fontSize="12"
+                    paintOrder="stroke"
+                    strokeWidth="3"
+                    strokeLinejoin="round"
+                    className="font-body-sm fill-pattern-down stroke-surface-container-lowest"
+                  >
+                    下跌趨勢
+                  </text>
+                </g>
+              );
+            })}
 
         {showChip &&
           overlay.chip
@@ -694,6 +761,34 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
               </g>
             );
           })}
+
+        {showTrend &&
+          overlay.breaks
+            .filter((entry) => entry.visible)
+            .map(({ item, idx, levelIdx }) => {
+              const candle = candles[idx];
+              const x = centerX(idx - start);
+              const y = scale.y(candle.low) + 5;
+              const strong = item.in_downtrend;
+              const fromX = centerX(Math.max(levelIdx, start) - start);
+              return (
+                <g key={`break-${item.date}`} opacity={strong ? 1 : 0.6}>
+                  <title>{`${item.date} 收盤 ${formatPrice(item.close)} 跌破前低 ${formatPrice(item.level)}（${item.level_date}）${
+                    strong ? '，而且已在下跌趨勢中' : ''
+                  }`}</title>
+                  <line
+                    x1={fromX}
+                    y1={scale.y(item.level)}
+                    x2={x}
+                    y2={scale.y(item.level)}
+                    strokeWidth="1.3"
+                    strokeDasharray="4 3"
+                    className="stroke-pattern-down"
+                  />
+                  <polygon points={`${x - 5},${y} ${x + 5},${y} ${x},${y + 9}`} className="fill-pattern-down" />
+                </g>
+              );
+            })}
 
         {labels.map((label) => (
           <text
