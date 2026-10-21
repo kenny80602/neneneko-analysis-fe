@@ -79,6 +79,8 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
   const [showPatterns, setShowPatterns] = useState(true);
   const [showGaps, setShowGaps] = useState(true);
   const [showBands, setShowBands] = useState(false);
+  // 籌碼亂的期間：框出來提醒「那段時間大戶在出、散戶在接」。不是賣出訊號。
+  const [showChip, setShowChip] = useState(true);
   // 量測目標線：型態確認後傳統上預期走到的價位（頸線再走一個落差）。慣例上的算術，不是預測。
   const [showTargets, setShowTargets] = useState(true);
   // 型態分類：圖上與清單一起篩，型態一多（十八種）全畫會蓋住 K 棒。
@@ -159,7 +161,12 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
       const fillIdx = gap.filled ? indexOf(gap.filled_at) : candles.length - 1;
       return { gap, idx, fillIdx, visible: idx >= start && idx <= last };
     });
-    return { shapes, gaps, last };
+    const chip = (patterns?.chip_periods ?? []).map((period) => {
+      const fromIdx = indexOf(period.from);
+      const toIdx = indexOf(period.to);
+      return { period, fromIdx, toIdx, visible: fromIdx >= 0 && toIdx >= start && fromIdx <= last };
+    });
+    return { shapes, gaps, chip, last };
   }, [patterns, candles, start, count]);
 
   const visibleIds = useMemo(
@@ -304,6 +311,15 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
           </button>
           <button
             type="button"
+            onClick={() => setShowChip((value) => !value)}
+            aria-pressed={showChip}
+            title="籌碼亂的期間：集保近 4 週大戶減、散戶增，而且有法人賣超或融資增加佐證。集保只有約十週的歷史，更早的日子是資料不足，沒框不代表當時籌碼穩。這是現況描述，不是賣出訊號"
+            className={`${intervalButton(showChip)} border border-outline-variant`}
+          >
+            籌碼亂{patterns ? `（${patterns.chip_periods.length}）` : ''}
+          </button>
+          <button
+            type="button"
             onClick={() => setShowTargets((value) => !value)}
             aria-pressed={showTargets}
             title="量測目標線：頸線（突破線）再往突破方向走一個型態高度。只是慣例上的算術，沒有驗證過價格真的會走到"
@@ -368,7 +384,7 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
         })}
       </div>
 
-      {patterns && (showPatterns || showGaps) && (
+      {patterns && (showPatterns || showGaps || showChip) && (
         <div className="flex flex-wrap items-center gap-stack-md font-body-sm text-body-sm text-on-surface-variant">
           {showPatterns && (
             <>
@@ -378,6 +394,7 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
             </>
           )}
           {showGaps && <LegendSwatch className="bg-pattern-gap" label="跳空缺口" />}
+          {showChip && <LegendSwatch className="bg-primary/30" label="籌碼亂的期間" />}
           <span>實線已確認、虛線形成中{showPatterns && showTargets && '、點劃線是量測目標（慣例上的算術，不是預測）'}</span>
         </div>
       )}
@@ -413,6 +430,43 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
             </text>
           </g>
         ))}
+
+        {showChip &&
+          overlay.chip
+            .filter((item) => item.visible)
+            .map(({ period, fromIdx, toIdx }) => {
+              const a = Math.max(fromIdx, start);
+              const b = Math.min(toIdx, overlay.last);
+              const x1 = centerX(a - start) - step / 2;
+              const x2 = centerX(b - start) + step / 2;
+              return (
+                <g key={`chip-${period.from}`}>
+                  <title>{`籌碼亂 ${period.from} ～ ${period.to}（${period.days} 個交易日）\n${period.reasons.join('；')}`}</title>
+                  <rect
+                    x={x1}
+                    y={PRICE_TOP}
+                    width={Math.max(2, x2 - x1)}
+                    height={PRICE_BOTTOM - PRICE_TOP}
+                    className="fill-primary stroke-primary"
+                    fillOpacity="0.1"
+                    strokeOpacity="0.55"
+                    strokeWidth="1.2"
+                    strokeDasharray="5 3"
+                  />
+                  <text
+                    x={x1 + 4}
+                    y={PRICE_TOP + 14}
+                    fontSize="12"
+                    paintOrder="stroke"
+                    strokeWidth="3"
+                    strokeLinejoin="round"
+                    className="font-body-sm fill-primary stroke-surface-container-lowest"
+                  >
+                    籌碼亂
+                  </text>
+                </g>
+              );
+            })}
 
         {showBands &&
           (['upper', 'lower'] as const).map((edge) => {

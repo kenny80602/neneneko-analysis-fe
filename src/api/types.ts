@@ -274,6 +274,16 @@ export interface ChipDisorder {
   breakouts_60: FalseBreakouts;
 }
 
+// 籌碼亂的一段連續期間（含兩端，都是有成交的交易日）。規則同個股三面向：集保近 4 週大戶減、散戶增，
+// 而且有法人賣超或融資增加佐證。集保只有約十週的歷史，更早的日子是資料不足，不會出現在這裡，
+// 也不代表當時籌碼穩。reasons 是第一天的判斷依據。
+export interface ChipPeriod {
+  from: string;
+  to: string;
+  days: number;
+  reasons: string[];
+}
+
 export interface ChartPatterns {
   symbol: string;
   // 這次分析的有成交日 K 根數與涵蓋區間。根數太少時偵測不到是正常的。
@@ -284,6 +294,8 @@ export interface ChartPatterns {
   patterns: ChartPattern[];
   // 跳空缺口，依日期由舊到新。
   gaps: ChartGap[];
+  // 籌碼亂的連續期間，圖上框出來用。
+  chip_periods: ChipPeriod[];
 }
 
 export interface DailyQuoteByDate {
