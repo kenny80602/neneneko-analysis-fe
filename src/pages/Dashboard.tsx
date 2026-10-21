@@ -8,7 +8,8 @@ import PriceChart from '../components/PriceChart';
 import SymbolSearch from '../components/SymbolSearch';
 import TrendChart from '../components/TrendChart';
 import { getAnnouncementHistory } from '../api/announcement';
-import { getChartPatterns, getDailyQuoteHistory } from '../api/dailyQuote';
+import { getChartPatterns, getChipDisorder, getDailyQuoteHistory } from '../api/dailyQuote';
+import ChipDisorderCard from '../components/ChipDisorderCard';
 import { getInstitutionalHistory } from '../api/institutional';
 import { getPortfolioValuation } from '../api/portfolio';
 import { getRealtimeQuote } from '../api/realtimeQuote';
@@ -134,6 +135,10 @@ export default function Dashboard() {
 
   // 型態用跟 K 線同樣的根數，日期才對得上圖。失敗只是少了疊圖，不影響 K 線本身。
   const patterns = useAsyncData(() => getChartPatterns(symbol, { limit: CHART_LIMIT }), [symbol], {
+    enabled,
+  });
+
+  const disorder = useAsyncData(() => getChipDisorder(symbol, { limit: CHART_LIMIT }), [symbol], {
     enabled,
   });
 
@@ -580,6 +585,13 @@ export default function Dashboard() {
               score={scores.bySymbol.get(symbol)}
               failed={scores.failed}
               loading={scores.loading}
+            />
+
+            <ChipDisorderCard
+              data={disorder.data}
+              loading={disorder.loading}
+              error={disorder.error}
+              onRetry={disorder.reload}
             />
 
             {history.loading && <PageState kind="loading" />}

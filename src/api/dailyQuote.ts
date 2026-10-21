@@ -3,6 +3,7 @@ import {
   ApiResponse,
   BelowMA,
   ChartPatterns,
+  ChipDisorder,
   CollectResult,
   DailyQuoteByDate,
   DailyQuoteHistory,
@@ -25,6 +26,13 @@ export const getDailyQuoteHistory = (symbol: string, params?: HistoryParams) =>
 export const getChartPatterns = (symbol: string, params?: HistoryParams) =>
   request
     .get<ApiResponse<ChartPatterns>>(`/stocks/daily/${symbol}/patterns`, { params })
+    .then((res) => res.data.data);
+
+// 籌碼混亂度：法人買賣方向反轉率與箱型假突破率（各看 20、60 個交易日）。讀已落地的資料，不打上游。
+// limit 是拿來偵測箱型的日 K 根數，不帶時後端用 500。兩個指標各自獨立，後端不合成分數。
+export const getChipDisorder = (symbol: string, params?: HistoryParams) =>
+  request
+    .get<ApiResponse<ChipDisorder>>(`/stocks/daily/${symbol}/chip-disorder`, { params })
     .then((res) => res.data.data);
 
 // 查某一個交易日的全部收盤行情。不帶 date 時回目前收集到最新的那一天

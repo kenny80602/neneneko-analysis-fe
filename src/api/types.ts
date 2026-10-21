@@ -217,6 +217,63 @@ export interface ChartGap {
   filled_at: string;
 }
 
+// ===== 籌碼混亂度（/stocks/daily/:symbol/chip-disorder）=====
+// 兩個獨立指標，各看 20 與 60 個交易日，不合成分數：原本設想的第三個指標（前 5 大買超分點集中度）
+// 要券商分點資料，我們沒有，缺一個權重 30% 的指標合成分數就沒有依據。
+// 「主力」是三大法人合計。分級與門檻都是研究用的初始假設，沒有回測驗證過。
+
+// 法人買賣方向反轉情形（一個窗格）。
+export interface DirectionFlips {
+  // 窗格大小（交易日）；days 是實際有資料的天數。
+  window: number;
+  days: number;
+  // 窗格內各方向的天數；neutral 是買賣超接近零的日子（不算買也不算賣）。
+  buy: number;
+  sell: number;
+  neutral: number;
+  // 有效方向變化次數（相鄰兩日都有明確方向的組數）與其中方向不同的次數。
+  pairs: number;
+  reversals: number;
+  // 反轉率（%）。有效次數不到 5 時是 null——樣本太少不給比例，不是 0。
+  rate_pct: number | null;
+  // stable < 30%、changing 30～50%、repeating 50～70%、high > 70%；rate_pct 是 null 時是空字串。
+  level: '' | 'stable' | 'changing' | 'repeating' | 'high';
+}
+
+// 一次箱型突破（跌破）。held 是 null＝後面還沒滿三根，不算成功也不算失敗。
+export interface BreakoutEvent {
+  date: string;
+  direction: 'up' | 'down' | 'neutral';
+  level: number;
+  held: boolean | null;
+}
+
+// 一個窗格內箱型突破的成敗。
+export interface FalseBreakouts {
+  window: number;
+  // 已能判斷成敗的次數、其中收回箱內的次數、剛突破還沒滿三根的次數。
+  judged: number;
+  failed: number;
+  pending: number;
+  // 假突破率（%）＝ failed ÷ judged。這段期間沒有可判斷的突破時是 null，不是 0。
+  rate_pct: number | null;
+  events: BreakoutEvent[];
+}
+
+export interface ChipDisorder {
+  symbol: string;
+  // 法人資料最新的一天；沒有法人資料是空字串。
+  as_of: string;
+  // 這一檔有沒有法人資料（只落地自選股）。false 時兩個反轉率沒有意義；假突破率只靠日 K，照常算。
+  has_institutional: boolean;
+  // 判斷「買賣超接近零」的門檻（股數）：集保總庫存的 0.02%，拿不到時是 100 張。
+  neutral_shares: number;
+  flips_20: DirectionFlips;
+  flips_60: DirectionFlips;
+  breakouts_20: FalseBreakouts;
+  breakouts_60: FalseBreakouts;
+}
+
 export interface ChartPatterns {
   symbol: string;
   // 這次分析的有成交日 K 根數與涵蓋區間。根數太少時偵測不到是正常的。
