@@ -7,6 +7,7 @@ import LinePreview from './pages/LinePreview';
 import Announcements from './pages/Announcements';
 import BelowMA from './pages/BelowMA';
 import Calendar from './pages/Calendar';
+import Changelog from './pages/Changelog';
 import ChartPatterns from './pages/ChartPatterns';
 import DailyQuotes from './pages/DailyQuotes';
 import Dashboard from './pages/Dashboard';
@@ -65,6 +66,7 @@ function App() {
               <Route path="/line-preview" element={<LinePreview />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/patterns" element={<ChartPatterns />} />
+              <Route path="/changelog" element={<Changelog />} />
               <Route path="/schedules" element={<Schedules />} />
               <Route path="/settings" element={<Settings />} />
 

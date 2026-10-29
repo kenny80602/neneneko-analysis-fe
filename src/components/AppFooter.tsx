@@ -1,3 +1,6 @@
+import { Link } from 'react-router-dom';
+import { CURRENT_VERSION } from '../changelog';
+
 // 頁尾。四個政策連結目前都沒有對應頁面，先指向 # 佔位——
 // 有內容之後換成 <Link>，不要留著假連結上線。
 const links = ['隱私權政策', '服務條款', '監管聲明', '聯絡客服'];
@@ -19,6 +22,13 @@ export default function AppFooter() {
             {label}
           </a>
         ))}
+        <Link
+          to="/changelog"
+          title="更版歷程"
+          className="text-on-surface-variant font-data-md text-body-sm hover:underline hover:text-primary transition-all"
+        >
+          v{CURRENT_VERSION}
+        </Link>
       </div>
 
       <div className="font-body-sm text-body-sm text-on-surface-variant text-center md:text-right w-full md:w-auto">
