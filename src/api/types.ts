@@ -329,6 +329,29 @@ export interface PriceLevel {
   in_zone: boolean;
 }
 
+// ===== 一批代號的壓力與支撐（/stocks/daily/levels）=====
+
+// 一檔現在的壓力與支撐。
+export interface SymbolLevels {
+  symbol: string;
+  // distance_pct 是相對這個收盤算的，所以 last_date 要一起顯示：停在一個月前的價位會被讀成現在的。
+  // 沒有任何有成交的日 K 時是 null 與空字串。
+  last_close: number | null;
+  last_date: string;
+  // 上下各最多兩個，離現價近的先。空陣列有兩種意思：有日 K 但沒有價位被碰過兩次以上，
+  // 或日 K 不夠長（bars 少於 20）——看 bars 分辨，兩種都不是「離支撐 0%」。
+  levels: PriceLevel[];
+  // 這次拿來分析的有成交日 K 根數。
+  bars: number;
+}
+
+export interface SymbolLevelsList {
+  count: number;
+  // 順序與傳入一致；沒有日 K 或讀取失敗的代號仍會出現，levels 是空陣列。
+  items: SymbolLevels[];
+  caveats: string[];
+}
+
 export interface ChartPatterns {
   symbol: string;
   // 這次分析的有成交日 K 根數與涵蓋區間。根數太少時偵測不到是正常的。

@@ -23,11 +23,14 @@ import {
   LedgerLot,
   LedgerReport,
   PortfolioRow,
+  PriceLevel,
+  SymbolLevels,
 } from '../api/types';
 import { useSymbol } from '../context/SymbolContext';
 import ScoreBadges from '../components/ScoreBadges';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { useStockScores } from '../hooks/useStockScores';
+import { useSymbolLevels } from '../hooks/useSymbolLevels';
 import {
   DASH,
   formatAmount,
@@ -376,6 +379,84 @@ function parsePositive(text: string): number | null | undefined {
   return Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
+// LEVEL_MIN_BARS 後端算價位至少要的日 K 根數（ComputePriceLevels 的下限）。
+// 只用來分辨空欄的原因，算價位的是後端。
+const LEVEL_MIN_BARS = 20;
+
+function levelTitleLine(label: string, level: PriceLevel): string {
+  const zone = level.in_zone ? '，現價在這個區間裡' : '';
+  return (
+    `${label} ${formatPrice(level.price)}（區間 ${formatPrice(level.low)}～${formatPrice(level.high)}，` +
+    `碰過 ${level.touches} 次，最近一次 ${level.last_touch}${zone}）`
+  );
+}
+
+/**
+ * 離最近一個支撐與壓力的距離（%，相對最新收盤）。
+ *
+ * 只描述位置，不給判斷：回測沒有證明「離支撐多近」有預測力，所以這一欄刻意不用漲跌色，
+ * 也不寫停損、停利——紅綠會被讀成損益，文字會被讀成建議。
+ *
+ * 空的有三種意思，title 要分開講：載入失敗、日 K 不夠長（或這檔不在收集名單）、
+ * 日 K 夠長但沒有任何價位被碰過兩次以上。三種都不是「離支撐 0%」，一律畫破折號。
+ */
+export function LevelCell({
+  item,
+  failed,
+  latestDate,
+}: {
+  item: SymbolLevels | undefined;
+  failed: boolean;
+  latestDate: string;
+}) {
+  if (failed) {
+    return (
+      <span className="text-outline" title="壓力與支撐載入失敗，持股表不受影響">
+        {DASH}
+      </span>
+    );
+  }
+  if (!item || item.levels.length === 0) {
+    const reason =
+      !item || item.bars < LEVEL_MIN_BARS
+        ? '日 K 不夠長（至少 20 個交易日），或這檔不在自選股與個股清單裡——收集只涵蓋那兩份名單'
+        : '日 K 夠長，但沒有任何價位被轉折過兩次以上，所以算不出壓力與支撐';
+    return (
+      <span className="text-outline" title={reason}>
+        {DASH}
+      </span>
+    );
+  }
+
+  const support = item.levels.find((level) => level.kind === 'support');
+  const resistance = item.levels.find((level) => level.kind === 'resistance');
+  // 日 K 停在比這一批更早的日子：距離是相對舊收盤算的，標出日期。
+  const stale = item.last_date !== '' && latestDate !== '' && item.last_date < latestDate;
+
+  const title = [
+    resistance ? levelTitleLine('壓力', resistance) : '壓力：上方沒有被碰過兩次以上的價位',
+    support ? levelTitleLine('支撐', support) : '支撐：下方沒有被碰過兩次以上的價位',
+    `距離相對 ${item.last_date} 的收盤 ${formatPrice(item.last_close)} 計算`,
+    '歷史轉折點的統計，不是預測；日 K 沒有還原除權息，很久以前的價位會偏高',
+  ].join('\n');
+
+  return (
+    <span className="inline-flex flex-col items-end" title={title}>
+      <span className="font-data-md text-data-md text-on-surface-variant">
+        <span className="font-body-sm text-body-sm text-outline">壓 </span>
+        {resistance ? formatSignedPercent(resistance.distance_pct, 1) : DASH}
+      </span>
+      <span className="font-data-md text-data-md text-on-surface-variant">
+        <span className="font-body-sm text-body-sm text-outline">支 </span>
+        {support ? formatSignedPercent(support.distance_pct, 1) : DASH}
+      </span>
+      {stale && (
+        <span className="font-body-sm text-body-sm text-outline">資料至 {item.last_date.slice(5)}</span>
+      )}
+    </span>
+  );
+}
+
 export default function Holdings() {
   const { setSymbol } = useSymbol();
   // 停用的列也一起拿：它們不在試算結果裡，但使用者仍該知道自己有這些部位。
@@ -425,6 +506,8 @@ export default function Holdings() {
   // 三面向評分問的是「持股的每一檔」，同一檔分散在多個帳戶也只問一次（hook 內會去重）。
   // 評分失敗不擋持股表：那一欄退成破折號。
   const scores = useStockScores(rows.map((row) => row.symbol));
+  // 壓力與支撐同樣只問持股、同一檔只問一次；失敗只讓那一欄變破折號。
+  const levels = useSymbolLevels(rows.map((row) => row.symbol));
   // 觀察中的檔另外問一次，不跟持股併在一起：兩邊各自有 40 檔上限，
   // 併起來超過時尾端會被截掉，而那幾格會被讀成「沒有資料」。
   const watchScores = useStockScores(watchOnlyRows.map((row) => row.symbol));
@@ -747,6 +830,8 @@ export default function Holdings() {
           未實現損益＝（現價 − 成本）× 股數，以即時報價現算，不含手續費與交易稅。
           缺成本的部位算得出市值但算不出損益，會顯示破折號並且不計入合計——
           把沒填的成本當成 0 會讓報酬率變成 +∞。
+          「壓力 / 支撐」是現價離最近一個歷史轉折價位的距離（相對最新收盤），只描述位置，
+          不是停損或停利建議——碰過幾次不代表這次會擋住。
         </p>
 
         {/* 新增一筆部位。代號必須已經在自選股清單裡，後端才知道它的名稱與市場。 */}
@@ -1040,6 +1125,12 @@ export default function Holdings() {
                     <th className={`${headCell} text-right`}>比重</th>
                     <th
                       className={`${headCell} text-right`}
+                      title="離最近一個壓力與支撐的距離（%，相對最新收盤）。歷史轉折點的統計，只描述位置，不是停損或停利建議；破折號是沒有資料或算不出來，不是離支撐 0%。滑鼠移到數字上看價位與依據"
+                    >
+                      壓力 / 支撐
+                    </th>
+                    <th
+                      className={`${headCell} text-right`}
                       title="基本面、籌碼面、技術面各自偏多、中性或偏空；破折號是沒有資料可評，不是中性。滑鼠移到徽章上看判斷依據"
                     >
                       三面向
@@ -1102,6 +1193,7 @@ export default function Holdings() {
                         <td className={`${numberCell} text-on-surface-variant`}>
                           {formatPercent(group.weight)}
                         </td>
+                        <td className="px-2 py-2" />
                         <td className="px-2 py-2" />
                         <td className="px-4 py-2" />
                       </tr>
@@ -1204,6 +1296,13 @@ export default function Holdings() {
                                 )}
                               </td>
                               <td className="p-2 py-3 text-right">
+                                <LevelCell
+                                  item={levels.bySymbol.get(item.symbol)}
+                                  failed={levels.failed}
+                                  latestDate={levels.latestDate}
+                                />
+                              </td>
+                              <td className="p-2 py-3 text-right">
                                 <ScoreBadges
                                   score={scores.bySymbol.get(item.symbol)}
                                   title={scores.failed ? '評分載入失敗，持股表不受影響' : undefined}
@@ -1237,7 +1336,7 @@ export default function Holdings() {
                             */}
                             {expanded && (
                               <tr className="bg-surface-container">
-                                <td colSpan={11} className="p-4">
+                                <td colSpan={12} className="p-4">
                                   <div className="flex flex-col gap-stack-md">
                                     {/* ── 這一檔的各筆部位 ── */}
                                     <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-3">

@@ -25,6 +25,21 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '20261029-B',
+    date: '2026-10-29',
+    title: '持股表加「壓力 / 支撐」',
+    items: [
+      {
+        kind: 'new',
+        text: '「我的持股」每一檔多一欄：現價離最近一個壓力與支撐的距離（相對最新收盤）。滑鼠移上去看價位區間、碰過幾次、最近一次的日期。',
+      },
+      {
+        kind: 'change',
+        text: '這一欄只描述位置，不用漲跌色、也不寫停損停利：回測沒有證明「離支撐多近」有預測力，紅綠會被讀成損益，文字會被讀成建議。破折號是沒有資料或算不出來，不是離支撐 0%。',
+      },
+    ],
+  },
+  {
     version: '20261029-A',
     date: '2026-10-29',
     title: '更版歷程',

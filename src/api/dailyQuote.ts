@@ -8,6 +8,8 @@ import {
   DailyQuoteByDate,
   DailyQuoteHistory,
   HistoryParams,
+  SymbolLevels,
+  SymbolLevelsList,
 } from './types';
 
 // DailyQuoteHandler — /stocks/daily，每日收盤行情（已收集落地的資料，可往回翻歷史）。
@@ -27,6 +29,30 @@ export const getChartPatterns = (symbol: string, params?: HistoryParams) =>
   request
     .get<ApiResponse<ChartPatterns>>(`/stocks/daily/${symbol}/patterns`, { params })
     .then((res) => res.data.data);
+
+// 一批代號現在的壓力與支撐，給表格旁邊的一欄用。比對每一檔打 /:symbol/patterns 輕得多：
+// 那支每次都要跑十八種型態偵測與籌碼查詢，這支只算價位。讀已落地的日 K，不打上游。
+//
+// 後端一次最多 40 檔，超過的在這裡分批送，免得尾端被截掉後被讀成「沒有資料」。
+// 沒有日 K 或單檔讀取失敗的代號不會讓整支失敗，那一檔回空的 levels；順序與傳入一致。
+export const LEVELS_MAX_SYMBOLS = 40;
+
+export const getPriceLevels = async (symbols: string[]): Promise<SymbolLevels[]> => {
+  const chunks: string[][] = [];
+  for (let i = 0; i < symbols.length; i += LEVELS_MAX_SYMBOLS) {
+    chunks.push(symbols.slice(i, i + LEVELS_MAX_SYMBOLS));
+  }
+  const pages = await Promise.all(
+    chunks.map((chunk) =>
+      request
+        .get<ApiResponse<SymbolLevelsList>>('/stocks/daily/levels', {
+          params: { symbols: chunk.join(',') },
+        })
+        .then((res): SymbolLevels[] => res.data.data?.items ?? [])
+    )
+  );
+  return ([] as SymbolLevels[]).concat(...pages);
+};
 
 // 籌碼混亂度：法人買賣方向反轉率與箱型假突破率（各看 20、60 個交易日）。讀已落地的資料，不打上游。
 // limit 是拿來偵測箱型的日 K 根數，不帶時後端用 500。兩個指標各自獨立，後端不合成分數。
