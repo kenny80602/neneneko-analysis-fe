@@ -133,3 +133,76 @@ export function changePercentOver(candles: Candle[], span: number): number | nul
   if (base <= 0) return null;
   return ((candles[candles.length - 1].close - base) / base) * 100;
 }
+
+/** 估算波動用的日報酬根數。實測 20、60、120 都能校準，60 是最不受單一事件拉偏的折衷。 */
+export const FORECAST_WINDOW = 60;
+
+// 常態分位數：雙尾 50% 與 80% 區間。刻意不放 95%：股價有厚尾，實測名目 95% 只涵蓋約 92%，
+// 畫出來會讓人以為「幾乎不會跑出去」。
+const Z50 = 0.6745;
+const Z80 = 1.2816;
+
+export interface ForecastPoint {
+  /** 第幾格（從 1 開始）。 */
+  slot: number;
+  lo50: number;
+  hi50: number;
+  lo80: number;
+  hi80: number;
+}
+
+export interface ForecastCone {
+  /** 區間的中心：最後一根日 K 的收盤，**不假設漲跌**。 */
+  base: number;
+  /** 日報酬的標準差（對數報酬）。 */
+  dailySigma: number;
+  daysPerSlot: number;
+  points: ForecastPoint[];
+}
+
+/**
+ * 以最近 FORECAST_WINDOW 個交易日的波動，推算接下來 `slots` 格的價格區間。
+ *
+ * 這是**波動範圍不是預測**：中心固定在最後收盤、對稱於對數尺度，寬度與 √天數成正比，
+ * 完全沒有方向判斷。全市場回測（2020-10～2026-10、成交值前 300 檔，名目 80% 區間在 5、10、20 日
+ * 實際涵蓋 79.4～81.0%）支持這個寬度，但回測驗證的是「寬度合不合理」，
+ * 不是「價格會往哪走」——後者我們檢定過的訊號都沒有 edge。
+ *
+ * 一定吃**日** K，不吃週 K／月 K：週 K 只有幾十根，標準差估不穩；
+ * 週與月的區間用 daysPerSlot（5、21）把日波動換算過去。
+ *
+ * 資料不足（少於 FORECAST_WINDOW + 1 根）或有非正價格回 null：不足是「不知道」，不是零波動。
+ * ⚠️ 收盤價沒有還原權值，視窗內有除權息的話，配息會被當成一次下跌而讓區間略寬。
+ */
+export function forecastCone(
+  daily: Candle[],
+  slots: number,
+  daysPerSlot: number
+): ForecastCone | null {
+  if (slots < 1 || daysPerSlot < 1 || daily.length < FORECAST_WINDOW + 1) return null;
+  const recent = daily.slice(-(FORECAST_WINDOW + 1));
+  if (recent.some((candle) => !(candle.close > 0))) return null;
+
+  const returns: number[] = [];
+  for (let i = 1; i < recent.length; i += 1) {
+    returns.push(Math.log(recent[i].close / recent[i - 1].close));
+  }
+  const mean = returns.reduce((sum, value) => sum + value, 0) / returns.length;
+  const variance =
+    returns.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (returns.length - 1);
+  const dailySigma = Math.sqrt(variance);
+
+  const base = recent[recent.length - 1].close;
+  const points: ForecastPoint[] = [];
+  for (let slot = 1; slot <= slots; slot += 1) {
+    const spread = dailySigma * Math.sqrt(slot * daysPerSlot);
+    points.push({
+      slot,
+      lo50: base * Math.exp(-Z50 * spread),
+      hi50: base * Math.exp(Z50 * spread),
+      lo80: base * Math.exp(-Z80 * spread),
+      hi80: base * Math.exp(Z80 * spread),
+    });
+  }
+  return { base, dailySigma, daysPerSlot, points };
+}

@@ -3,7 +3,14 @@ import ChartControls from './ChartControls';
 import { ChartPatterns, DailyQuote, PriceLevel } from '../api/types';
 import PatternPanel from './PatternPanel';
 import { useChartViewport } from '../hooks/useChartViewport';
-import { bollinger, CandleInterval, movingAverage, toCandles } from '../utils/chart';
+import {
+  bollinger,
+  CandleInterval,
+  FORECAST_WINDOW,
+  forecastCone,
+  movingAverage,
+  toCandles,
+} from '../utils/chart';
 import { formatNumber, formatPrice, formatShareToLot } from '../utils/format';
 import {
   directionClasses,
@@ -45,6 +52,14 @@ const GRID_LINES = 5;
 // 這只是進來時的視窗，不是上限：縮小或拖曳看得到更早的資料，資料有多長就能看多長。
 const VISIBLE_CANDLES: Record<CandleInterval, number> = { day: 120, week: 104, month: 36 };
 
+// 未來區間往右畫幾格、每格等於幾個交易日。總長一律約 20 個交易日：
+// 回測只驗證到 20 日（名目 80% 區間在 5、10、20 日實際涵蓋 79～81%），再往後沒有證據就不畫。
+const FORECAST_SLOTS: Record<CandleInterval, { slots: number; daysPerSlot: number }> = {
+  day: { slots: 20, daysPerSlot: 1 },
+  week: { slots: 4, daysPerSlot: 5 },
+  month: { slots: 1, daysPerSlot: 21 },
+};
+
 const INTERVALS: { key: CandleInterval; label: string }[] = [
   { key: 'day', label: '日線' },
   { key: 'week', label: '週線' },
@@ -79,6 +94,9 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
   const [showPatterns, setShowPatterns] = useState(true);
   const [showGaps, setShowGaps] = useState(true);
   const [showBands, setShowBands] = useState(false);
+  // 未來波動區間：依近期波動算的價格範圍，不假設方向，不是預測。預設關閉——
+  // 它會往右多佔幾格並撐大價格刻度，沒有要看的人不該被它改掉原本的圖。
+  const [showForecast, setShowForecast] = useState(false);
   // 籌碼亂的期間：框出來提醒「那段時間大戶在出、散戶在接」。不是賣出訊號。
   const [showChip, setShowChip] = useState(true);
   // 下跌趨勢與跌破前低：機械規則的現況描述，不是賣出建議。
@@ -99,6 +117,20 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
 
   const viewport = useChartViewport(candles.length, VISIBLE_CANDLES[interval]);
   const { start, count } = viewport;
+
+  // 區間一律用日 K 估波動（週 K、月 K 太短估不穩），再依週期換算每格天數。
+  // 只在視窗停在最新那根時畫：拖到過去的話，圖右緣不是「現在」，接著畫「未來」會對錯位置。
+  const dailyCandles = useMemo(
+    () => (interval === 'day' ? candles : toCandles(quotes, 'day')),
+    [candles, quotes, interval]
+  );
+  const atLatest = candles.length > 0 && start + count >= candles.length;
+  const cone = useMemo(() => {
+    if (!showForecast || !atLatest) return null;
+    const { slots, daysPerSlot } = FORECAST_SLOTS[interval];
+    return forecastCone(dailyCandles, slots, daysPerSlot);
+  }, [showForecast, atLatest, dailyCandles, interval]);
+  const futureSlots = cone ? cone.points.length : 0;
 
   // 均線先用全部資料算，再跟著 K 棒一起裁切；只算可見範圍的話，
   // 左邊界那幾根會因為「前面沒有資料」而斷掉一截——放大之後這件事更明顯，
@@ -133,6 +165,12 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
       });
     }
 
+    // 區間最外緣也要在刻度內，不然錐形會畫出圖外壓到成交量。
+    if (cone) {
+      const edge = cone.points[cone.points.length - 1];
+      values.push(edge.lo80, edge.hi80);
+    }
+
     const rawMin = values.length ? Math.min(...values) : 0;
     const rawMax = values.length ? Math.max(...values) : 0;
     // 全部同價（只有一根 K，或整段沒動）時上下各撐開一點，否則除以 0。
@@ -149,7 +187,7 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
       y: (value: number) => PRICE_BOTTOM - ((value - min) / (max - min)) * (PRICE_BOTTOM - PRICE_TOP),
       volumeY: (value: number) => VOLUME_BOTTOM - (value / volumeMax) * (VOLUME_BOTTOM - VOLUME_TOP),
     };
-  }, [view, averages, bands, showBands]);
+  }, [view, averages, bands, showBands, cone]);
 
   // 把型態與缺口對到目前週期的 K 棒：日期取「第一根收盤日 ≥ 該日」的 K 棒，
   // 週線與月線的 K 棒日期是那一週／那一月最後一個交易日，所以轉折點會落在它所屬的那一根。
@@ -206,7 +244,8 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
     );
   }
 
-  const step = PLOT_WIDTH / view.length;
+  // 右側多留 futureSlots 格給未來區間；K 棒只佔左邊那一段。
+  const step = PLOT_WIDTH / (view.length + futureSlots);
   const bodyWidth = Math.max(1.5, step * 0.6);
   const centerX = (index: number) => LEFT + (index + 0.5) * step;
 
@@ -387,6 +426,15 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
           </button>
           <button
             type="button"
+            onClick={() => setShowForecast((value) => !value)}
+            aria-pressed={showForecast}
+            title="未來約 20 個交易日的價格範圍：依近 60 日波動推算的 50% 與 80% 區間，中心固定在最新收盤、不假設漲跌。是波動範圍，不是預測"
+            className={`${intervalButton(showForecast)} border border-outline-variant`}
+          >
+            波動區間
+          </button>
+          <button
+            type="button"
             onClick={() => setShowGaps((value) => !value)}
             aria-pressed={showGaps}
             title="跳空缺口：突破、逃逸、竭盡、普通"
@@ -448,6 +496,32 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
           {showTrend && <LegendSwatch className="bg-pattern-down/30" label="下跌趨勢（▼＝跌破前低）" />}
           {showChip && <LegendSwatch className="bg-primary/30" label="籌碼亂的期間" />}
           <span>實線已確認、虛線形成中{showPatterns && showTargets && '、點劃線是量測目標（慣例上的算術，不是預測）'}</span>
+        </div>
+      )}
+
+      {showForecast && (
+        <div className="flex flex-col gap-1 font-body-sm text-body-sm text-on-surface-variant">
+          {cone ? (
+            <>
+              <div className="flex flex-wrap items-center gap-stack-md">
+                <LegendSwatch className="bg-pattern-neutral/25" label="50% 區間" />
+                <LegendSwatch className="bg-pattern-neutral/10" label="80% 區間" />
+                <span>日波動 {formatNumber(cone.dailySigma * 100, 2)}%（近 {FORECAST_WINDOW} 日），中心是最新收盤 {formatPrice(cone.base)}</span>
+              </div>
+              <p>
+                這是價格會落在哪個範圍，不是會漲還是會跌：中心固定不動，寬度只由近期波動決定，所以波動大的股票錐形就寬。
+                2020～2026 年成交值前 300 檔回測，名目 80% 區間實際涵蓋約 80%（79～81%；疫情崩盤的 2020 年只有 68%）、
+                名目 50% 實際約 53～56%。不畫 95%：實測只涵蓋約 92%，股價的極端行情比常態分布多。
+                財報、法說、除權息與大盤急殺都可能讓價格跑出區間；收盤價未還原權值，近 {FORECAST_WINDOW} 日內有除權息的話區間會略寬。
+              </p>
+            </>
+          ) : (
+            <p>
+              {!atLatest
+                ? '波動區間只在圖拖到最新一根時畫——拖到過去的話，圖右緣不是「現在」，接著畫未來會對錯位置。'
+                : `波動區間需要至少 ${FORECAST_WINDOW + 1} 個交易日的收盤才估得準，這一檔的資料還不夠長（不是波動為零）。`}
+            </p>
+          )}
         </div>
       )}
 
@@ -640,6 +714,63 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
             />
           );
         })}
+
+        {cone &&
+          (() => {
+            // 錐形從最後一根 K 的收盤出發，往右一格一格張開。用 pattern-neutral（方向未定）而不是
+            // 漲跌色：它不表達方向，換成紅或綠就等於在說「看漲／看跌」。
+            const x0 = centerX(view.length - 1);
+            const y0 = scale.y(cone.base);
+            const pts = cone.points;
+            const xk = (slot: number) => centerX(view.length - 1 + slot);
+            const poly = (lo: (p: (typeof pts)[number]) => number, hi: (p: (typeof pts)[number]) => number) =>
+              [
+                `${x0},${y0}`,
+                ...pts.map((p) => `${xk(p.slot)},${scale.y(hi(p))}`),
+                ...[...pts].reverse().map((p) => `${xk(p.slot)},${scale.y(lo(p))}`),
+              ].join(' ');
+            const edge = pts[pts.length - 1];
+            const totalDays = pts.length * cone.daysPerSlot;
+            const xEnd = xk(edge.slot);
+            return (
+              <g>
+                <title>{`未來約 ${totalDays} 個交易日的價格範圍（依近 ${FORECAST_WINDOW} 日波動推算，不假設漲跌，不是預測）：50% 區間 ${formatPrice(
+                  edge.lo50
+                )} ～ ${formatPrice(edge.hi50)}；80% 區間 ${formatPrice(edge.lo80)} ～ ${formatPrice(edge.hi80)}`}</title>
+                <line
+                  x1={x0}
+                  y1={PRICE_TOP}
+                  x2={x0}
+                  y2={PRICE_BOTTOM}
+                  strokeWidth="1"
+                  strokeDasharray="2 4"
+                  className="stroke-outline"
+                  opacity="0.6"
+                />
+                <polygon points={poly((p) => p.lo80, (p) => p.hi80)} className="fill-pattern-neutral" fillOpacity="0.10" />
+                <polygon points={poly((p) => p.lo50, (p) => p.hi50)} className="fill-pattern-neutral" fillOpacity="0.25" />
+                <line
+                  x1={x0}
+                  y1={y0}
+                  x2={xEnd}
+                  y2={y0}
+                  strokeWidth="1.2"
+                  strokeDasharray="5 4"
+                  className="stroke-pattern-neutral"
+                  opacity="0.8"
+                />
+                <text x={x0 + 6} y={PRICE_TOP + 12} fontSize="12" className="fill-pattern-neutral">
+                  未來約 {totalDays} 日・波動範圍，非預測
+                </text>
+                <text x={xEnd - 4} y={scale.y(edge.hi80) - 5} fontSize="12" textAnchor="end" className="font-data-md fill-pattern-neutral">
+                  {formatPrice(edge.hi80)}
+                </text>
+                <text x={xEnd - 4} y={scale.y(edge.lo80) + 14} fontSize="12" textAnchor="end" className="font-data-md fill-pattern-neutral">
+                  {formatPrice(edge.lo80)}
+                </text>
+              </g>
+            );
+          })()}
 
         {view.map((candle, index) => {
           // K 棒顏色照台股看盤慣例比「收盤 vs 開盤」，跟表格那種比昨收的漲跌是兩回事。
