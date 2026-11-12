@@ -5,10 +5,12 @@ import TrendChart from '../components/TrendChart';
 import RangeFilter from '../components/RangeFilter';
 import SymbolSearch from '../components/SymbolSearch';
 import { getMarginHistory } from '../api/margin';
+import { getDailyQuoteHistory } from '../api/dailyQuote';
 import { HistoryParams } from '../api/types';
 import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
-import { formatNumber, formatPercent, formatSigned, quoteColor } from '../utils/format';
+import { DASH, formatNumber, formatPercent, formatSigned, quoteColor } from '../utils/format';
+import { VOLUME_WINDOW, computeMarginTurnover } from '../utils/marginTurnover';
 
 export default function Margin() {
   const { symbol } = useSymbol();
@@ -20,7 +22,20 @@ export default function Margin() {
     { enabled: !!symbol }
   );
 
+  // 收盤行情只拿來算「占量」兩欄。多抓一個均量視窗，最前面那幾天才有 20 日均量可以除；
+  // 這支失敗不該讓融資融券整頁掛掉，所以不吃它的 error，算不出來就是破折號。
+  const { data: quoteData } = useAsyncData(
+    () =>
+      getDailyQuoteHistory(symbol, {
+        ...params,
+        limit: params.limit ? params.limit + VOLUME_WINDOW - 1 : undefined,
+      }),
+    [symbol, params.from, params.to, params.limit],
+    { enabled: !!symbol }
+  );
+
   const balances = data?.balances ?? [];
+  const turnover = computeMarginTurnover(balances, quoteData?.quotes ?? []);
 
   return (
     <>
@@ -40,6 +55,10 @@ export default function Margin() {
         <p className="font-body-sm text-body-sm text-on-surface-variant">
           數量單位為張。券資比＝融券餘額 ÷ 融資餘額 × 100，是判斷軋空的常用指標；
           使用率只有上櫃公布，上市顯示破折號代表「這個市場沒有這個數字」，不是 0。
+          「融資占量」＝ 融資餘額 ÷ 近 20 日平均成交量，單位是天，代表融資部位約等於幾天的量，
+          越高代表套牢的融資越多；「互抵占量」＝ 資券互抵 ÷ 當日成交量，資券互抵只含信用交易的當沖，
+          現股當沖不在裡面，所以是當沖比的下限。兩欄是風險提示，沒有檢定過的門檻，不是買賣訊號；
+          破折號是當天沒有收盤行情，或均量不滿 20 個交易日。
         </p>
 
         {!symbol && <PageState kind="idle" hint="在右上角輸入股票代號，或從左側自選股清單挑一檔。" />}
@@ -117,6 +136,8 @@ export default function Margin() {
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">融券增減</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">券資比</th>
                   <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">資券互抵</th>
+                  <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">融資占量（天）</th>
+                  <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">互抵占量</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/50">
@@ -147,6 +168,14 @@ export default function Margin() {
                     </td>
                     <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface-variant">
                       {formatNumber(row.offsetting)}
+                    </td>
+                    <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface-variant">
+                      {turnover.get(row.date)?.marginDays == null
+                        ? DASH
+                        : formatNumber(turnover.get(row.date)!.marginDays, 1)}
+                    </td>
+                    <td className="p-2 py-3 text-right font-data-md text-data-md text-on-surface-variant">
+                      {formatPercent(turnover.get(row.date)?.offsetPct)}
                     </td>
                   </tr>
                 ))}
