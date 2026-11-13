@@ -14,7 +14,8 @@ import StatCard from '../components/StatCard';
 import CreditChart, { CreditSeries, NEAR_PEAK_PCT, peakStat } from '../components/CreditChart';
 import { getMacroIndicators } from '../api/macroIndicators';
 import { getWorldIndices } from '../api/worldIndex';
-import { getMarketCredit, getMarketMarginSummaries } from '../api/margin';
+import { getMarketCredit, getMarketIndexKD, getMarketMarginSummaries } from '../api/margin';
+import { KD_HIGH, KD_NEAR, kdLevel } from '../utils/kd';
 import {
   getTPExAmountRanks,
   getTPExMarketHighlight,
@@ -898,6 +899,128 @@ const CREDIT_RANGES: { key: CreditRange; label: string; days: number }[] = [
 const YI = 100_000_000;
 
 /**
+ * 指數 KD(9,3,3)：K、D 兩條線，80 與 20 畫參考線，K 接近或超過 80 時給提示。
+ *
+ * 自己抓資料、自己處理失敗：日期軸是指數自己的交易日（不是融資融券的日子），
+ * 上櫃的融資融券只有約半年、指數日 K 更長，KD 是遞迴算的不能被切斷。
+ *
+ * ⚠️ 提示不是預測。2026-11-13 對加權指數的事件研究顯示 K≥80 之後 20 日的下跌機率
+ * （33%）比全部交易日（36%）還低，多頭時 KD 會停在 80 以上（高檔鈍化）。
+ * 使用者要的是「接近 80 就提醒我評估減碼」，所以提示照做，但說明裡必須帶著這組數字，
+ * 不讓提示被讀成「即將下跌」。數字是帶日期的快照，抄自後端 analysis/taiex_kd_study.py，
+ * 不會自己更新——重跑後要回來改這一段與更版歷程。
+ */
+function KdPanel({ market, from, indexName }: { market: MarketCode; from: string; indexName: string }) {
+  const kd = useAsyncData(() => getMarketIndexKD({ market, from }), [market, from]);
+  const items = useMemo(() => kd.data?.items ?? [], [kd.data]);
+  const dates = useMemo(() => items.map((d) => d.date), [items]);
+  const series = useMemo<CreditSeries[]>(
+    () => [
+      {
+        label: 'K',
+        values: items.map((d) => d.k),
+        axis: 'left',
+        className: 'stroke-primary',
+        swatchClassName: 'bg-primary',
+        format: (v) => formatNumber(v, 2),
+      },
+      {
+        label: 'D',
+        values: items.map((d) => d.d),
+        axis: 'left',
+        className: 'stroke-outline',
+        swatchClassName: 'bg-outline',
+        format: (v) => formatNumber(v, 2),
+        dash: '6 4',
+      },
+    ],
+    [items]
+  );
+  const latest = items[items.length - 1];
+  const level = kdLevel(latest?.k);
+  const syntheticDays = items.filter((d) => d.synthetic).length;
+
+  return (
+    <div className={`${cardClass} p-4 flex flex-col gap-stack-sm`}>
+      <div className="flex flex-wrap items-center gap-stack-md">
+        <h3 className="font-body-md text-body-md text-on-surface font-semibold">
+          {indexName} KD(9,3,3)
+        </h3>
+        {series.map((s) => (
+          <span key={s.label} className="flex items-center gap-1.5">
+            <span className={`inline-block h-2 w-2 rounded-sm ${s.swatchClassName}`} />
+            <span className="font-body-sm text-body-sm text-on-surface-variant">{s.label}</span>
+          </span>
+        ))}
+        {latest && (
+          <span className="ml-auto font-data-md text-data-md text-on-surface">
+            K {formatNumber(latest.k, 2)}　D {formatNumber(latest.d, 2)}
+            <span className="ml-2 font-body-sm text-body-sm text-on-surface-variant">{latest.date}</span>
+          </span>
+        )}
+      </div>
+
+      {level !== 'none' && latest && (
+        <div
+          role="status"
+          className={`flex items-start gap-2 rounded border px-3 py-2 font-body-md text-body-md ${
+            level === 'high'
+              ? 'border-error bg-error-container text-on-error-container'
+              : 'border-outline-variant bg-surface-container-low text-on-surface'
+          }`}
+        >
+          <span className="material-symbols-outlined">warning</span>
+          <span>
+            {level === 'high'
+              ? `K ${formatNumber(latest.k, 2)}、D ${formatNumber(latest.d, 2)}：KD 已進入高檔區（≥${KD_HIGH}），短線偏熱，可以評估是否分批減碼。`
+              : `K ${formatNumber(latest.k, 2)}：KD 接近 ${KD_HIGH}（≥${KD_NEAR}），留意短線過熱，可以先評估是否分批減碼。`}
+          </span>
+        </div>
+      )}
+
+      {kd.loading && items.length === 0 && <PageState kind="loading" />}
+      {kd.error && <PageState kind="error" message={kd.error} onRetry={kd.reload} />}
+      {!kd.loading && !kd.error && items.length === 0 && (
+        <PageState
+          kind="empty"
+          message="這段期間還沒有指數日 K"
+          hint="KD 讀的是後端已經收集下來的指數日 K，不是即時查詢。還沒回補過就會是空的（後端 cmd/notify 的 -backfill-market-index）。"
+        />
+      )}
+
+      {items.length >= 2 && (
+        <CreditChart
+          dates={dates}
+          series={series}
+          leftRange={{ min: 0, max: 100 }}
+          axisFormat={{ left: (v) => formatNumber(v) }}
+          refLines={[
+            { value: KD_HIGH, label: `${KD_HIGH}`, className: 'stroke-error', textClassName: 'fill-error' },
+            { value: 20, label: '20', className: 'stroke-outline', textClassName: 'fill-outline' },
+          ]}
+        />
+      )}
+
+      {items.length > 0 && (
+        <p className="font-body-sm text-body-sm text-on-surface-variant">
+          <span className="text-on-surface font-semibold">KD 高檔不等於即將下跌。</span>
+          加權指數 2016-10～2026-11（2,453 個交易日，2026-11-13 的檢定快照）：K≥80 的日子之後 20 日下跌機率 33%，
+          全部交易日是 36%，沒有比較高；K≥80 佔 29% 的交易日，多頭時 KD 會連續停在 80 以上（高檔鈍化），
+          所以大約每三天就有一天提示。K 在 70～80 之間時下跌機率 43%，是唯一偏高的一格，但相鄰區間沒有規律。
+          較弱的情況集中在空頭年（2018、2022 年 K≥80 之後 20 日報酬比基準更差）。
+          提示只是提醒你評估部位，減碼與否是你的風險管理決定，不是預測。
+          {market === 'TPEx' &&
+            '　上櫃指數只有約 450 個交易日，歷史檢定只針對加權指數；上櫃方向相同，但訊號事件只有 9～13 次，樣本太少不能單獨下結論。'}
+          {syntheticDays > 0 &&
+            `　上櫃 2026-08 以前沒有最高最低價，其中 ${syntheticDays} 天的 KD 用「近 9 日收盤的高低」代替，跟看盤軟體畫的不是同一條線，數值會有落差。`}
+          　KD 起算點是 50，區間最前面約二十根會受起算點影響（後端已多撈前置期，通常不會出現在畫面上）。
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
  * 大盤信用交易：加權指數、融資餘額與融券餘額（雙軸）、當日沖銷三張圖。
  *
  * 只有上市：當日沖銷是後端從上市逐檔明細的「資券互抵」加總出來的，上櫃的合計列沒有這一欄。
@@ -1042,6 +1165,8 @@ function CreditSection() {
         </div>
         </div>
       </div>
+
+      <KdPanel market={market} from={from} indexName={indexName} />
 
       {credit.loading && items.length === 0 && <PageState kind="loading" />}
       {credit.error && <PageState kind="error" message={credit.error} onRetry={credit.reload} />}

@@ -96,6 +96,11 @@ interface CreditChartProps {
   series: CreditSeries[];
   /** 軸刻度的格式。同一條軸上的線共用，所以只給一組。 */
   axisFormat?: { left?: (value: number) => string; right?: (value: number) => string };
+  /** 左軸固定範圍。KD 這類有天然界線（0～100）的指標不該被資料的高低推著走，否則 80 的位置每次都不同。 */
+  leftRange?: { min: number; max: number };
+  /** 左軸上的水平參考線（例如 KD 的 80 與 20），畫在資料線底下。 */
+  /** textClassName 要寫成完整的 fill-* class：Tailwind 靠原始碼字串掃描，不能用 replace 拼出來。 */
+  refLines?: { value: number; label: string; className: string; textClassName: string }[];
 }
 
 // 座標系刻意跟 TrendChart 一樣寬（1000），同一頁上兩種圖的線寬與字級才會一致。
@@ -140,7 +145,7 @@ const defaultFormat = (value: number) =>
  * 融資（億元）與融券（張）擺在同一張圖——兩者差兩個數量級，共用一條軸的話
  * 融券會被壓成貼著底部的一條直線。分成兩張圖又看不出「融資上升時融券怎麼動」。
  */
-export default function CreditChart({ dates, series, axisFormat }: CreditChartProps) {
+export default function CreditChart({ dates, series, axisFormat, leftRange, refLines }: CreditChartProps) {
   const [hover, setHover] = useState<number | null>(null);
 
   const axes = useMemo(() => {
@@ -149,8 +154,13 @@ export default function CreditChart({ dates, series, axisFormat }: CreditChartPr
         .filter((s) => s.axis === side)
         .flatMap((s) => s.values)
         .filter((v): v is number => v != null && Number.isFinite(v));
-    return { left: niceAxis(collect('left')), right: niceAxis(collect('right')) };
-  }, [series]);
+    const left = collect('left');
+    return {
+      // 固定範圍仍要有資料才畫，否則整條線都是 null 時會畫出一張空圖。
+      left: leftRange && left.length > 0 ? leftRange : niceAxis(left),
+      right: niceAxis(collect('right')),
+    };
+  }, [series, leftRange]);
 
   const length = dates.length;
   const hasRight = axes.right != null;
@@ -213,6 +223,35 @@ export default function CreditChart({ dates, series, axisFormat }: CreditChartPr
                   {rightFormat(axes.right.min + t * (axes.right.max - axes.right.min))}
                 </text>
               )}
+            </g>
+          );
+        })}
+
+        {refLines?.map((line) => {
+          if (!axes.left || line.value < axes.left.min || line.value > axes.left.max) return null;
+          const y = yOf(axes.left, line.value);
+          return (
+            <g key={`ref-${line.value}`}>
+              <line
+                x1={GUTTER}
+                y1={y}
+                x2={GUTTER + plotWidth}
+                y2={y}
+                className={line.className}
+                strokeWidth="1.5"
+                strokeDasharray="5 4"
+                opacity="0.8"
+              />
+              <text
+                x={GUTTER + plotWidth - 4}
+                y={y - 5}
+                textAnchor="end"
+                className={line.textClassName}
+                fontSize="12"
+                fontWeight="600"
+              >
+                {line.label}
+              </text>
             </g>
           );
         })}

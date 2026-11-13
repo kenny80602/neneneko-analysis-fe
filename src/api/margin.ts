@@ -6,6 +6,7 @@ import {
   MarginHistory,
   Market,
   MarketCredit,
+  IndexKD,
   MarketMarginSummaries,
 } from './types';
 
@@ -38,4 +39,13 @@ export const getMarketMarginSummaries = (params?: { from?: string; to?: string }
 export const getMarketCredit = (params?: { market?: Market; from?: string; to?: string }) =>
   request
     .get<ApiResponse<MarketCredit>>('/stocks/margin/credit', { params })
+    .then((res) => res.data.data);
+
+// 指數（上市＝加權、上櫃＝櫃買）的 KD(9,3,3)，日期由舊到新。
+// 路徑掛在 /credit 底下是因為「大盤信用交易」那一區本來就畫指數，後端沒有另開 handler。
+// 日期軸是指數自己的交易日，上櫃的融資融券只有約半年也不影響 KD。
+// 只讀已落地的資料不打上游；空清單代表指數日 K 還沒收。
+export const getMarketIndexKD = (params?: { market?: Market; from?: string; to?: string }) =>
+  request
+    .get<ApiResponse<IndexKD>>('/stocks/margin/credit/kd', { params })
     .then((res) => res.data.data);

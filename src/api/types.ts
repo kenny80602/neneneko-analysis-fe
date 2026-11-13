@@ -608,6 +608,25 @@ export interface MarketCredit {
   items: MarketCreditDay[];
 }
 
+// 指數 KD(9,3,3)（/stocks/margin/credit/kd）的一天。
+// 日期軸是指數自己的交易日，不受融資融券有沒有資料影響。
+export interface IndexKDDay {
+  date: string;
+  close: number;
+  // 0~100。算法同 /stocks/indicators 的 kd，起算點 50，前置期後端已經扣掉。
+  k: number;
+  d: number;
+  // 這一天的 RSV 回看視窗裡有沒有用收盤價頂替最高最低。
+  // 上櫃 2026-08 以前沒有開高低，那段 KD 跟看盤軟體畫的不是同一條線。
+  synthetic: boolean;
+}
+
+export interface IndexKD {
+  count: number;
+  // 日期由舊到新，畫圖直接用。
+  items: IndexKDDay[];
+}
+
 // ===== 估值指標（/stocks/valuation）=====
 
 // 數值為 null 代表「沒有這個值」：虧損的公司算不出本益比、沒配息的沒有殖利率。
