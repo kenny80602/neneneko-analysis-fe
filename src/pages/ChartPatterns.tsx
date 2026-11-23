@@ -375,6 +375,19 @@ const BREAK_ROWS = [
   { name: '跌破時還不在下跌趨勢', n: '約 990', x5: '-0.57%', w5: '59%', x20: '-1.23%', w20: '61%' },
 ];
 
+// 目標價命中率快照。數字抄自後端 `cmd/patternstudy`（不加旗標的預設模式）的「碰到量測目標」，
+// 同樣是「那一天跑出來的結果」：資料更新後要重跑再回來改，日期與條件不能拿掉。
+const TARGET_HIT_DATE = '2026-11-23';
+
+const TARGET_HIT_ROWS = [
+  { name: 'W 底（雙重底）', direction: '看漲', hit: 333, n: 536 },
+  { name: '頭肩底', direction: '看漲', hit: 53, n: 114 },
+  { name: '三重底', direction: '看漲', hit: 34, n: 59 },
+  { name: 'M 頭（雙重頂）', direction: '看跌', hit: 414, n: 662 },
+  { name: '頭肩頂', direction: '看跌', hit: 65, n: 136 },
+  { name: '三重頂', direction: '看跌', hit: 36, n: 66 },
+];
+
 const cardClass = 'bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm';
 
 /** 示意圖：100 × 50 的小圖，顏色跟個股總覽疊圖用同一組（看漲青藍、看跌橘、方向未定紫）。 */
@@ -639,11 +652,94 @@ export default function ChartPatterns() {
         </section>
 
         <section className={`${cardClass} p-6 flex flex-col gap-stack-sm`}>
+          <h2 className="font-headline-md text-headline-md text-primary">布林通道與 %b</h2>
+          <p className="font-body-md text-body-md text-on-surface">
+            個股總覽「價格走勢」的「布林」按鈕畫的是 20 日、2 倍標準差的通道：中軌是 20 日收盤均線，上下軌是中軌加減 2 倍標準差
+            （母體公式，除以 n，跟券商軟體一致）。開著的時候圖上方多一行 <span className="font-semibold">%b</span>。
+          </p>
+          <div className="font-body-sm text-body-sm text-on-surface-variant flex flex-col gap-1">
+            <p>
+              <span className="text-on-surface">%b ＝ （收盤 − 下軌）÷（上軌 − 下軌）。</span>
+              0 在下軌、0.5 在中軌、1 在上軌，可以小於 0 或大於 1（收在軌道之外）。
+              例：下軌 90、上軌 110，收 105，%b = (105 − 90) ÷ 20 = <span className="font-data-md text-data-md text-on-surface">0.75</span>。
+            </p>
+            <p>
+              它是乖離的一種，只是尺子換成波動：乖離率量「離均線幾 %」，%b 量「離均線幾個標準差」，所以高波動股的通道自然比較寬，
+              同樣是 %b = 1，極端程度比固定百分比更可比。代價是波動剛放大時下軌被拉遠，%b 不容易小於 0。
+            </p>
+            <p>
+              <span className="text-on-surface">頻寬</span>＝（上軌 − 下軌）÷ 中軌，量通道有多寬。頻寬收窄、中軌走平是盤整的特徵，
+              %b 再告訴你價格偏向通道的哪一側。
+            </p>
+          </div>
+          <p className="font-body-sm text-body-sm text-on-surface-variant">
+            <span className="text-on-surface">怎麼讀、不怎麼讀：</span>
+            有兩種互相矛盾的讀法——盤整時把「大於 1」當過熱、「小於 0」當超跌；趨勢時強勢股會長時間貼著上軌（%b 持續大於 0.8），
+            那是強的特徵不是賣訊。要看當下是盤整還是趨勢才選得出讀法，單看 %b 分不出來。
+            前 19 根與 20 日收盤完全沒變（上下軌重合）時算不出來，畫面顯示破折號，不是 0。
+            這個數值<span className="text-on-surface">沒有檢定過</span>，只當位置描述，不是進出場訊號；本站檢定過的其他技術訊號（站回月線、W 底與 M 頭、KD）都沒有穩定的優勢。
+          </p>
+        </section>
+
+        <section className={`${cardClass} p-6 flex flex-col gap-stack-sm`}>
           <h2 className="font-headline-md text-headline-md text-primary">目標價與同期籌碼</h2>
           <p className="font-body-md text-body-md text-on-surface">
             目標價是傳統的量測算式：<span className="font-semibold">突破線再往突破方向走一個型態高度</span>，
             只是幾何算術，沒有驗證過價格真的會走到，也不是分析師目標價。V 型、倒 V、圓弧、破底翻與喇叭波沒有慣用算式，不給目標價。
           </p>
+          <div className="font-body-sm text-body-sm text-on-surface-variant flex flex-col gap-1">
+            <p>
+              <span className="text-on-surface">算式與例子：</span>
+              W 底＝頸線 +（頸線 − 腳的價位）。兩隻腳在 100、頸線在 110，型態高度是 10，目標價 = 110 + 10 = <span className="font-data-md text-data-md text-on-surface">120</span>。
+            </p>
+            <p>
+              M 頭＝頸線 −（高點 − 頸線）。兩個高點在 100、頸線在 90，目標價 = 90 − 10 = <span className="font-data-md text-data-md text-on-surface">80</span>。
+              頭肩型取頭到頸線的距離，三重型用三個極值的平均，細節見上面各型態的「目標價」。
+            </p>
+          </div>
+          <div className="flex flex-col gap-1">
+            <h3 className="font-body-md text-body-md text-on-surface font-semibold">
+              實測有多少碰到目標價
+              <span className="font-body-sm text-body-sm text-on-surface-variant font-normal">　{TARGET_HIT_DATE} 快照</span>
+            </h3>
+            <div className="overflow-x-auto rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm">
+              <table className="w-full text-left">
+                <thead className="bg-surface-container-low border-b border-outline-variant">
+                  <tr>
+                    <th className="p-2 pl-4 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">型態</th>
+                    <th className="p-2 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">方向</th>
+                    <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">已確認</th>
+                    <th className="p-2 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">碰到目標</th>
+                    <th className="p-2 pr-4 text-right font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">比例</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-outline-variant/50">
+                  {TARGET_HIT_ROWS.map((row) => (
+                    <tr key={row.name} className="hover:bg-surface-container-low/50 transition-colors">
+                      <td className="p-2 pl-4 py-3 font-body-md text-body-md text-on-surface whitespace-nowrap">{row.name}</td>
+                      <td className="p-2 py-3 font-body-md text-body-md text-on-surface-variant">{row.direction}</td>
+                      <td className="p-2 py-3 text-right font-data-md text-data-md">{row.n}</td>
+                      <td className="p-2 py-3 text-right font-data-md text-data-md">{row.hit}</td>
+                      <td className="p-2 pr-4 py-3 text-right font-data-md text-data-md">{Math.round((row.hit / row.n) * 100)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="font-body-sm text-body-sm text-on-surface-variant">
+              口徑：確認日之後，盤中最高（看跌是最低）<span className="text-on-surface">曾經</span>碰到目標價就算，
+              <span className="text-on-surface">沒有時間限制</span>，看到資料最後一天為止。所以越早確認的型態有越多時間碰到，
+              比例會偏高；它回答「有沒有碰過」，不是「幾天內會到」，也不是「碰到之後賺不賺」。
+              自選股 262 檔、2024-09～2026-11、同一段多頭、只有現在還有資料的股票（存活者偏誤），型態之間互相重疊，沒做顯著性檢定。
+              沒有慣用目標價的型態不列。這是快照，重跑用後端 <code>patternstudy</code>（不加旗標）。
+            </p>
+            <p className="font-body-sm text-body-sm text-on-surface-variant">
+              <span className="text-on-surface">怎麼讀：</span>
+              碰到目標價的比例約 46%～63%，但同一份資料裡這幾種型態確認後 20 日「順著預期方向」的超額報酬並不一致
+              （W 底 −1.55%、M 頭 +2.64%，正數代表之後比大盤更偏向預期方向）。碰到目標價不等於型態有預測力：
+              目標價離確認價多遠、期間股價自然漲跌多少都會影響，沒有扣掉。
+            </p>
+          </div>
           <p className="font-body-md text-body-md text-on-surface">
             型態清單的「同期籌碼」站在型態確認那天看這一檔算不算<span className="font-semibold">籌碼亂</span>：集保近 4 週大戶（400 張以上）持股減少、
             散戶（50 張以下）增加，各 ≥ 總庫存 0.3%，而且有法人近 5 日賣超（≥ 總庫存 0.1%）或融資近 5 日增加（≥ 3%）佐證。
