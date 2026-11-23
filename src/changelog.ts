@@ -25,6 +25,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '20261123-C',
+    date: '2026-11-23',
+    title: '研究報告新增四篇（市場結構）',
+    items: [
+      {
+        kind: 'new',
+        text:
+          '「研究報告」新增：金居（8358）「籌碼亂了」查證與詳細分析（形態、量、大戶散戶、法人融資，附圖）、籌碼亂一般多久與整盤多久才點火、大盤與個股的領先與落後（用現有 13 檔持股實測）。報告在後端 docs/，目錄自動列出，點下去在新分頁開啟。',
+      },
+    ],
+  },
+  {
     version: '20261123-B',
     date: '2026-11-23',
     title: '技術型態圖鑑加「布林 %b」與目標價實測',
