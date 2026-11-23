@@ -9,9 +9,10 @@ import {
   FORECAST_WINDOW,
   forecastCone,
   movingAverage,
+  percentB,
   toCandles,
 } from '../utils/chart';
-import { formatNumber, formatPrice, formatShareToLot } from '../utils/format';
+import { DASH, formatNumber, formatPrice, formatShareToLot } from '../utils/format';
 import {
   directionClasses,
   GAP_CLASSES,
@@ -137,8 +138,10 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
   // 所以裁切一定要在算完之後做。
   const series = useMemo(() => {
     const end = start + count;
+    const allBands = bollinger(candles);
     return {
-      bands: bollinger(candles).slice(start, end),
+      bands: allBands.slice(start, end),
+      percentBs: percentB(candles, allBands).slice(start, end),
       view: candles.slice(start, end),
       averages: MA_SERIES.map((ma) => ({
         ...ma,
@@ -147,7 +150,7 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
     };
   }, [candles, start, count]);
 
-  const { view, averages, bands } = series;
+  const { view, averages, bands, percentBs } = series;
 
   const scale = useMemo(() => {
     const values: number[] = [];
@@ -480,6 +483,25 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
           );
         })}
       </div>
+
+      {showBands && (
+        <div className="flex flex-col gap-1 font-body-sm text-body-sm text-on-surface-variant">
+          <div className="flex flex-wrap items-center gap-stack-md">
+            <span>
+              %b{' '}
+              <span className="font-data-md text-data-md text-on-surface">
+                {formatNumber(percentBs[percentBs.length - 1], 2)}
+              </span>
+              （{view.length ? view[view.length - 1].date : DASH}）
+            </span>
+          </div>
+          <p>
+            %b 是收盤在通道裡的位置：0 在下軌、0.5 在中軌、1 在上軌，可以小於 0 或大於 1（收在軌道之外）。
+            跟著圖上最後一根可見的 K 棒變動；破折號是前 19 根或 20 日收盤完全沒變（上下軌重合），不是 0。
+            這是位置的描述，不是買賣訊號：強勢股會長時間貼著上軌，沒有檢定過「大於 1 之後會回檔」。
+          </p>
+        </div>
+      )}
 
       {patterns && (showPatterns || showGaps || showChip || showTrend || showLevels) && (
         <div className="flex flex-wrap items-center gap-stack-md font-body-sm text-body-sm text-on-surface-variant">

@@ -1,4 +1,4 @@
-import { Candle, FORECAST_WINDOW, forecastCone } from './chart';
+import { Candle, FORECAST_WINDOW, forecastCone, percentB } from './chart';
 
 // 依序給定收盤價，其餘欄位無關。
 const bars = (closes: number[]): Candle[] =>
@@ -72,5 +72,27 @@ describe('forecastCone', () => {
     const wild = [10, 500, 20, 400, 30];
     const cone = forecastCone(bars([...wild, ...calm]), 1, 1)!;
     expect(cone.dailySigma).toBe(0);
+  });
+});
+
+describe('percentB', () => {
+  it('前 19 根與上下軌重合（收盤全相同）是 null，不是 0 或 0.5', () => {
+    const flat = percentB(bars(Array(25).fill(100)));
+    expect(flat.every((v) => v === null)).toBe(true);
+    const moving = percentB(bars(wiggle(25)));
+    expect(moving.slice(0, 19).every((v) => v === null)).toBe(true);
+    expect(moving[19]).not.toBeNull();
+  });
+
+  it('收在中軌是 0.5；跳到上軌之外大於 1，跌到下軌之外小於 0', () => {
+    const base = wiggle(20);
+    const mid = percentB(bars([...base]))[19]!;
+    expect(mid).toBeGreaterThan(0);
+    expect(mid).toBeLessThan(1);
+
+    const up = percentB(bars([...base.slice(0, 19), 200]))[19]!;
+    const down = percentB(bars([...base.slice(0, 19), 10]))[19]!;
+    expect(up).toBeGreaterThan(1);
+    expect(down).toBeLessThan(0);
   });
 });

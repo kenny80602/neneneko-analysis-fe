@@ -123,6 +123,27 @@ export function bollinger(
 }
 
 /**
+ * %b：收盤價在布林通道裡的相對位置，(收盤 − 下軌) ÷ (上軌 − 下軌)。0＝下軌、0.5＝中軌、1＝上軌，
+ * 可以小於 0 或大於 1（收在軌道之外）。
+ *
+ * 前 period − 1 根與「上下軌重合」（20 日收盤完全沒變，標準差為 0）都是 null：
+ * 分母是 0 算不出來，不是 0.5。
+ *
+ * ⚠️ 只是位置的描述，不是買賣訊號。強勢股會長時間貼著上軌（%b 持續 > 0.8），
+ * 把「大於 1」讀成過熱就會一路賣飛；這個數值沒有檢定過。
+ */
+export function percentB(
+  candles: Candle[],
+  bands: { upper: number | null; lower: number | null }[] = bollinger(candles)
+): (number | null)[] {
+  return candles.map((candle, i) => {
+    const { upper, lower } = bands[i] ?? { upper: null, lower: null };
+    if (upper == null || lower == null || upper <= lower) return null;
+    return (candle.close - lower) / (upper - lower);
+  });
+}
+
+/**
  * 最後一根相對 span 根之前的漲跌幅（%）。資料不足回 null——不足是「不知道」，不是 0。
  *
  * ⚠️ 收盤價沒有還原權值，區間內若有除權息，這個數字會把配息當成下跌。
