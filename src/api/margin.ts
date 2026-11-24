@@ -7,6 +7,7 @@ import {
   Market,
   MarketCredit,
   IndexKD,
+  IndexPatterns,
   MarketMarginSummaries,
 } from './types';
 
@@ -48,4 +49,13 @@ export const getMarketCredit = (params?: { market?: Market; from?: string; to?: 
 export const getMarketIndexKD = (params?: { market?: Market; from?: string; to?: string }) =>
   request
     .get<ApiResponse<IndexKD>>('/stocks/margin/credit/kd', { params })
+    .then((res) => res.data.data);
+
+// MarginHandler.CreditPatterns — /stocks/margin/credit/patterns，加權指數或櫃買指數的價格型態、
+// 缺口、壓力支撐與跌破前低。偵測跟個股用同一組規則，回應形狀同 /stocks/daily/:symbol/patterns
+// 外加日 K（quotes，由新到舊）。limit 預設 500（約兩年）、上限 1000。
+// 只讀已落地的資料不打上游；空清單代表指數日 K 還沒收。
+export const getMarketIndexPatterns = (params?: { market?: Market; limit?: number }) =>
+  request
+    .get<ApiResponse<IndexPatterns>>('/stocks/margin/credit/patterns', { params })
     .then((res) => res.data.data);

@@ -14,7 +14,8 @@ import StatCard from '../components/StatCard';
 import CreditChart, { CreditSeries, NEAR_PEAK_PCT, peakStat } from '../components/CreditChart';
 import { getMacroIndicators } from '../api/macroIndicators';
 import { getWorldIndices } from '../api/worldIndex';
-import { getMarketCredit, getMarketIndexKD, getMarketMarginSummaries } from '../api/margin';
+import { getMarketCredit, getMarketIndexKD, getMarketIndexPatterns, getMarketMarginSummaries } from '../api/margin';
+import PriceChart from '../components/PriceChart';
 import { KD_HIGH, KD_NEAR, kdLevel } from '../utils/kd';
 import {
   getTPExAmountRanks,
@@ -1025,6 +1026,59 @@ function KdPanel({ market, from, indexName }: { market: MarketCode; from: string
 }
 
 /**
+ * 指數的價格走勢與技術型態：K 線、均線、布林、W 底與 M 頭等型態、跳空缺口、壓力支撐、跌破前低。
+ *
+ * 後端偵測跟個股總覽是同一組規則（見 /stocks/margin/credit/patterns），畫面也是同一個 PriceChart，
+ * 所以個股上看得懂的標示在這裡意思一樣：實線已確認、虛線形成中，確認後收盤回到頸線另一側算失敗。
+ *
+ * 自己抓資料、自己處理失敗，跟 KD 區塊互不拖累。成交量是全市場股數（不是個股的張數口徑）。
+ *
+ * ⚠️ 現況描述，不是買賣訊號。2026-11-24 對加權指數看過：同一段走勢常被偵測成好幾個重疊的型態，
+ * 看跌型態在大反彈當天就被判失敗（頭肩頂、擴張型態），本站對各種技術位置的檢定信賴區間也都跨 0。
+ * 上櫃 2025-01 以前沒有開高低（用收盤頂替，synthetic_bars 會標出根數），那段的型態只是近似。
+ */
+function IndexPatternPanel({ market, indexName }: { market: MarketCode; indexName: string }) {
+  const result = useAsyncData(() => getMarketIndexPatterns({ market, limit: 500 }), [market]);
+  const quotes = useMemo(() => result.data?.quotes ?? [], [result.data]);
+
+  return (
+    <div className={`${cardClass} p-4 flex flex-col gap-stack-sm`}>
+      <div className="flex flex-wrap items-center gap-stack-md">
+        <h3 className="font-body-md text-body-md text-on-surface font-semibold">{indexName} 走勢與技術型態</h3>
+        {quotes.length > 0 && (
+          <span className="ml-auto font-body-sm text-body-sm text-on-surface-variant">
+            {quotes[quotes.length - 1].date} ～ {quotes[0].date}，{quotes.length} 個交易日
+          </span>
+        )}
+      </div>
+      {result.loading && quotes.length === 0 && <PageState kind="loading" />}
+      {result.error && <PageState kind="error" message={result.error} onRetry={result.reload} />}
+      {!result.loading && !result.error && quotes.length === 0 && (
+        <PageState
+          kind="empty"
+          message="這段期間還沒有指數日 K"
+          hint="這裡讀的是後端已經收集下來的指數日 K，不是即時查詢。還沒回補過就會是空的（後端 cmd/notify 的 -backfill-market-index）。"
+        />
+      )}
+      {quotes.length > 0 && <PriceChart quotes={quotes} patterns={result.data?.patterns} patternsError={null} />}
+      {(result.data?.synthetic_bars ?? 0) > 0 && (
+        <p className="font-body-sm text-body-sm text-on-surface-variant">
+          其中 {result.data?.synthetic_bars} 個交易日沒有開高低價（用收盤價頂替，K 棒沒有影線），那段的型態與缺口只是近似。
+        </p>
+      )}
+      {quotes.length > 0 && (
+        <p className="font-body-sm text-body-sm text-on-surface-variant">
+          <span className="text-on-surface font-semibold">型態是現況描述，不是買賣訊號。</span>
+          偵測規則跟個股總覽同一組：同一段走勢常被叫成好幾個重疊的型態，確認後收盤回到頸線另一側就算失敗
+          （看跌型態在大反彈當天就可能被判失敗）。目標價只是量測的算術，沒有驗證過價格真的會走到。
+          成交量是全市場股數，不是個股的張數口徑。籌碼亂的標記指數沒有（沒有集保與法人）。
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
  * 指數的布林 %b：收盤在 20 日、2 倍標準差通道裡的位置（算式在 utils/chart.ts 的 percentB）。
  *
  * 共用 KdPanel 抓回來的指數收盤，不另外發請求。區間最前面 19 個交易日沒有 %b（視窗不夠長），
@@ -1244,6 +1298,8 @@ function CreditSection() {
         </div>
         </div>
       </div>
+
+      <IndexPatternPanel market={market} indexName={indexName} />
 
       <KdPanel market={market} from={from} indexName={indexName} />
 

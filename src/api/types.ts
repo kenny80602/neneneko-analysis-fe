@@ -372,6 +372,20 @@ export interface ChartPatterns {
   chip_periods: ChipPeriod[];
 }
 
+// ===== 指數型態（/stocks/margin/credit/patterns）=====
+
+// 加權指數或櫃買指數的日 K 與型態。偵測規則跟個股同一組，patterns 的形狀同 ChartPatterns
+// （沒有籌碼那兩組：指數沒有集保與法人，chip_periods 一律是空陣列）。
+export interface IndexPatterns {
+  market: Market;
+  count: number;
+  // 日期由新到舊，跟個股的 DailyQuote 同一個形狀。成交量是全市場股數、成交值是元，跟個股口徑不同。
+  quotes: DailyQuote[];
+  patterns: ChartPatterns;
+  // 沒有開高低、用收盤頂替成四價相同的根數（上櫃 2025-01 以前）。那段影線是假的，型態與缺口只是近似。
+  synthetic_bars: number;
+}
+
 export interface DailyQuoteByDate {
   // 實際查到的交易日。沒帶 date 時是目前收集到最新的那一天。
   date: string;
