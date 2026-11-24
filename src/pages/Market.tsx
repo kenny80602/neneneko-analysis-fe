@@ -29,7 +29,8 @@ import {
   getTWSETradeValueRanks,
   getTWSEVolumeRanks,
 } from '../api/twse';
-import { Market as MarketCode, MarketMarginSummary, TWSEVolumeRank } from '../api/types';
+import { IndexKDDay, Market as MarketCode, MarketMarginSummary, TWSEVolumeRank } from '../api/types';
+import { bollinger, Candle, percentB } from '../utils/chart';
 import { useSymbol } from '../context/SymbolContext';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { useStockScores } from '../hooks/useStockScores';
@@ -941,6 +942,7 @@ function KdPanel({ market, from, indexName }: { market: MarketCode; from: string
   const syntheticDays = items.filter((d) => d.synthetic).length;
 
   return (
+    <>
     <div className={`${cardClass} p-4 flex flex-col gap-stack-sm`}>
       <div className="flex flex-wrap items-center gap-stack-md">
         <h3 className="font-body-md text-body-md text-on-surface font-semibold">
@@ -1016,6 +1018,83 @@ function KdPanel({ market, from, indexName }: { market: MarketCode; from: string
           　KD 起算點是 50，區間最前面約二十根會受起算點影響（後端已多撈前置期，通常不會出現在畫面上）。
         </p>
       )}
+    </div>
+    <BandPanel items={items} indexName={indexName} />
+    </>
+  );
+}
+
+/**
+ * 指數的布林 %b：收盤在 20 日、2 倍標準差通道裡的位置（算式在 utils/chart.ts 的 percentB）。
+ *
+ * 共用 KdPanel 抓回來的指數收盤，不另外發請求。區間最前面 19 個交易日沒有 %b（視窗不夠長），
+ * 圖在那裡是空的，不是 0。只有收盤價，沒有開高低，布林也只用收盤，所以不受上櫃歷史缺開高低的影響。
+ *
+ * ⚠️ 只是位置描述，沒有檢定過「%b 極端之後會反轉」，不要寫成買賣提示。
+ */
+function BandPanel({ items, indexName }: { items: IndexKDDay[]; indexName: string }) {
+  const { dates, values, bands } = useMemo(() => {
+    const candles: Candle[] = items.map((d) => ({
+      date: d.date,
+      open: d.close,
+      high: d.close,
+      low: d.close,
+      close: d.close,
+      volume: 0,
+    }));
+    const b = bollinger(candles);
+    return { dates: items.map((d) => d.date), values: percentB(candles, b), bands: b };
+  }, [items]);
+
+  const series = useMemo<CreditSeries[]>(
+    () => [
+      {
+        label: '%b',
+        values,
+        axis: 'left',
+        className: 'stroke-primary',
+        swatchClassName: 'bg-primary',
+        format: (v) => formatNumber(v, 2),
+      },
+    ],
+    [values]
+  );
+  const known = values.filter((v): v is number => v != null);
+  if (items.length < 2 || known.length === 0) return null;
+
+  const lastIndex = values.length - 1;
+  const latest = values[lastIndex];
+  const band = bands[lastIndex];
+  const width = band.upper != null && band.lower != null && band.middle ? ((band.upper - band.lower) / band.middle) * 100 : null;
+  // 左軸跟著資料走但至少涵蓋 −0.2～1.2，上下軌（0 與 1）的位置才看得出來。
+  const range = { min: Math.min(-0.2, Math.min(...known) - 0.1), max: Math.max(1.2, Math.max(...known) + 0.1) };
+
+  return (
+    <div className={`${cardClass} p-4 flex flex-col gap-stack-sm`}>
+      <div className="flex flex-wrap items-center gap-stack-md">
+        <h3 className="font-body-md text-body-md text-on-surface font-semibold">{indexName} 布林 %b（20 日、2 倍標準差）</h3>
+        <span className="ml-auto font-data-md text-data-md text-on-surface">
+          %b {formatNumber(latest, 2)}　頻寬 {width == null ? DASH : `${formatNumber(width, 1)}%`}
+          <span className="ml-2 font-body-sm text-body-sm text-on-surface-variant">{dates[lastIndex]}</span>
+        </span>
+      </div>
+      <CreditChart
+        dates={dates}
+        series={series}
+        leftRange={range}
+        axisFormat={{ left: (v) => formatNumber(v, 1) }}
+        refLines={[
+          { value: 1, label: '上軌 1', className: 'stroke-outline', textClassName: 'fill-outline' },
+          { value: 0.5, label: '中軌 0.5', className: 'stroke-outline', textClassName: 'fill-outline' },
+          { value: 0, label: '下軌 0', className: 'stroke-outline', textClassName: 'fill-outline' },
+        ]}
+      />
+      <p className="font-body-sm text-body-sm text-on-surface-variant">
+        <span className="text-on-surface font-semibold">%b ＝ （收盤 − 下軌）÷（上軌 − 下軌）</span>：0 在下軌、0.5 在中軌、1 在上軌，
+        可以小於 0 或大於 1（收在軌道之外）；在 20 日、2 倍標準差的設定下，數學上界約在 −0.59 到 1.59 之間。
+        頻寬是（上軌 − 下軌）÷ 中軌，收窄代表波動縮小。區間最前面 19 個交易日視窗不夠長，沒有 %b（圖上是空的，不是 0）。
+        這是位置的描述，沒有檢定過「%b 極端之後會反轉」；下跌趨勢中指數可以沿著下軌走很久，不要直接讀成超跌或過熱。
+      </p>
     </div>
   );
 }

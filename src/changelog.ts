@@ -25,6 +25,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '20261124-A',
+    date: '2026-11-24',
+    title: '市場概況加「指數布林 %b」',
+    items: [
+      {
+        kind: 'new',
+        text:
+          '市場概況「大盤信用交易」最上面，指數 KD 下方多一張布林 %b（20 日、2 倍標準差）：加權指數或櫃買指數的收盤在通道裡的位置，0 在下軌、0.5 在中軌、1 在上軌，旁邊附頻寬。區間最前面 19 個交易日沒有數值。只是位置描述，沒有檢定過，不是買賣提示。',
+      },
+    ],
+  },
+  {
     version: '20261123-C',
     date: '2026-11-23',
     title: '研究報告新增四篇（市場結構）',
