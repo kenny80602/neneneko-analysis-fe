@@ -1,6 +1,20 @@
-import { ReactNode } from 'react';
+import { ReactNode, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import { PatternKind } from '../api/types';
+import { DASH, formatNumber, formatPercent, formatPrice } from '../utils/format';
+import {
+  bandwidth,
+  boxTargets,
+  depthRatio,
+  measuredTarget,
+  moveToTarget,
+  parseInput,
+  percentB,
+  rangeRatio,
+  reversalTarget,
+  VOLUME_HEAVY,
+  volumeRatio,
+} from '../utils/patternFormula';
 import { directionClasses, GAP_CLASSES, PatternFamily } from '../utils/patterns';
 
 // 技術型態圖鑑。這一頁不打 API，是把個股總覽「價格走勢」疊出來的那十八種型態與四種跳空缺口講清楚：
@@ -318,6 +332,125 @@ const PATTERNS: PatternDoc[] = [
   },
 ];
 
+// 每個型態的偵測與目標價算式（符號版）。門檻同 PatternParams 預設值；
+// 「差距」一律除以較低的那個價位，跟後端 chart_pattern_reversal.go 的口徑一致。
+// 獨立成一張表而不是塞進 PATTERNS：算式是給想核對程式行為的人看的，用等寬字排版，跟敘述文字分開。
+const FORMULAS: Record<PatternKind, string> = {
+  double_bottom: [
+    '腳差 = |腳2 − 腳1| ÷ min(腳1, 腳2) ≤ 4%',
+    '落差 = (頸線 − 較高的腳) ÷ 較高的腳 ≥ 6%',
+    '先跌 = 往回 60 根內最高價 ≥ 腳1 × 1.10',
+    '確認：40 根內收盤 > 頸線',
+    '目標價 = 頸線 + (頸線 − 腳)',
+  ].join('\n'),
+  double_top: [
+    '峰差 = |峰2 − 峰1| ÷ min(峰1, 峰2) ≤ 4%',
+    '落差 = (較低的峰 − 頸線) ÷ 較低的峰 ≥ 6%',
+    '先漲 = 往回 60 根內最低價 ≤ 峰1 × 0.90',
+    '確認：40 根內收盤 < 頸線',
+    '目標價 = 頸線 − (高點 − 頸線)',
+  ].join('\n'),
+  head_shoulders_bottom: [
+    '頭 ≤ 較低的肩 × (1 − 3%)',
+    '肩差 = (高肩 − 低肩) ÷ 低肩 ≤ 10%',
+    '頸線斜率 = (頸線高端 − 頸線低端) ÷ 頸線低端 ≤ 10%',
+    '落差 = (頸線低端 − 頭) ÷ 頸線低端 ≥ 6%；全長 20～160 根；之前有下跌',
+    '確認：收盤 > 確認日的頸線價位',
+    '目標價 = 確認日頸線價位 + (頸線 − 頭)',
+  ].join('\n'),
+  head_shoulders_top: [
+    '頭 ≥ 較高的肩 × (1 + 3%)',
+    '肩差 = (高肩 − 低肩) ÷ 低肩 ≤ 10%',
+    '頸線斜率 ≤ 10%；落差 = (頭 − 頸線高端) ÷ 頭 ≥ 6%；全長 20～160 根；之前有上漲',
+    '確認：收盤 < 確認日的頸線價位',
+    '目標價 = 確認日頸線價位 − (頭 − 頸線)',
+  ].join('\n'),
+  triple_bottom: [
+    '三低點差 = (最高的低點 − 最低的低點) ÷ 最低的低點 ≤ 4%',
+    '頸線 = 兩個反彈高點中較高的',
+    '落差 = (頸線 − 最高的低點) ÷ 最高的低點 ≥ 6%；全長 20～160 根；之前有下跌',
+    '目標價 = 頸線 + (頸線 − 三個低點平均)',
+  ].join('\n'),
+  triple_top: [
+    '三高點差 = (最高的高點 − 最低的高點) ÷ 最低的高點 ≤ 4%',
+    '頸線 = 兩個回檔低點中較低的',
+    '落差 = (最低的高點 − 頸線) ÷ 最低的高點 ≥ 6%；全長 20～160 根；之前有上漲',
+    '目標價 = 頸線 − (三個高點平均 − 頸線)',
+  ].join('\n'),
+  rounded_bottom: [
+    '擬合：收盤 = a·t² + b·t + c，視窗 40～90 根',
+    'a > 0（開口朝上）、頂點在視窗中段',
+    'R² ≥ 0.85；深度 ≥ 8%；左右端高度差 ≤ 15%',
+    '確認：收盤 ≥ 左緣價位',
+    '目標價：無',
+  ].join('\n'),
+  rounded_top: [
+    '擬合：收盤 = a·t² + b·t + c，視窗 40～90 根',
+    'a < 0（開口朝下）、頂點在視窗中段',
+    'R² ≥ 0.85；深度 ≥ 8%；左右端高度差 ≤ 15%',
+    '確認：收盤 ≤ 左緣價位',
+    '目標價：無',
+  ].join('\n'),
+  v_bottom: [
+    '急跌 ≥ 20%，單程 ≤ 15 根',
+    '走回水位 = 谷 + 0.8 × (起點 − 谷)，收盤到達才算',
+    '量比 = 轉折日前後最大量 ÷ 前 20 日均量 ≥ 2.0',
+    '目標價：無',
+  ].join('\n'),
+  spire_top: [
+    '急漲 ≥ 30%，單程 ≤ 15 根',
+    '走回水位 = 峰 − 0.8 × (峰 − 起點)，收盤到達才算',
+    '不要求量',
+    '目標價：無',
+  ].join('\n'),
+  spring: [
+    '支撐 S：低點轉折，且之前另一低點在 S 的 3% 內',
+    '先守住 ≥ 10 根',
+    '跌破幅度 = (S − 最低價) ÷ S ≤ 10%',
+    '確認：5 根內收盤 > S',
+    '目標價：無',
+  ].join('\n'),
+  rectangle: [
+    '壓力 R、支撐 S；高點彼此、低點彼此差距 ≤ min(4%, 0.3 × 箱高占比)',
+    '箱高 H = R − S；H ÷ S 在 3%～45%；持續 ≥ 10 根',
+    '細尺度另找一次（反轉門檻 × 0.5、下限 2.5%），抓窄幅箱型',
+    '突破目標 = R + H；跌破目標 = S − H',
+  ].join('\n'),
+  triangle_symmetrical: [
+    '上緣：高點逐點不回升超過 1%；下緣：低點逐點不回落超過 1%',
+    '總變化各 > 3%',
+    '開口 W = 上緣 − 下緣；結束 W < 開始 W × 0.8',
+    '突破目標 = 上緣突破價 + 開始 W；跌破目標 = 下緣跌破價 − 開始 W',
+  ].join('\n'),
+  triangle_ascending: [
+    '高點差距 ≤ 3%（上緣水平）；低點逐步墊高',
+    '結束 W < 開始 W × 0.8',
+    '突破目標 = 上緣突破價 + 開始 W',
+  ].join('\n'),
+  triangle_descending: [
+    '低點差距 ≤ 3%（下緣水平）；高點逐步壓低',
+    '結束 W < 開始 W × 0.8',
+    '跌破目標 = 下緣跌破價 − 開始 W',
+  ].join('\n'),
+  flag_bull: [
+    '旗桿高度 P = 桿頂 − 桿底；P ÷ 桿底 ≥ 15%，桿長 ≤ 15 根',
+    '整理 4～25 根；回檔低點 ≥ 桿頂 − 0.5 × P；離開桿頂 ≥ 2%',
+    '確認：收盤 > 桿頂',
+    '目標價 = 突破價 + P',
+  ].join('\n'),
+  flag_bear: [
+    '旗桿高度 P = 桿頂 − 桿底；跌幅 ≥ 15%，桿長 ≤ 15 根',
+    '整理 4～25 根；反彈高點 ≤ 桿底 + 0.5 × P',
+    '確認：收盤 < 桿底',
+    '目標價 = 跌破價 − P',
+  ].join('\n'),
+  broadening: [
+    '高點逐步墊高、低點逐步降低',
+    '開口 W：結束 W > 開始 W × 1.2',
+    '目標價：無',
+  ].join('\n'),
+};
+
 const FAMILY_SECTIONS: { key: PatternFamily; title: string; note: string }[] = [
   { key: 'bottom', title: '底部反轉', note: '下跌趨勢可能結束，預期往上。' },
   { key: 'top', title: '頭部反轉', note: '上漲趨勢可能結束，預期往下。' },
@@ -518,9 +651,261 @@ function PatternCard({ doc }: { doc: PatternDoc }) {
       <Field label="特徵與解讀">{doc.traits}</Field>
       {doc.volume && <Field label="量能">{doc.volume}</Field>}
       <Field label="我們怎麼偵測">{doc.detect}</Field>
+      <div className="flex flex-col gap-0.5">
+        <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">公式</span>
+        <pre className="m-0 rounded-lg bg-surface-container-low p-2 font-data-md text-data-md text-on-surface whitespace-pre-wrap break-words">
+          {FORMULAS[doc.kind]}
+        </pre>
+      </div>
       <Field label="目標價">{doc.target}</Field>
       {doc.caution && <Field label="容易誤判">{doc.caution}</Field>}
     </article>
+  );
+}
+
+type CalcKey = 'reversal' | 'box' | 'triangle' | 'flag' | 'volume' | 'bollinger' | 'range';
+
+const CALCS: { key: CalcKey; label: string }[] = [
+  { key: 'reversal', label: '反轉型態目標價（W 底、M 頭、頭肩、三重）' },
+  { key: 'box', label: '箱型整理目標價' },
+  { key: 'triangle', label: '三角形目標價' },
+  { key: 'flag', label: '旗型目標價' },
+  { key: 'volume', label: '量比' },
+  { key: 'bollinger', label: '布林 %b 與頻寬' },
+  { key: 'range', label: '盤整區間比' },
+];
+
+const inputClass =
+  'w-full rounded border border-outline-variant bg-surface-container px-3 py-2 font-data-md text-data-md text-on-surface';
+
+// 輸入框用字串存：空字串是「還沒填」，不能先轉成 0，否則算出來的目標價與比例都是假的。
+function NumInput({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label className="flex flex-col gap-0.5">
+      <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">{label}</span>
+      <input
+        className={inputClass}
+        inputMode="decimal"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={hint}
+      />
+    </label>
+  );
+}
+
+function ResultRow({ label, value, note }: { label: string; value: string; note?: string }) {
+  return (
+    <div className="flex flex-wrap items-baseline justify-between gap-x-4 border-b border-outline-variant/50 py-2 last:border-b-0">
+      <span className="font-body-md text-body-md text-on-surface-variant">{label}</span>
+      <span className="font-data-md text-data-md text-on-surface">
+        {value}
+        {note && <span className="ml-2 font-body-sm text-body-sm text-on-surface-variant">{note}</span>}
+      </span>
+    </div>
+  );
+}
+
+const pct = (ratio: number | null) => (ratio === null ? DASH : formatPercent(ratio * 100, 2));
+const move = (price: number | null, target: number | null) => {
+  const m = moveToTarget(price, target);
+  return m === null ? DASH : `${m > 0 ? '+' : ''}${formatNumber(m, 1)}%`;
+};
+
+function FormulaCalculator() {
+  const [calc, setCalc] = useState<CalcKey>('reversal');
+  const [v, setV] = useState<Record<string, string>>({});
+  const [dir, setDir] = useState<'up' | 'down'>('up');
+  const set = (k: string) => (x: string) => setV((prev) => ({ ...prev, [k]: x }));
+  const n = (k: string) => parseInput(v[k] ?? '');
+  const price = n('price');
+
+  let body: ReactNode = null;
+  if (calc === 'reversal') {
+    const neck = n('neck');
+    const ext = n('ext');
+    const target = reversalTarget(neck, ext);
+    const up = neck !== null && ext !== null && ext < neck;
+    const depth = depthRatio(neck, ext);
+    body = (
+      <>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-stack-sm">
+          <NumInput label="頸線" hint="110" value={v.neck ?? ''} onChange={set('neck')} />
+          <NumInput label="極值（腳、頭、或三點平均）" hint="100" value={v.ext ?? ''} onChange={set('ext')} />
+          <NumInput label="現價（選填）" hint="108" value={v.price ?? ''} onChange={set('price')} />
+        </div>
+        <div className="flex flex-col">
+          <ResultRow label="方向" value={target === null ? DASH : up ? '往上（底部型態）' : '往下（頭部型態）'} />
+          <ResultRow
+            label="型態高度占極值"
+            value={pct(depth)}
+            note={depth !== null && depth < 0.06 ? '低於 6%，後端不會把它標成型態' : undefined}
+          />
+          <ResultRow label="目標價" value={target === null ? DASH : formatPrice(target)} note="頸線 ± (頸線 − 極值)" />
+          <ResultRow label="現價到目標價" value={move(price, target)} />
+        </div>
+      </>
+    );
+  } else if (calc === 'box') {
+    const r = boxTargets(n('top'), n('bottom'));
+    body = (
+      <>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-stack-sm">
+          <NumInput label="箱頂（壓力）" hint="110" value={v.top ?? ''} onChange={set('top')} />
+          <NumInput label="箱底（支撐）" hint="100" value={v.bottom ?? ''} onChange={set('bottom')} />
+          <NumInput label="現價（選填）" hint="105" value={v.price ?? ''} onChange={set('price')} />
+        </div>
+        <div className="flex flex-col">
+          <ResultRow
+            label="箱高"
+            value={r === null ? DASH : formatPrice(r.height)}
+            note={r === null ? undefined : `占箱底 ${pct(r.heightPct)}${r.heightPct < 0.03 || r.heightPct > 0.45 ? '，超出 3%～45%' : ''}`}
+          />
+          <ResultRow label="突破目標價" value={r === null ? DASH : formatPrice(r.up)} note="箱頂 + 箱高" />
+          <ResultRow label="現價到突破目標" value={move(price, r?.up ?? null)} />
+          <ResultRow label="跌破目標價" value={r === null ? DASH : formatPrice(r.down)} note="箱底 − 箱高" />
+          <ResultRow label="現價到跌破目標" value={move(price, r?.down ?? null)} />
+        </div>
+      </>
+    );
+  } else if (calc === 'triangle' || calc === 'flag') {
+    const isFlag = calc === 'flag';
+    const start = n('start');
+    const end = n('end');
+    const width = isFlag ? (start !== null && end !== null ? Math.abs(end - start) : null) : n('width');
+    const flagDir = start !== null && end !== null ? (end > start ? 'up' : 'down') : dir;
+    const useDir = isFlag ? flagDir : dir;
+    const target = measuredTarget(n('breakout'), width, useDir);
+    body = (
+      <>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-stack-sm">
+          {isFlag ? (
+            <>
+              <NumInput label="旗桿起點" hint="100" value={v.start ?? ''} onChange={set('start')} />
+              <NumInput label="旗桿終點" hint="120" value={v.end ?? ''} onChange={set('end')} />
+            </>
+          ) : (
+            <NumInput label="一開始的開口寬度（上緣 − 下緣）" hint="20" value={v.width ?? ''} onChange={set('width')} />
+          )}
+          <NumInput label="突破（跌破）價" hint="118" value={v.breakout ?? ''} onChange={set('breakout')} />
+          <NumInput label="現價（選填）" hint="118" value={v.price ?? ''} onChange={set('price')} />
+          {!isFlag && (
+            <label className="flex flex-col gap-0.5">
+              <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">方向</span>
+              <select className={inputClass} value={dir} onChange={(e) => setDir(e.target.value as 'up' | 'down')}>
+                <option value="up">向上突破</option>
+                <option value="down">向下跌破</option>
+              </select>
+            </label>
+          )}
+        </div>
+        <div className="flex flex-col">
+          {isFlag && (
+            <ResultRow
+              label="旗桿高度"
+              value={width === null ? DASH : formatPrice(width)}
+              note={
+                width !== null && start !== null && end !== null && Math.min(start, end) > 0 && width / Math.min(start, end) < 0.15
+                  ? '桿高占比低於 15%，後端不會標成旗型'
+                  : undefined
+              }
+            />
+          )}
+          <ResultRow label="目標價" value={target === null ? DASH : formatPrice(target)} note={isFlag ? '突破 ± 旗桿高度' : '突破 ± 開口寬度'} />
+          <ResultRow label="現價到目標價" value={move(price, target)} />
+        </div>
+      </>
+    );
+  } else if (calc === 'volume') {
+    const ratio = volumeRatio(n('vol'), n('avg'));
+    body = (
+      <>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-stack-sm">
+          <NumInput label="當日成交量" hint="30000" value={v.vol ?? ''} onChange={set('vol')} />
+          <NumInput label="前 20 日平均量（同單位）" hint="20000" value={v.avg ?? ''} onChange={set('avg')} />
+        </div>
+        <div className="flex flex-col">
+          <ResultRow label="量比" value={ratio === null ? DASH : `${formatNumber(ratio, 2)} 倍`} />
+          <ResultRow
+            label={`是否達 ${VOLUME_HEAVY} 倍（有量）`}
+            value={ratio === null ? DASH : ratio >= VOLUME_HEAVY ? '有量' : '沒有達門檻'}
+          />
+        </div>
+      </>
+    );
+  } else if (calc === 'bollinger') {
+    const pb = percentB(n('close'), n('upper'), n('lower'));
+    const bw = bandwidth(n('upper'), n('lower'), n('mid'));
+    body = (
+      <>
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-stack-sm">
+          <NumInput label="收盤" hint="105" value={v.close ?? ''} onChange={set('close')} />
+          <NumInput label="上軌" hint="110" value={v.upper ?? ''} onChange={set('upper')} />
+          <NumInput label="下軌" hint="90" value={v.lower ?? ''} onChange={set('lower')} />
+          <NumInput label="中軌（算頻寬用）" hint="100" value={v.mid ?? ''} onChange={set('mid')} />
+        </div>
+        <div className="flex flex-col">
+          <ResultRow label="%b" value={pb === null ? DASH : formatNumber(pb, 2)} note="（收盤 − 下軌）÷（上軌 − 下軌）" />
+          <ResultRow label="頻寬" value={pct(bw)} note="（上軌 − 下軌）÷ 中軌" />
+        </div>
+      </>
+    );
+  } else {
+    const r = rangeRatio(n('high'), n('low'), n('avg'));
+    body = (
+      <>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-stack-sm">
+          <NumInput label="區間最高價" hint="110" value={v.high ?? ''} onChange={set('high')} />
+          <NumInput label="區間最低價" hint="95" value={v.low ?? ''} onChange={set('low')} />
+          <NumInput label="區間平均收盤" hint="102" value={v.avg ?? ''} onChange={set('avg')} />
+        </div>
+        <div className="flex flex-col">
+          <ResultRow
+            label="區間比"
+            value={pct(r)}
+            note={r === null ? undefined : r <= 0.2 ? '≤ 20%，算盤整' : '> 20%，不算盤整'}
+          />
+        </div>
+        <p className="font-body-sm text-body-sm text-on-surface-variant">
+          這條不是型態偵測的門檻，是 2026-11-24 檢定「盤整＋帶量突破＋大戶增持」時用的定義（前 30 個交易日、20%）。
+          264 檔、約兩年的結果：這個組合之後 40 日先漲 20% 的比例（32%）沒有比隨便挑一天（35%）高，大戶增持也沒有加分，
+          所以這個算式只用來量「這段有多窄」，不是進場條件。
+        </p>
+      </>
+    );
+  }
+
+  return (
+    <section className={`${cardClass} p-6 flex flex-col gap-stack-md`}>
+      <div className="flex flex-col gap-1">
+        <h2 className="font-headline-md text-headline-md text-primary">公式試算</h2>
+        <p className="font-body-sm text-body-sm text-on-surface-variant">
+          填入價位自己算一次，核對圖上型態的目標價與量比。算式同上面各型態的「公式」；缺一個欄位就顯示破折號，不會補 0。
+          這是幾何算術，不是預測：目標價沒有驗證過價格真的會走到。
+        </p>
+      </div>
+      <label className="flex flex-col gap-0.5 max-w-md">
+        <span className="font-label-caps text-label-caps text-on-surface-variant uppercase">要算什麼</span>
+        <select className={inputClass} value={calc} onChange={(e) => setCalc(e.target.value as CalcKey)}>
+          {CALCS.map((c) => (
+            <option key={c.key} value={c.key}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {body}
+    </section>
   );
 }
 
@@ -617,6 +1002,8 @@ export default function ChartPatterns() {
             缺口分類是機械規則判斷的，邊界很主觀（多久算長期趨勢、多少算帶量），門檻沒有檢定過。圖上缺口用琥珀色塊標出範圍，已回補的用虛線淡化，箭頭表示方向（↑ 向上、↓ 向下）。
           </p>
         </section>
+
+        <FormulaCalculator />
 
         <section className="flex flex-col gap-stack-md">
           <h2 className="font-headline-md text-headline-md text-primary">
