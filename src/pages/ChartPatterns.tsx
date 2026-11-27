@@ -766,6 +766,51 @@ function Diagram({ schematic, notes }: { schematic: Schematic; notes: DiagramNot
   );
 }
 
+/**
+ * 艾略特波浪的示意圖：推動浪 0→5 用看漲色、修正浪 A→C 用看跌色。
+ * 座標手排（100 單位寬放不下八個轉折，所以自己有一個 130 × 62 的座標系），不接任何資料。
+ */
+const WAVE_POINTS: { label: string; x: number; y: number; above: boolean }[] = [
+  { label: '0', x: 4, y: 46, above: false },
+  { label: '1', x: 20, y: 30, above: true },
+  { label: '2', x: 30, y: 38, above: false },
+  { label: '3', x: 62, y: 10, above: true },
+  { label: '4', x: 76, y: 24, above: false },
+  { label: '5', x: 98, y: 6, above: true },
+  { label: 'A', x: 108, y: 30, above: false },
+  { label: 'B', x: 116, y: 22, above: true },
+  { label: 'C', x: 126, y: 42, above: false },
+];
+
+function WaveDiagram() {
+  const up = directionClasses('up');
+  const down = directionClasses('down');
+  const toPoints = (items: typeof WAVE_POINTS) => items.map((p) => `${p.x},${p.y}`).join(' ');
+  return (
+    <svg viewBox="0 -6 130 62" className="w-full max-w-[560px] h-auto" role="img" aria-label="艾略特波浪示意圖：五波推動加三波修正">
+      <polyline points={toPoints(WAVE_POINTS.slice(0, 6))} fill="none" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" className={up.stroke} />
+      <polyline points={toPoints(WAVE_POINTS.slice(5))} fill="none" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" className={down.stroke} />
+      {WAVE_POINTS.map((p) => (
+        <g key={p.label}>
+          <circle cx={p.x} cy={p.y} r="1.4" className={p.label >= 'A' ? down.fill : up.fill} />
+          <text x={p.x} y={p.above ? p.y - 3 : p.y + 7} textAnchor="middle" fontSize="5" fontWeight="700" className="fill-on-surface">
+            {p.label}
+          </text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+// 波浪的「慣用比例」：都是教科書上的經驗法則，不是定律，實際走勢常常對不上。
+const WAVE_GUIDELINES: { wave: string; usual: string }[] = [
+  { wave: '第 2 浪', usual: '回撤第 1 浪的 50%～61.8%（常見 38.2%～78.6%），不能跌破第 1 浪的起點' },
+  { wave: '第 3 浪', usual: '常是第 1 浪的 1.618 倍，量能通常最大、最陡；不能是 1、3、5 三浪裡最短的' },
+  { wave: '第 4 浪', usual: '回撤第 3 浪的 23.6%～38.2%，通常橫向整理；一般不進入第 1 浪的價格區' },
+  { wave: '第 5 浪', usual: '常與第 1 浪等長，或約為第 1 浪到第 3 浪的 0.618 倍；常出現量價背離' },
+  { wave: 'A、B、C 修正', usual: 'A 浪常是五浪結構，B 浪反彈（可能很強），C 浪再下殺，常到 A 浪的 1 倍或 1.618 倍' },
+];
+
 interface BacktestRow {
   name: string;
   n: string;
@@ -1270,6 +1315,70 @@ export default function ChartPatterns() {
             那是強的特徵不是賣訊。要看當下是盤整還是趨勢才選得出讀法，單看 %b 分不出來。
             前 19 根與 20 日收盤完全沒變（上下軌重合）時算不出來，畫面顯示破折號，不是 0。
             這個數值<span className="text-on-surface">沒有檢定過</span>，只當位置描述，不是進出場訊號；本站檢定過的其他技術訊號（站回月線、W 底與 M 頭、KD）都沒有穩定的優勢。
+          </p>
+        </section>
+
+        <section className={`${cardClass} p-6 flex flex-col gap-stack-sm`}>
+          <h2 className="font-headline-md text-headline-md text-primary">波浪理論（艾略特）與費波那契</h2>
+          <p className="font-body-md text-body-md text-on-surface">
+            艾略特波浪認為價格走勢是「五波推動、三波修正」的循環：順著大趨勢的是 1、3、5 三個推動浪，夾在中間的 2、4 是回檔；
+            五浪走完後出現 A、B、C 三個修正浪。每一浪裡面還可以再拆成更小的五浪或三浪，所以它是一個層層嵌套的架構。
+          </p>
+          <div className="rounded-lg bg-surface-container-low p-3 flex justify-center">
+            <WaveDiagram />
+          </div>
+          <div className="font-body-sm text-body-sm text-on-surface-variant flex flex-col gap-1">
+            <p>
+              <span className="text-on-surface">三條不能違反的規則</span>（違反就代表這個數法不成立，要重數）：
+              ① 第 2 浪不能跌破第 1 浪的起點；② 第 3 浪不能是 1、3、5 三個推動浪裡最短的；
+              ③ 第 4 浪不能進入第 1 浪的價格範圍（期貨有例外）。
+            </p>
+            <p>
+              另外有一些「慣用的比例」，是經驗法則不是規則，多半用<span className="text-on-surface">費波那契比例</span>
+              （0.236、0.382、0.5、0.618、0.786、1.272、1.618）來估各浪的回撤與長度：
+            </p>
+          </div>
+          <div className="overflow-x-auto rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm">
+            <table className="w-full text-left">
+              <thead className="bg-surface-container-low border-b border-outline-variant">
+                <tr>
+                  <th className="p-2 pl-4 font-label-caps text-label-caps text-on-surface-variant uppercase whitespace-nowrap">浪</th>
+                  <th className="p-2 pr-4 font-label-caps text-label-caps text-on-surface-variant uppercase">慣用的樣子</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-outline-variant/50">
+                {WAVE_GUIDELINES.map((row) => (
+                  <tr key={row.wave} className="hover:bg-surface-container-low/50 transition-colors">
+                    <td className="p-2 pl-4 py-3 font-body-md text-body-md text-on-surface whitespace-nowrap">{row.wave}</td>
+                    <td className="p-2 pr-4 py-3 font-body-sm text-body-sm text-on-surface-variant">{row.usual}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="font-body-sm text-body-sm text-on-surface-variant flex flex-col gap-1">
+            <p>
+              <span className="text-on-surface">費波那契回撤怎麼算：</span>
+              上升波段取最低點到最高點，回撤價位 = 高點 − 比例 × （高點 − 低點）；下降波段反過來，價位 = 低點 + 比例 × （高 − 低）。
+              例：低 100、高 200，38.2% 回撤 = 200 − 0.382 × 100 = <span className="font-data-md text-data-md text-on-surface">161.8</span>，
+              61.8% 回撤 = <span className="font-data-md text-data-md text-on-surface">138.2</span>。延伸從波段起點往延續方向算：
+              100 + 1.618 × 100 = <span className="font-data-md text-data-md text-on-surface">261.8</span>。
+            </p>
+            <p>
+              <span className="text-on-surface">本站有的：</span>個股總覽「價格走勢」的「費波」按鈕，把目前顯示範圍的最高與最低當一個波段，畫出
+              23.6、38.2、50、61.8、78.6% 回撤與 127.2、161.8% 延伸。縮放或拖曳就是在換波段，畫面上會寫出用到的高低點日期。
+            </p>
+            <p>
+              <span className="text-on-surface">本站沒有的：</span>自動數浪。「現在是第 3 浪」這種標記不做，原因見下。
+            </p>
+          </div>
+          <p className="font-body-sm text-body-sm text-on-surface-variant">
+            <span className="text-on-surface">為什麼不自動數浪、也不把費波價位當訊號：</span>
+            ① 數浪沒有唯一解：同一段走勢常能數成不同的浪，通常要等走完才知道哪一種對，所以常被批評是事後諸葛，兩個人數出來的結果也常不同；
+            ② 規則與比例都是經驗法則，可以靠調整「這一浪從哪裡算起」來湊，永遠找得到對得上的數法；
+            ③ 費波那契價位有沒有在那裡止跌或遇壓，學術上的證據很弱，本站也<span className="text-on-surface">沒有檢定過</span>，
+            站內檢定過的其他技術訊號（站回月線、W 底與 M 頭、KD）都沒有穩定的優勢。
+            所以「費波」只當價位參考，不是支撐壓力，更不是買賣點；跟「主升段」「末跌段」這類要先數浪才講得出來的詞，一樣刻意不用。
           </p>
         </section>
 

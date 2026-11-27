@@ -227,3 +227,70 @@ export function forecastCone(
   }
   return { base, dailySigma, daysPerSlot, points };
 }
+
+/** 回撤比例。0 與 1 是波段兩端本身，畫出來當作起訖的參照。 */
+export const FIB_RETRACEMENTS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+/** 延伸比例：波段延續方向上的價位，常用 1.272 與 1.618。 */
+export const FIB_EXTENSIONS = [1.272, 1.618];
+
+export interface FibLevel {
+  ratio: number;
+  price: number;
+  kind: 'retracement' | 'extension';
+}
+
+export interface FibonacciSwing {
+  /** up＝先低後高（之後的回撤是往下）；down＝先高後低（之後的回撤是往上）。 */
+  direction: 'up' | 'down';
+  high: number;
+  highIndex: number;
+  low: number;
+  lowIndex: number;
+  levels: FibLevel[];
+}
+
+/**
+ * 費波那契回撤與延伸：取一段 K 棒裡的最高價與最低價當作一個波段，畫出幾個固定比例的價位。
+ *
+ * 波段**不自己挑**，直接取傳進來的這一段（圖上就是目前顯示的範圍）——使用者縮放與拖曳
+ * 本來就是在選「要看哪一段」，這跟手動在看盤軟體上拉費波那契是同一個動作，也不需要
+ * 後端另外給轉折點。代價是換個範圍就換一組線，畫面上一定要把用到的高低點日期寫出來。
+ *
+ * 方向看高低點誰先誰後：低點在前、高點在後是上升波段，回撤價位 = 高點 − 比例 × 波段；
+ * 反之是下降波段，回撤價位 = 低點 + 比例 × 波段。延伸從波段起點起算、往延續的方向：
+ * 上升波段 = 低點 + 比例 × 波段，下降波段 = 高點 − 比例 × 波段。
+ *
+ * 高低點在同一根 K 棒（只有一根，或整段沒動）時沒有方向可言，回 null。
+ *
+ * ⚠️ 只是價位參考。這些比例沒有在這個專案裡檢定過「價格會在這裡止跌或遇壓」，
+ * 學術上的證據也很弱，畫面不要寫成支撐壓力或買賣點。
+ */
+export function fibonacciSwing(candles: Candle[]): FibonacciSwing | null {
+  if (candles.length < 2) return null;
+  let highIndex = 0;
+  let lowIndex = 0;
+  candles.forEach((candle, i) => {
+    // 同價取較晚的那根：波段的終點是最近的極值，而不是更早的同價那根。
+    if (candle.high >= candles[highIndex].high) highIndex = i;
+    if (candle.low <= candles[lowIndex].low) lowIndex = i;
+  });
+  const high = candles[highIndex].high;
+  const low = candles[lowIndex].low;
+  const range = high - low;
+  if (highIndex === lowIndex || !(range > 0)) return null;
+
+  const direction = lowIndex < highIndex ? 'up' : 'down';
+  const levels: FibLevel[] = [
+    ...FIB_RETRACEMENTS.map((ratio) => ({
+      ratio,
+      price: direction === 'up' ? high - ratio * range : low + ratio * range,
+      kind: 'retracement' as const,
+    })),
+    ...FIB_EXTENSIONS.map((ratio) => ({
+      ratio,
+      price: direction === 'up' ? low + ratio * range : high - ratio * range,
+      kind: 'extension' as const,
+    })),
+  ];
+  return { direction, high, highIndex, low, lowIndex, levels };
+}

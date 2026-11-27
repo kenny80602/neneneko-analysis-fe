@@ -7,6 +7,7 @@ import {
   bollinger,
   CandleInterval,
   FORECAST_WINDOW,
+  fibonacciSwing,
   forecastCone,
   movingAverage,
   percentB,
@@ -107,6 +108,9 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
   const [showLevels, setShowLevels] = useState(true);
   // 量測目標線：型態確認後傳統上預期走到的價位（頸線再走一個落差）。慣例上的算術，不是預測。
   const [showTargets, setShowTargets] = useState(true);
+  // 費波那契回撤與延伸：取目前顯示範圍的最高與最低當一個波段，畫固定比例的價位。
+  // 只是價位參考，沒有檢定過價格會在這些價位止跌或遇壓。預設關閉。
+  const [showFib, setShowFib] = useState(false);
   // 預設只畫「主要判讀」：同一段走勢常被好幾個型態名稱重複認出來，全畫會蓋成一團。
   // 展開看全部時，失敗的型態用灰色淡化。
   const [showAllPatterns, setShowAllPatterns] = useState(false);
@@ -192,6 +196,8 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
       volumeY: (value: number) => VOLUME_BOTTOM - (value / volumeMax) * (VOLUME_BOTTOM - VOLUME_TOP),
     };
   }, [view, averages, bands, showBands, cone]);
+
+  const fib = useMemo(() => (showFib ? fibonacciSwing(view) : null), [showFib, view]);
 
   // 把型態與缺口對到目前週期的 K 棒：日期取「第一根收盤日 ≥ 該日」的 K 棒，
   // 週線與月線的 K 棒日期是那一週／那一月最後一個交易日，所以轉折點會落在它所屬的那一根。
@@ -433,6 +439,15 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
           </button>
           <button
             type="button"
+            onClick={() => setShowFib((value) => !value)}
+            aria-pressed={showFib}
+            title="費波那契回撤與延伸：取目前顯示範圍的最高與最低當一個波段，畫 23.6、38.2、50、61.8、78.6% 回撤與 127.2、161.8% 延伸。縮放與拖曳可以換成別段。只是價位參考，沒有檢定過價格會在這些價位止跌或遇壓"
+            className={`${intervalButton(showFib)} border border-outline-variant`}
+          >
+            費波
+          </button>
+          <button
+            type="button"
             onClick={() => setShowBands((value) => !value)}
             aria-pressed={showBands}
             title="布林通道（20 日、2 倍標準差）：輔助辨認盤整期間，通道走平、寬度收窄代表波動縮小。不要直接拿上下軌當箱頂箱底"
@@ -532,6 +547,26 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
           {showChip && <LegendSwatch className="bg-primary/30" label="籌碼亂的期間" />}
           <span>實線已確認、虛線形成中{showPatterns && showTargets && '、點劃線是量測目標（慣例上的算術，不是預測）'}</span>
         </div>
+      )}
+
+      {showFib && (
+        <p className="font-body-sm text-body-sm text-on-surface-variant">
+          {fib ? (
+            <>
+              <span className="text-on-surface font-semibold">
+                費波那契：{fib.direction === 'up' ? '上升' : '下降'}波段
+              </span>
+              ，{fib.direction === 'up' ? '低' : '高'} {formatPrice(fib.direction === 'up' ? fib.low : fib.high)}（
+              {axisLabel(view[fib.direction === 'up' ? fib.lowIndex : fib.highIndex].date, interval)}）→{' '}
+              {fib.direction === 'up' ? '高' : '低'} {formatPrice(fib.direction === 'up' ? fib.high : fib.low)}（
+              {axisLabel(view[fib.direction === 'up' ? fib.highIndex : fib.lowIndex].date, interval)}），
+              取自目前顯示範圍的最高價與最低價，縮放或拖曳會換成別段。價位只是參考：這個專案沒有檢定過價格會在這些比例止跌或遇壓，
+              也不是支撐壓力或買賣點；範圍外的延伸價位不畫。
+            </>
+          ) : (
+            '目前顯示範圍的最高與最低落在同一根 K 棒（或整段沒動），沒有波段可畫；放大成至少兩根不同的 K 棒再看。'
+          )}
+        </p>
       )}
 
       {showForecast && (
@@ -637,6 +672,54 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
                 </g>
               );
             })}
+
+        {fib && (
+          <g>
+            <line
+              x1={centerX(fib.direction === 'up' ? fib.lowIndex : fib.highIndex)}
+              y1={scale.y(fib.direction === 'up' ? fib.low : fib.high)}
+              x2={centerX(fib.direction === 'up' ? fib.highIndex : fib.lowIndex)}
+              y2={scale.y(fib.direction === 'up' ? fib.high : fib.low)}
+              strokeWidth="1.2"
+              strokeDasharray="3 3"
+              className="stroke-pattern-neutral"
+              opacity="0.8"
+            />
+            {fib.levels
+              .filter((level) => level.price >= scale.min && level.price <= scale.max)
+              .map((level) => {
+                const y = scale.y(level.price);
+                const endpoint = level.kind === 'retracement' && (level.ratio === 0 || level.ratio === 1);
+                return (
+                  <g key={`fib-${level.kind}-${level.ratio}`}>
+                    <title>{`費波那契${level.kind === 'retracement' ? '回撤' : '延伸'} ${formatNumber(level.ratio * 100, 1)}%：${formatPrice(level.price)}（只是價位參考，沒有檢定過）`}</title>
+                    <line
+                      x1={centerX(Math.min(fib.highIndex, fib.lowIndex))}
+                      y1={y}
+                      x2={LEFT + PLOT_WIDTH}
+                      y2={y}
+                      strokeWidth={endpoint ? 1 : 1.2}
+                      strokeDasharray={level.kind === 'extension' ? '2 4' : endpoint ? '6 3' : '8 3'}
+                      className="stroke-pattern-neutral"
+                      opacity={endpoint ? 0.45 : 0.85}
+                    />
+                    <text
+                      x={LEFT + PLOT_WIDTH - 4}
+                      y={y - 4}
+                      fontSize="12"
+                      textAnchor="end"
+                      paintOrder="stroke"
+                      strokeWidth="3"
+                      strokeLinejoin="round"
+                      className="font-body-sm stroke-surface-container-lowest fill-pattern-neutral"
+                    >
+                      {`${formatNumber(level.ratio * 100, 1)}% ${formatPrice(level.price)}`}
+                    </text>
+                  </g>
+                );
+              })}
+          </g>
+        )}
 
         {showTrend &&
           overlay.downtrends
