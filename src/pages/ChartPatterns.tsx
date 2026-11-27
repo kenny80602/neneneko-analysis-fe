@@ -382,14 +382,16 @@ const FORMULAS: Record<PatternKind, string> = {
     'a > 0（開口朝上）、頂點在視窗中段',
     'R² ≥ 0.85；深度 ≥ 8%；左右端高度差 ≤ 15%',
     '確認：收盤 ≥ 左緣價位',
-    '目標價：無',
+    'H = 左緣 − 弧底收盤（前端推算，後端不給目標價）',
+    '目標價 = 左緣 + H（推算）',
   ].join('\n'),
   rounded_top: [
     '擬合：收盤 = a·t² + b·t + c，視窗 40～90 根',
     'a < 0（開口朝下）、頂點在視窗中段',
     'R² ≥ 0.85；深度 ≥ 8%；左右端高度差 ≤ 15%',
     '確認：收盤 ≤ 左緣價位',
-    '目標價：無',
+    'H = 弧頂收盤 − 左緣（前端推算，後端不給目標價）',
+    '目標價 = 左緣 − H（推算）',
   ].join('\n'),
   v_bottom: [
     '急跌 ≥ 20%，單程 ≤ 15 根',
@@ -523,12 +525,179 @@ const TARGET_HIT_ROWS = [
 
 const cardClass = 'bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm';
 
+interface DiagramLabel {
+  x: number;
+  y: number;
+  text: string;
+  /** 文字對齊的錨點；預設置中。靠近圖的左右邊緣時要改，不然會被切掉。 */
+  anchor?: 'start' | 'middle' | 'end';
+}
+
+/** 高度的標註：x 位置上一條上下有短橫的直線，旁邊寫變數名。 */
+interface DiagramDim {
+  x: number;
+  y1: number;
+  y2: number;
+  text: string;
+  textX: number;
+  textY: number;
+  anchor?: 'start' | 'middle' | 'end';
+}
+
+interface DiagramNote {
+  labels: DiagramLabel[];
+  dim?: DiagramDim;
+}
+
+// 示意圖上標的變數名稱，跟下面 FORMULAS 的符號一一對應，看圖就能對到算式。
+// 位置是照每張示意圖的折線手排的（座標系同 Schematic：100 × 50，y 往下），避開折線與轉折點；
+// 改了 PATTERNS 裡的 points 要回來看標籤有沒有壓到線。
+const DIAGRAM_NOTES: Record<PatternKind, DiagramNote> = {
+  double_bottom: {
+    labels: [
+      { x: 20, y: 46, text: '腳1' },
+      { x: 60, y: 46, text: '腳2' },
+      { x: 50, y: 15, text: '頸線' },
+    ],
+    dim: { x: 92, y1: 18, y2: 40, text: 'H', textX: 89, textY: 30, anchor: 'end' },
+  },
+  head_shoulders_bottom: {
+    labels: [
+      { x: 15, y: 38, text: '左肩' },
+      { x: 42, y: 51, text: '頭' },
+      { x: 70, y: 38, text: '右肩' },
+      { x: 42, y: 14, text: '頸線' },
+    ],
+    dim: { x: 42, y1: 18, y2: 44, text: 'H', textX: 45, textY: 25, anchor: 'start' },
+  },
+  triple_bottom: {
+    labels: [
+      { x: 14, y: 46, text: '低1' },
+      { x: 42, y: 46, text: '低2' },
+      { x: 70, y: 46, text: '低3' },
+      { x: 70, y: 15, text: '頸線' },
+    ],
+    dim: { x: 92, y1: 18, y2: 38, text: 'H', textX: 89, textY: 29, anchor: 'end' },
+  },
+  rounded_bottom: {
+    labels: [
+      { x: 3, y: 7, text: '左緣', anchor: 'start' },
+      { x: 50, y: 49, text: '弧底' },
+    ],
+    dim: { x: 50, y1: 10, y2: 42, text: 'H', textX: 53, textY: 28, anchor: 'start' },
+  },
+  v_bottom: {
+    labels: [
+      { x: 9, y: 6, text: '起點', anchor: 'start' },
+      { x: 40, y: 51, text: '谷' },
+      { x: 79, y: 7, text: '走回水位', anchor: 'start' },
+    ],
+  },
+  spring: {
+    labels: [
+      { x: 3, y: 35, text: '支撐 S', anchor: 'start' },
+      { x: 62, y: 47, text: '最低價' },
+      { x: 84, y: 35, text: '站回', anchor: 'start' },
+    ],
+  },
+  double_top: {
+    labels: [
+      { x: 20, y: 6, text: '峰1' },
+      { x: 60, y: 6, text: '峰2' },
+      { x: 52, y: 37, text: '頸線' },
+    ],
+    dim: { x: 92, y1: 10, y2: 32, text: 'H', textX: 89, textY: 22, anchor: 'end' },
+  },
+  head_shoulders_top: {
+    labels: [
+      { x: 15, y: 16, text: '左肩' },
+      { x: 42, y: 2, text: '頭' },
+      { x: 70, y: 16, text: '右肩' },
+      { x: 42, y: 38, text: '頸線' },
+    ],
+    dim: { x: 42, y1: 6, y2: 32, text: 'H', textX: 45, textY: 28, anchor: 'start' },
+  },
+  triple_top: {
+    labels: [
+      { x: 14, y: 8, text: '峰1' },
+      { x: 42, y: 8, text: '峰2' },
+      { x: 70, y: 8, text: '峰3' },
+      { x: 70, y: 37, text: '頸線' },
+    ],
+    dim: { x: 92, y1: 12, y2: 32, text: 'H', textX: 89, textY: 23, anchor: 'end' },
+  },
+  rounded_top: {
+    labels: [
+      { x: 3, y: 47, text: '左緣', anchor: 'start' },
+      { x: 50, y: 6, text: '弧頂' },
+    ],
+    dim: { x: 50, y1: 10, y2: 42, text: 'H', textX: 53, textY: 28, anchor: 'start' },
+  },
+  spire_top: {
+    labels: [
+      { x: 9, y: 49, text: '起點', anchor: 'start' },
+      { x: 40, y: 2, text: '峰' },
+      { x: 79, y: 46, text: '走回水位', anchor: 'start' },
+    ],
+  },
+  rectangle: {
+    labels: [
+      { x: 3, y: 9, text: '壓力 R', anchor: 'start' },
+      { x: 3, y: 36, text: '支撐 S', anchor: 'start' },
+    ],
+    dim: { x: 90, y1: 12, y2: 30, text: 'H', textX: 87, textY: 22, anchor: 'end' },
+  },
+  triangle_symmetrical: {
+    labels: [
+      { x: 25, y: 6, text: '上緣' },
+      { x: 36, y: 44, text: '下緣' },
+    ],
+    dim: { x: 18, y1: 11, y2: 40, text: 'W', textX: 21, textY: 22, anchor: 'start' },
+  },
+  triangle_ascending: {
+    labels: [
+      { x: 33, y: 7, text: '上緣' },
+      { x: 22, y: 44, text: '下緣' },
+    ],
+    dim: { x: 2, y1: 10, y2: 40, text: 'W', textX: 4.5, textY: 25, anchor: 'start' },
+  },
+  triangle_descending: {
+    labels: [
+      { x: 30, y: 8, text: '上緣' },
+      { x: 33, y: 46, text: '下緣' },
+    ],
+    dim: { x: 2, y1: 6, y2: 40, text: 'W', textX: 4.5, textY: 26, anchor: 'start' },
+  },
+  flag_bull: {
+    labels: [
+      { x: 38, y: 5, text: '桿頂' },
+      { x: 3, y: 52, text: '桿底', anchor: 'start' },
+      { x: 83, y: 5, text: '突破', anchor: 'start' },
+    ],
+    dim: { x: 2, y1: 8, y2: 46, text: 'P', textX: 4.5, textY: 28, anchor: 'start' },
+  },
+  flag_bear: {
+    labels: [
+      { x: 8, y: 5, text: '桿頂', anchor: 'start' },
+      { x: 36, y: 47, text: '桿底' },
+      { x: 84, y: 47, text: '跌破', anchor: 'start' },
+    ],
+    dim: { x: 2, y1: 4, y2: 42, text: 'P', textX: 4.5, textY: 24, anchor: 'start' },
+  },
+  broadening: {
+    labels: [
+      { x: 22, y: 12, text: '上緣' },
+      { x: 50, y: 52, text: '下緣' },
+    ],
+  },
+};
+
 /** 示意圖：100 × 50 的小圖，顏色跟個股總覽疊圖用同一組（看漲青藍、看跌橘、方向未定紫）。 */
-function Diagram({ schematic }: { schematic: Schematic }) {
+function Diagram({ schematic, notes }: { schematic: Schematic; notes: DiagramNote }) {
   const color = directionClasses(schematic.direction);
   const line: Point[] = schematic.curve === 'bowl' ? bowl() : schematic.curve === 'dome' ? dome() : schematic.points;
   return (
-    <svg viewBox="0 0 100 52" className="w-full h-auto" role="img" aria-hidden="true">
+    <svg viewBox="0 -3 100 58" className="w-full h-auto" role="img" aria-hidden="true">
       {(schematic.flat ?? []).map((y) => (
         <line
           key={y}
@@ -563,6 +732,36 @@ function Diagram({ schematic }: { schematic: Schematic }) {
       />
       {!schematic.curve &&
         schematic.points.map(([x, y], i) => <circle key={i} cx={x} cy={y} r="1.6" className={color.fill} />)}
+      {notes.dim && (
+        <g className="stroke-on-surface-variant" strokeWidth="0.6">
+          <line x1={notes.dim.x} x2={notes.dim.x} y1={notes.dim.y1} y2={notes.dim.y2} />
+          <line x1={notes.dim.x - 1.8} x2={notes.dim.x + 1.8} y1={notes.dim.y1} y2={notes.dim.y1} />
+          <line x1={notes.dim.x - 1.8} x2={notes.dim.x + 1.8} y1={notes.dim.y2} y2={notes.dim.y2} />
+          <text
+            x={notes.dim.textX}
+            y={notes.dim.textY}
+            textAnchor={notes.dim.anchor ?? 'middle'}
+            fontSize="5.2"
+            fontWeight="700"
+            stroke="none"
+            className="fill-on-surface"
+          >
+            {notes.dim.text}
+          </text>
+        </g>
+      )}
+      {notes.labels.map((label) => (
+        <text
+          key={`${label.text}-${label.x}-${label.y}`}
+          x={label.x}
+          y={label.y}
+          textAnchor={label.anchor ?? 'middle'}
+          fontSize="4.4"
+          className="fill-on-surface-variant"
+        >
+          {label.text}
+        </text>
+      ))}
     </svg>
   );
 }
@@ -640,8 +839,8 @@ function PatternCard({ doc }: { doc: PatternDoc }) {
   return (
     <article className={`${cardClass} p-4 flex flex-col gap-stack-sm`}>
       <div className="flex gap-stack-md items-start">
-        <div className="w-32 sm:w-40 shrink-0 rounded-lg bg-surface-container-low p-2">
-          <Diagram schematic={doc.schematic} />
+        <div className="w-44 sm:w-64 shrink-0 rounded-lg bg-surface-container-low p-2">
+          <Diagram schematic={doc.schematic} notes={DIAGRAM_NOTES[doc.kind]} />
         </div>
         <div className="flex flex-col gap-1 min-w-0">
           <h3 className={`font-headline-md text-headline-md ${color.text}`}>{doc.name}</h3>

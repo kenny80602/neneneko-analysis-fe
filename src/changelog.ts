@@ -25,6 +25,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '20261127-B',
+    date: '2026-11-27',
+    title: '技術型態圖鑑的示意圖標上變數',
+    items: [
+      {
+        kind: 'change',
+        text:
+          '技術型態圖鑑每個型態的示意圖標上變數名稱（腳1、腳2、頸線、峰、肩、頭、左緣、壓力 R、支撐 S、旗桿 P、開口 W…），並用 H 標出型態高度，跟下面「公式」欄的符號一一對應，看圖就能對到算式。示意圖也放大了，字才讀得出來。',
+      },
+    ],
+  },
+  {
     version: '20261127-A',
     date: '2026-11-27',
     title: '型態列出高度 H 與圓弧的目標價',
