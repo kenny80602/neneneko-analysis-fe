@@ -109,7 +109,7 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
   // 量測目標線：型態確認後傳統上預期走到的價位（頸線再走一個落差）。慣例上的算術，不是預測。
   const [showTargets, setShowTargets] = useState(true);
   // 費波那契回撤與延伸：取目前顯示範圍的最高與最低當一個波段，畫固定比例的價位。
-  // 只是價位參考，沒有檢定過價格會在這些價位止跌或遇壓。預設關閉。
+  // 只是價位參考，回測沒有發現這些比例比旁邊的比例特別（見圖鑑）。預設關閉。
   const [showFib, setShowFib] = useState(false);
   // 預設只畫「主要判讀」：同一段走勢常被好幾個型態名稱重複認出來，全畫會蓋成一團。
   // 展開看全部時，失敗的型態用灰色淡化。
@@ -441,7 +441,7 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
             type="button"
             onClick={() => setShowFib((value) => !value)}
             aria-pressed={showFib}
-            title="費波那契回撤與延伸：取目前顯示範圍的最高與最低當一個波段，畫 23.6、38.2、50、61.8、78.6% 回撤與 127.2、161.8% 延伸。縮放與拖曳可以換成別段。只是價位參考，沒有檢定過價格會在這些價位止跌或遇壓"
+            title="費波那契回撤與延伸：取目前顯示範圍的最高與最低當一個波段，畫 23.6、38.2、50、61.8、78.6% 回撤與 127.2、161.8% 延伸。縮放與拖曳可以換成別段。只是價位參考。2026-11-27 全市場回測沒有發現這些比例比旁邊的比例更容易止跌或遇壓（見技術型態圖鑑）"
             className={`${intervalButton(showFib)} border border-outline-variant`}
           >
             費波
@@ -560,8 +560,8 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
               {axisLabel(view[fib.direction === 'up' ? fib.lowIndex : fib.highIndex].date, interval)}）→{' '}
               {fib.direction === 'up' ? '高' : '低'} {formatPrice(fib.direction === 'up' ? fib.high : fib.low)}（
               {axisLabel(view[fib.direction === 'up' ? fib.highIndex : fib.lowIndex].date, interval)}），
-              取自目前顯示範圍的最高價與最低價，縮放或拖曳會換成別段。價位只是參考：這個專案沒有檢定過價格會在這些比例止跌或遇壓，
-              也不是支撐壓力或買賣點；範圍外的延伸價位不畫。
+              取自目前顯示範圍的最高價與最低價，縮放或拖曳會換成別段。價位只是參考：2026-11-27 全市場回測沒有發現價格在這些比例比在旁邊的比例更容易止跌或遇壓（見技術型態圖鑑），
+              所以不是支撐壓力或買賣點；範圍外的延伸價位不畫。
             </>
           ) : (
             '目前顯示範圍的最高與最低落在同一根 K 棒（或整段沒動），沒有波段可畫；放大成至少兩根不同的 K 棒再看。'
@@ -692,7 +692,7 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
                 const endpoint = level.kind === 'retracement' && (level.ratio === 0 || level.ratio === 1);
                 return (
                   <g key={`fib-${level.kind}-${level.ratio}`}>
-                    <title>{`費波那契${level.kind === 'retracement' ? '回撤' : '延伸'} ${formatNumber(level.ratio * 100, 1)}%：${formatPrice(level.price)}（只是價位參考，沒有檢定過）`}</title>
+                    <title>{`費波那契${level.kind === 'retracement' ? '回撤' : '延伸'} ${formatNumber(level.ratio * 100, 1)}%：${formatPrice(level.price)}（只是價位參考，回測沒有發現這些比例特別）`}</title>
                     <line
                       x1={centerX(Math.min(fib.highIndex, fib.lowIndex))}
                       y1={y}

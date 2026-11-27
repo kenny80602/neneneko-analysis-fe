@@ -262,8 +262,8 @@ export interface FibonacciSwing {
  *
  * 高低點在同一根 K 棒（只有一根，或整段沒動）時沒有方向可言，回 null。
  *
- * ⚠️ 只是價位參考。這些比例沒有在這個專案裡檢定過「價格會在這裡止跌或遇壓」，
- * 學術上的證據也很弱，畫面不要寫成支撐壓力或買賣點。
+ * ⚠️ 只是價位參考。2026-11-27 全市場回測（成交值前 300 檔、還原日 K、過去 60／120 根的高低點當波段）沒有發現
+ * 這些比例比左右鄰近的比例更容易止跌或遇壓，結果寫在技術型態圖鑑；畫面不要寫成支撐壓力或買賣點。
  */
 export function fibonacciSwing(candles: Candle[]): FibonacciSwing | null {
   if (candles.length < 2) return null;

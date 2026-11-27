@@ -1376,10 +1376,37 @@ export default function ChartPatterns() {
             <span className="text-on-surface">為什麼不自動數浪、也不把費波價位當訊號：</span>
             ① 數浪沒有唯一解：同一段走勢常能數成不同的浪，通常要等走完才知道哪一種對，所以常被批評是事後諸葛，兩個人數出來的結果也常不同；
             ② 規則與比例都是經驗法則，可以靠調整「這一浪從哪裡算起」來湊，永遠找得到對得上的數法；
-            ③ 費波那契價位有沒有在那裡止跌或遇壓，學術上的證據很弱，本站也<span className="text-on-surface">沒有檢定過</span>，
-            站內檢定過的其他技術訊號（站回月線、W 底與 M 頭、KD）都沒有穩定的優勢。
+            ③ 費波那契價位有沒有在那裡止跌或遇壓，下面的回測<span className="text-on-surface">沒有找到支持</span>，
+            站內檢定過的其他技術訊號（站回月線、W 底與 M 頭、KD）也都沒有穩定的優勢。
             所以「費波」只當價位參考，不是支撐壓力，更不是買賣點；跟「主升段」「末跌段」這類要先數浪才講得出來的詞，一樣刻意不用。
           </p>
+          <div className="flex flex-col gap-1">
+            <h3 className="font-body-md text-body-md text-on-surface font-semibold">
+              費波那契比例有沒有特別
+              <span className="font-body-sm text-body-sm text-on-surface-variant font-normal">　2026-11-27 快照</span>
+            </h3>
+            <p className="font-body-sm text-body-sm text-on-surface-variant">
+              <span className="text-on-surface">做法：</span>
+              成交值前 300 檔（上市 220、上櫃 80）、Yahoo 還原日 K（2016-11～2026-11）。每天以過去 60 根（另測 120 根）的最高與最低當一個波段，
+              幅度至少 15%，跟「費波」按鈕同一個動作，只用當天以前的資料。價格<span className="text-on-surface">第一次碰到</span>某個回撤比例就記一筆，
+              進場價是碰到那天的收盤；上升波段測回撤支撐、下降波段測反彈壓力，共約 40 萬與 27 萬筆（60 根）。
+              比例從 20% 到 90% 每 1% 都測，這樣才看得出費波比例有沒有比旁邊「隨便一個比例」特別。
+              看三件事：之後 5 日、20 日扣掉全樣本等權平均後的報酬，以及 20 日內先到 5% 還是先到反方向 5%。
+            </p>
+            <p className="font-body-sm text-body-sm text-on-surface-variant">
+              <span className="text-on-surface">結果：</span>
+              曲線是一條平滑的斜坡——回撤越淺、之後越有利，越深越差（上升波段 60 根：回撤 24% 之後 5 日超額 +0.48%，85% 是 −0.18%）。
+              費波比例（23.6、38.2、50、61.8、78.6%）<span className="text-on-surface">沒有凸出來</span>：跟左右 3～4% 的鄰居比，
+              五個比例、三個指標、四組設定共 60 個比較，只有 3 個超出 95% 區間（2 個偏好、1 個偏差），約等於純靠運氣會出現的數量；
+              五個比例合併後，四組裡的 5 日超額、20 日超額與先到 5% 勝率的差距都在 ±0.5 個百分點內、區間跨過 0（唯一例外是 120 根、下降波段、20 日超額 −0.11，方向還是偏差，而且沒有扣除多重比較）。
+              「回撤淺的比較好」是斜坡本身的特徵，跟選哪個比例無關。
+            </p>
+            <p className="font-body-sm text-body-sm text-on-surface-variant">
+              <span className="text-on-surface">限制：</span>
+              股票池是現在成交值前 300（存活者偏誤）、這十年長多、同一天多檔與同一檔多個比例的事件互相重疊，月為單位做 bootstrap 才算信賴區間；
+              進場價用碰到那天收盤、沒扣交易成本；只驗證「這些比例有沒有比旁邊特別」，沒有驗證任何進出場策略。快照不會自動更新，要重跑得重抓資料。
+            </p>
+          </div>
         </section>
 
         <section className={`${cardClass} p-6 flex flex-col gap-stack-sm`}>
