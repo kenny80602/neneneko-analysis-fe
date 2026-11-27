@@ -208,7 +208,7 @@ const PATTERNS: PatternDoc[] = [
     schematic: { points: [], curve: 'dome', flat: [42], direction: 'down' },
     traits: '股價在高檔上漲乏力，多空慢慢拉鋸形成弧形頂部，之後量能漸縮並轉為盤跌。',
     detect: '擬合方式同圓弧底、開口朝下；收盤回到左緣價位以下算確認。',
-    target: '沒有慣用的量測算式，不給目標價。',
+    target: '沒有慣用算式，後端不給；個股與指數圖上的目標是前端補的推算：H ＝ 弧頂收盤 − 左緣，目標 ＝ 左緣 − H。',
   },
   {
     kind: 'spire_top',
@@ -1078,7 +1078,7 @@ export default function ChartPatterns() {
           <h2 className="font-headline-md text-headline-md text-primary">目標價與同期籌碼</h2>
           <p className="font-body-md text-body-md text-on-surface">
             目標價是傳統的量測算式：<span className="font-semibold">突破線再往突破方向走一個型態高度</span>，
-            只是幾何算術，沒有驗證過價格真的會走到，也不是分析師目標價。V 型、倒 V、圓弧、破底翻與喇叭波沒有慣用算式，不給目標價。
+            只是幾何算術，沒有驗證過價格真的會走到，也不是分析師目標價。V 型、倒 V、破底翻與喇叭波沒有慣用算式，不給目標價。圓弧底與圓弧頂後端也不給，圖上標「推算」的是前端用「左緣再走一個 H」補的（H ＝ 弧頂或弧底收盤與左緣的價差），比其他型態更沒有依據。
           </p>
           <div className="font-body-sm text-body-sm text-on-surface-variant flex flex-col gap-1">
             <p>

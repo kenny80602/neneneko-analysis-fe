@@ -20,6 +20,7 @@ import {
   PATTERN_INFO,
   PatternFamily,
   patternFamily,
+  patternMeasure,
   patternName,
 } from '../utils/patterns';
 
@@ -272,12 +273,22 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
             (family === 'all' || patternFamily(shape.pattern.kind) === family) &&
             (showAllPatterns || shape.pattern.primary) &&
             !shape.pattern.failed && // 失敗的型態目標已經不成立，不畫
-            shape.pattern.target != null &&
+            patternMeasure(shape.pattern).target != null &&
             (shape.pattern.status === 'confirmed' || shape.pattern.direction !== 'neutral')
         )
         .map(({ id, pattern, confirmIdx }) => {
-          const price = pattern.target as number;
-          const hitIdx = pattern.outcome?.target_hit ? candles.findIndex((c) => c.date >= pattern.outcome!.target_hit_at) : -1;
+          const measure = patternMeasure(pattern);
+          const price = measure.target as number;
+          // 後端算的型態看 outcome；推算的目標（圓弧）後端沒判斷，確認之後自己掃日 K 看有沒有碰到。
+          let hitIdx = pattern.outcome?.target_hit ? candles.findIndex((c) => c.date >= pattern.outcome!.target_hit_at) : -1;
+          if (measure.derived && pattern.status === 'confirmed' && confirmIdx >= 0) {
+            for (let i = confirmIdx + 1; i <= overlay.last; i++) {
+              if (pattern.direction === 'down' ? candles[i].low <= price : candles[i].high >= price) {
+                hitIdx = i;
+                break;
+              }
+            }
+          }
           const fromIdx = confirmIdx >= start ? confirmIdx : overlay.last;
           const endX = hitIdx >= start && hitIdx <= overlay.last ? centerX(hitIdx - start) : LEFT + PLOT_WIDTH - 6;
           const y = scale.y(price);
@@ -291,6 +302,8 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
             x2: endX,
             hit: hitIdx >= 0,
             tentative: pattern.status !== 'confirmed',
+            derived: measure.derived,
+            height: measure.height,
           };
         })
     : [];
@@ -329,7 +342,7 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
         : []),
       ...targets.map((item) => ({
         key: `t${item.id}`,
-        text: `${item.y < PRICE_TOP ? '↑ ' : item.y > PRICE_BOTTOM ? '↓ ' : ''}${item.tentative ? '若確認 ' : ''}目標 ${formatPrice(item.price)}${item.hit ? ' 達成' : ''}`,
+        text: `${item.y < PRICE_TOP ? '↑ ' : item.y > PRICE_BOTTOM ? '↓ ' : ''}${item.tentative ? '若確認 ' : ''}目標 ${formatPrice(item.price)}${item.height != null ? `（H ${formatPrice(item.height)}${item.derived ? '，推算' : ''}）` : ''}${item.hit ? ' 達成' : ''}`,
         x: item.x2 - 60,
         y: item.y - 6,
         className: directionClasses(item.pattern.direction).fill,
@@ -913,7 +926,10 @@ export default function PriceChart({ quotes, patterns, patternsError }: PriceCha
                   <title>
                     {`${patternName(pattern.kind, pattern.box_size)}${pattern.failed ? `（已確認後失敗 ${pattern.failed_at}）` : confirmed ? '（已確認）' : '（形成中）'} 關鍵價 ${formatPrice(
                       pattern.neckline
-                    )}${pattern.target != null ? ` 目標 ${formatPrice(pattern.target)}` : ''}`}
+                    )}${(() => {
+                      const m = patternMeasure(pattern);
+                      return m.target != null ? ` 目標 ${formatPrice(m.target)}（H ${formatPrice(m.height as number)}${m.derived ? '，推算' : ''}）` : '';
+                    })()}`}
                   </title>
                   {lines.map((line) => (
                     <line

@@ -9,6 +9,7 @@ import {
   gapName,
   PatternFamily,
   patternFamily,
+  patternMeasure,
   patternName,
   volumeNote,
 } from '../utils/patterns';
@@ -210,6 +211,8 @@ export default function PatternPanel({
           這是現況描述，不是買賣訊號：門檻是經驗值、沒有檢定過出現後的表現（全市場回測見後端
           <code>cmd/patternstudy</code>，底部型態確認後的超額報酬多數沒有正面表現），單一檔的幾次結果沒有統計意義，
           「量測目標」只是慣例上的算術。破折號代表資料還沒走到那麼遠、尚未確認或這個型態沒有慣用目標，不是 0。
+          H 是型態高度（點）；圓弧頂與圓弧底後端不給目標價，標「推算」的是前端用「左緣再往突破方向走一個 H」補的，
+          H ＝ 弧頂（底）收盤與左緣的價差，沒有驗證過，也不會判斷有沒有達成。
         </p>
         <p>
           「同期籌碼」站在型態確認那天（形成中的是最新一天）看這一檔算不算<span className="text-on-surface">籌碼亂</span>
@@ -289,6 +292,7 @@ function PatternRow({ pattern, visible, selected, onClick }: PatternRowProps) {
   const confirmed = pattern.status === 'confirmed';
   const outcome = pattern.outcome;
   const volume = volumeNote(pattern);
+  const measure = patternMeasure(pattern);
   const first = pattern.pivots[0];
   const last = pattern.pivots[pattern.pivots.length - 1];
 
@@ -332,7 +336,15 @@ function PatternRow({ pattern, visible, selected, onClick }: PatternRowProps) {
         </div>
       </td>
       <td className={TD}>{formatPrice(pattern.neckline)}</td>
-      <td className={TD}>{formatNumber(pattern.depth_pct, 1)}%</td>
+      <td className={TD}>
+        {formatNumber(pattern.depth_pct, 1)}%
+        <div
+          className="font-body-sm text-body-sm text-on-surface-variant"
+          title="H：突破線到型態另一端的價差（點）。圓弧型態是弧頂（底）收盤與左緣的價差"
+        >
+          H {measure.height == null ? DASH : formatPrice(measure.height)}
+        </div>
+      </td>
       <td className="p-2 py-2 font-data-md text-data-md whitespace-nowrap">{confirmed ? pattern.confirmed_at : DASH}</td>
       <td className="p-2 py-2 font-body-sm text-body-sm whitespace-nowrap">
         {volume ? (
@@ -376,13 +388,22 @@ function PatternRow({ pattern, visible, selected, onClick }: PatternRowProps) {
         {outcome ? formatSignedPercent(outcome.after_20_pct) : DASH}
       </td>
       <td className={TD}>
-        {pattern.target == null ? (
+        {measure.target == null ? (
           DASH
         ) : (
           <>
-            {formatPrice(pattern.target)}
-            <span className="text-on-surface-variant font-body-sm text-body-sm">
-              {!outcome ? '' : outcome.target_hit ? `　${outcome.target_hit_at.slice(5)} 達成` : '　未達成'}
+            {formatPrice(measure.target)}
+            <span
+              className="text-on-surface-variant font-body-sm text-body-sm"
+              title={measure.derived ? '後端對圓弧型態不給目標價；這是前端用「左緣再走一個 H」推算的，沒有驗證過，也沒有判斷是否達成' : undefined}
+            >
+              {measure.derived
+                ? '　推算'
+                : !outcome
+                  ? ''
+                  : outcome.target_hit
+                    ? `　${outcome.target_hit_at.slice(5)} 達成`
+                    : '　未達成'}
             </span>
           </>
         )}

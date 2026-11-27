@@ -38,6 +38,39 @@ export const PATTERN_INFO: Record<PatternKind, { name: string; family: PatternFa
   broadening: { name: '喇叭波', family: 'continuation', line: false },
 };
 
+export interface PatternMeasure {
+  /** 型態高度 H（價位，點）。null＝這個型態沒有慣用的量測算式。 */
+  height: number | null;
+  /** 量測目標價。 */
+  target: number | null;
+  /** true＝後端沒給目標價，是前端依圓弧的幾何補的（見 patternMeasure）。 */
+  derived: boolean;
+}
+
+/**
+ * 型態的高度 H（點）與量測目標。
+ *
+ * 後端有給 target 的型態，H 取「目標與突破線的距離」：後端各型態的算式都是「突破線再走一個 H」
+ * （W 底、頭肩、箱型、三角形、旗型皆如此），所以反推出來的 H 就是它用的那個 H，不另外各算一份。
+ *
+ * 圓弧頂與圓弧底後端刻意不給目標價（沒有慣用算式，見 /patterns 的說明），這裡照使用者的要求補上：
+ * H ＝ 弧頂（底）收盤與左緣的價差，目標 ＝ 左緣往突破方向再走一個 H。左緣就是後端的 neckline，
+ * pivots[1] 是弧的頂點。這是推算不是後端的值，所以 derived 為 true，畫面一律標「推算」，
+ * 而且後端沒有算「有沒有碰到目標」。
+ */
+export function patternMeasure(pattern: ChartPattern): PatternMeasure {
+  if (pattern.target != null) {
+    return { height: Math.abs(pattern.target - pattern.neckline), target: pattern.target, derived: false };
+  }
+  if ((pattern.kind === 'rounded_top' || pattern.kind === 'rounded_bottom') && pattern.pivots.length >= 3) {
+    const height = Math.abs(pattern.pivots[1].price - pattern.neckline);
+    const target = pattern.kind === 'rounded_top' ? pattern.neckline - height : pattern.neckline + height;
+    // 圓弧頂的 H 超過左緣價位時目標會是負數，沒有意義，不給。
+    if (height > 0 && target > 0) return { height, target, derived: true };
+  }
+  return { height: null, target: null, derived: false };
+}
+
 const BOX_SIZE_LABEL: Record<string, string> = {
   narrow: '窄幅',
   normal: '一般',
